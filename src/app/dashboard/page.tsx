@@ -1,5 +1,9 @@
+import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth-guard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  RecentSubmissions,
+  RecentSubmissionsSkeleton,
+} from "@/components/dashboard/recent-submissions";
 
 export default async function DashboardPage() {
   const session = await requireAuth();
@@ -11,18 +15,9 @@ export default async function DashboardPage() {
       </h2>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Recent Submissions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              No submissions yet. Use the sidebar to create content.
-            </p>
-          </CardContent>
-        </Card>
+        <Suspense fallback={<RecentSubmissionsSkeleton />}>
+          <RecentSubmissions userId={session.user.id} />
+        </Suspense>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth-guard";
 import { db } from "@/lib/db";
 import { CONTENT_TYPE_LABELS } from "@/lib/constants";
+import { getCachedShows } from "@/lib/wordpress/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { updateVisibilityPreferences } from "./actions";
@@ -30,6 +31,17 @@ export default async function SettingsPage({
   const allowedShowIds = user.allowedShows.map((s) => s.wpShowId);
   const visibleShowIds =
     user.preferences?.visibleShowIds ?? allowedShowIds;
+
+  // Resolve show names from WordPress (gracefully handle WP being unavailable)
+  let showNameMap: Record<number, string> = {};
+  try {
+    const wpShows = await getCachedShows();
+    showNameMap = Object.fromEntries(
+      wpShows.map((s) => [s.id, s.title.rendered])
+    );
+  } catch {
+    // WP not configured yet — fall back to ID display
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -88,7 +100,9 @@ export default async function SettingsPage({
                     defaultChecked={visibleShowIds.includes(showId)}
                     className="rounded border-gray-300"
                   />
-                  <span className="text-sm">Show #{showId}</span>
+                  <span className="text-sm">
+                    {showNameMap[showId] ?? `Show #${showId}`}
+                  </span>
                 </label>
               ))}
               {allowedShowIds.length === 0 && (
