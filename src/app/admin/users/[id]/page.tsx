@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { updateUserPermissions, deleteUser } from "../actions";
+import { ConfirmDeleteButton } from "@/components/admin/confirm-delete-button";
 
 const ALL_CONTENT_TYPES = Object.values(ContentType);
 
@@ -180,12 +181,7 @@ export default async function UserEditPage({
             Permanently delete this user and all their associated data. This
             action cannot be undone.
           </p>
-          <form action={deleteUser}>
-            <input type="hidden" name="userId" value={user.id} />
-            <Button type="submit" variant="destructive">
-              Delete User
-            </Button>
-          </form>
+          <ConfirmDeleteButton action={deleteUser} userId={user.id} />
         </CardContent>
       </Card>
     </div>

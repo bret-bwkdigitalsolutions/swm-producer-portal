@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
 import { verifyShowAccess, verifyContentTypeAccess } from "@/lib/auth-guard";
 
@@ -95,7 +96,7 @@ export async function submitAppearance(
     const title = `${venue} - ${location}`;
 
     // Create post in WordPress
-    await createPost(ContentType.APPEARANCE, {
+    const wpPost = await createPost(ContentType.APPEARANCE, {
       title,
       status: publishStatus,
       ...(publishStatus === "future" && scheduledDate
@@ -122,6 +123,7 @@ export async function submitAppearance(
         userId: session.user.id,
         action: "create",
         contentType: ContentType.APPEARANCE,
+        wpPostId: wpPost.id,
         wpShowId: Number(showId),
       },
     });
@@ -134,6 +136,9 @@ export async function submitAppearance(
     };
   } catch (error) {
     console.error("Failed to submit appearance:", error);
+    if (error instanceof WpApiError) {
+      return { success: false, message: `WordPress error: ${error.message}` };
+    }
     return {
       success: false,
       message: "Failed to submit appearance. Please try again.",

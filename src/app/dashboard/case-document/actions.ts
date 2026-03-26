@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
 import { verifyContentTypeAccess } from "@/lib/auth-guard";
 
@@ -101,7 +102,7 @@ export async function submitCaseDocument(
     }
 
     // Create post in WordPress
-    await createPost(ContentType.CASE_DOCUMENT, {
+    const wpPost = await createPost(ContentType.CASE_DOCUMENT, {
       title,
       content: description || "",
       status: publishStatus,
@@ -126,6 +127,7 @@ export async function submitCaseDocument(
         userId: session.user.id,
         action: "create",
         contentType: ContentType.CASE_DOCUMENT,
+        wpPostId: wpPost.id,
       },
     });
 
@@ -138,6 +140,9 @@ export async function submitCaseDocument(
     };
   } catch (error) {
     console.error("Failed to submit case document:", error);
+    if (error instanceof WpApiError) {
+      return { success: false, message: `WordPress error: ${error.message}` };
+    }
     return {
       success: false,
       message: "Failed to submit case document. Please try again.",
