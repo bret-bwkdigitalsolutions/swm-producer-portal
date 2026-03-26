@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { createPost } from "@/lib/wordpress/client";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
+import { verifyShowAccess, verifyContentTypeAccess } from "@/lib/auth-guard";
 
 interface FormState {
   success?: boolean;
@@ -19,6 +20,25 @@ export async function submitEpisode(
   const session = await auth();
   if (!session?.user?.id) {
     return { success: false, message: "You must be logged in." };
+  }
+
+  // Verify content type access
+  const hasContentAccess = await verifyContentTypeAccess(
+    session.user.id,
+    session.user.role,
+    ContentType.EPISODE
+  );
+  if (!hasContentAccess) {
+    return { success: false, message: "You do not have access to this content type." };
+  }
+
+  // Verify show access
+  const showIdRaw = formData.get("show_id") as string;
+  if (showIdRaw) {
+    const hasShowAccess = await verifyShowAccess(session.user.id, parseInt(showIdRaw, 10));
+    if (!hasShowAccess) {
+      return { success: false, message: "You do not have access to this show." };
+    }
   }
 
   // Extract fields

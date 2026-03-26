@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
 import { ContentType } from "@/lib/constants";
+import { verifyContentTypeAccess } from "@/lib/auth-guard";
 
 interface FormState {
   success?: boolean;
@@ -34,6 +35,16 @@ export async function submitCaseDocument(
   const session = await auth();
   if (!session?.user) {
     return { success: false, message: "Not authenticated." };
+  }
+
+  // Verify content type access
+  const hasContentAccess = await verifyContentTypeAccess(
+    session.user.id,
+    session.user.role,
+    ContentType.CASE_DOCUMENT
+  );
+  if (!hasContentAccess) {
+    return { success: false, message: "You do not have access to this content type." };
   }
 
   // Extract fields
