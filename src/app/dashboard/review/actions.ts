@@ -3,8 +3,10 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { getShow } from "@/lib/wordpress/client";
 import { WpApiError } from "@/lib/wordpress/types";
-import { ContentType } from "@/lib/constants";
+import { ContentType, CONTENT_TYPE_LABELS } from "@/lib/constants";
+import { sendStakeholderNotification } from "@/lib/notifications";
 
 interface FormState {
   success?: boolean;
@@ -104,6 +106,37 @@ export async function submitReview(
         details: `Created review: "${movieTitle.trim()}"`,
       },
     });
+
+    // Send stakeholder notifications for immediate publishes
+    if (status === "publish") {
+      const wpShowIdNum = parseInt(showId, 10);
+      const stakeholders = await db.showStakeholder.findMany({
+        where: { wpShowId: wpShowIdNum },
+      });
+
+      if (stakeholders.length > 0) {
+        let showName = `Show #${wpShowIdNum}`;
+        try {
+          const show = await getShow(wpShowIdNum);
+          showName = show.title.rendered;
+        } catch {
+          // Fall back to ID-based name
+        }
+
+        // Fire and forget — don't block the response on email delivery
+        sendStakeholderNotification({
+          showName,
+          contentType:
+            CONTENT_TYPE_LABELS[ContentType.REVIEW] ?? ContentType.REVIEW,
+          title: movieTitle.trim(),
+          postUrl: post.link,
+          submittedBy: session.user.name ?? session.user.email ?? "Unknown",
+          stakeholderEmails: stakeholders.map((s) => s.email),
+        }).catch((err) => {
+          console.error("[review] Stakeholder notification failed:", err);
+        });
+      }
+    }
 
     return {
       success: true,
