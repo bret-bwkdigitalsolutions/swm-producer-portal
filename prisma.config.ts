@@ -1,6 +1,6 @@
 import { config } from "dotenv";
 import path from "node:path";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 // Load .env.local first (Next.js convention), fall back to .env
 config({ path: path.join(__dirname, ".env.local") });
@@ -13,6 +13,8 @@ export default defineConfig({
     seed: "npx tsx prisma/seed.ts",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // Use process.env with a placeholder fallback so prisma generate works
+    // without a database connection (e.g., during Docker build)
+    url: process.env.DATABASE_URL ?? "postgresql://placeholder:placeholder@localhost:5432/placeholder",
   },
 });
