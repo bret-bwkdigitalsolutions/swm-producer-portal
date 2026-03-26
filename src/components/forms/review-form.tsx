@@ -88,7 +88,6 @@ export function ReviewForm({ shows }: ReviewFormProps) {
           onValueChange={(val) => {
             if (val !== null) setReviewerName(val);
           }}
-          name="reviewer_name"
           required
         >
           <SelectTrigger className="w-full">
@@ -129,7 +128,6 @@ export function ReviewForm({ shows }: ReviewFormProps) {
           onValueChange={(val) => {
             if (val !== null) setCategory(val);
           }}
-          name="category"
           required
         >
           <SelectTrigger className="w-full">

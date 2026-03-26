@@ -213,7 +213,6 @@ export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
           onValueChange={(val: string | null) => {
             if (val !== null) setAppearanceStatus(val);
           }}
-          name="appearance_status"
           required
         >
           <SelectTrigger className="w-full">

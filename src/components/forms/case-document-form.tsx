@@ -149,7 +149,6 @@ export function CaseDocumentForm({
           onValueChange={(val: string | null) => {
             if (val !== null) setCaseSeriesValue(val);
           }}
-          name="case_series"
           required
         >
           <SelectTrigger className="w-full">
@@ -176,7 +175,6 @@ export function CaseDocumentForm({
           onValueChange={(val: string | null) => {
             if (val !== null) setDocTypeValue(val);
           }}
-          name="doc_type"
           required
         >
           <SelectTrigger className="w-full">

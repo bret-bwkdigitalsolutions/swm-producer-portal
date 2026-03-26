@@ -52,7 +52,7 @@ export function ShowSelect({
           {required && <span className="text-destructive"> *</span>}
         </Label>
       )}
-      <Select value={value} onValueChange={handleValueChange(onValueChange)} name={name} required={required}>
+      <Select value={value} onValueChange={handleValueChange(onValueChange)} required={required}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Select a show" />
         </SelectTrigger>
