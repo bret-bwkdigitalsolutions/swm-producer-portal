@@ -50,6 +50,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        // Initial sign-in: populate token with DB data
         const dbUser = await db.user.findUnique({
           where: { email: user.email! },
           select: { id: true, role: true, hasDistributionAccess: true },
@@ -58,6 +59,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           token.id = dbUser.id;
           token.role = dbUser.role;
           token.hasDistributionAccess = dbUser.hasDistributionAccess;
+          token.lastRefreshed = Date.now();
+        }
+      } else if (token.id) {
+        // Subsequent requests: refresh permissions every 5 minutes
+        const fiveMinutes = 5 * 60 * 1000;
+        const lastRefreshed = (token.lastRefreshed as number) ?? 0;
+        if (Date.now() - lastRefreshed > fiveMinutes) {
+          const dbUser = await db.user.findUnique({
+            where: { id: token.id as string },
+            select: { role: true, hasDistributionAccess: true },
+          });
+          if (dbUser) {
+            token.role = dbUser.role;
+            token.hasDistributionAccess = dbUser.hasDistributionAccess;
+            token.lastRefreshed = Date.now();
+          }
         }
       }
       return token;

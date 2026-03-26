@@ -5,8 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { updateVisibilityPreferences } from "./actions";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string }>;
+}) {
   const session = await requireAuth();
+  const { saved } = await searchParams;
 
   const user = await db.user.findUnique({
     where: { id: session.user.id },
@@ -29,6 +34,12 @@ export default async function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <h2 className="text-2xl font-bold">Settings</h2>
+
+      {saved && (
+        <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+          Preferences saved successfully.
+        </div>
+      )}
 
       <form action={updateVisibilityPreferences}>
         <Card>

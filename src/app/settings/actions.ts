@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 export async function updateVisibilityPreferences(formData: FormData) {
   const session = await auth();
@@ -49,4 +50,5 @@ export async function updateVisibilityPreferences(formData: FormData) {
 
   revalidatePath("/dashboard");
   revalidatePath("/settings");
+  redirect("/settings?saved=true");
 }
