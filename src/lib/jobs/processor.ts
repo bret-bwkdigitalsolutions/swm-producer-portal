@@ -34,7 +34,6 @@ async function simulatePlatformUpload(
     spotify: 1500,
     apple: 1500,
     transistor: 1000,
-    patreon: 800,
     website: 500,
   };
 

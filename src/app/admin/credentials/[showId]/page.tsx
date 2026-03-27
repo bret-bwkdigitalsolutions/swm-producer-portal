@@ -12,7 +12,6 @@ const ALL_PLATFORMS = [
   "spotify",
   "apple",
   "transistor",
-  "patreon",
 ] as const;
 
 export default async function ShowCredentialsPage({

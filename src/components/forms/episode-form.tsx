@@ -144,7 +144,7 @@ export function EpisodeForm({ shows }: EpisodeFormProps) {
         <div className="flex items-center gap-2">
           <ShieldAlertIcon className="size-4 text-muted-foreground" />
           <Label htmlFor="premium-toggle" className="cursor-pointer">
-            Premium only (Patreon exclusive)
+            Premium only
           </Label>
         </div>
         <Switch

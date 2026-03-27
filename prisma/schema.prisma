@@ -114,7 +114,7 @@ model ShowStakeholder {
 model PlatformCredential {
   id             String   @id @default(cuid())
   wpShowId       Int
-  platform       String   // "youtube" | "spotify" | "apple" | "transistor" | "patreon"
+  platform       String   // "youtube" | "spotify" | "apple" | "transistor"
   credentialType String   // "oauth" | "api_key"
   accessToken    String?  @db.Text
   refreshToken   String?  @db.Text
@@ -175,7 +175,7 @@ model AiSuggestion {
 model ShowPlatformLink {
   id       String @id @default(cuid())
   wpShowId Int
-  platform String // "youtube" | "spotify" | "apple" | "transistor" | "patreon" | "website"
+  platform String // "youtube" | "spotify" | "apple" | "transistor" | "website"
   url      String // Channel/podcast URL for this show on this platform
 
   @@unique([wpShowId, platform])

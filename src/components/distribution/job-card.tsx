@@ -14,7 +14,6 @@ import {
   RadioIcon,
   HeadphonesIcon,
   CastIcon,
-  CrownIcon,
   GlobeIcon,
 } from "lucide-react";
 
@@ -50,7 +49,6 @@ const PLATFORM_ICONS: Record<string, React.ReactNode> = {
   spotify: <RadioIcon className="size-3.5" />,
   apple: <HeadphonesIcon className="size-3.5" />,
   transistor: <CastIcon className="size-3.5" />,
-  patreon: <CrownIcon className="size-3.5" />,
   website: <GlobeIcon className="size-3.5" />,
 };
 
@@ -59,7 +57,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
   apple: "Apple",
   transistor: "Transistor",
-  patreon: "Patreon",
   website: "Website",
 };
 

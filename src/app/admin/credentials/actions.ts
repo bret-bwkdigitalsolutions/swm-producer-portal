@@ -14,7 +14,6 @@ const VALID_PLATFORMS = [
   "spotify",
   "apple",
   "transistor",
-  "patreon",
 ] as const;
 
 const VALID_CREDENTIAL_TYPES = ["oauth", "api_key"] as const;

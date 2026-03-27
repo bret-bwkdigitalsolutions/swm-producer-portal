@@ -67,7 +67,6 @@ const VALID_LINK_PLATFORMS = [
   "spotify",
   "apple",
   "transistor",
-  "patreon",
   "website",
 ] as const;
 
@@ -81,7 +80,7 @@ export async function updateShowPlatformLinks(
   }
 
   const wpShowId = parseInt(formData.get("wp_show_id") as string, 10);
-  if (!wpShowId || isNaN(wpShowId)) {
+  if (isNaN(wpShowId) || wpShowId < 0) {
     return { success: false, message: "Invalid show." };
   }
 

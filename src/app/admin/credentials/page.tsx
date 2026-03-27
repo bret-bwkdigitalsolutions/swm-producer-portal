@@ -11,7 +11,6 @@ const ALL_PLATFORMS = [
   "spotify",
   "apple",
   "transistor",
-  "patreon",
 ] as const;
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -19,7 +18,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
   apple: "Apple Podcasts",
   transistor: "Transistor",
-  patreon: "Patreon",
 };
 
 function StatusDot({ status }: { status: string }) {

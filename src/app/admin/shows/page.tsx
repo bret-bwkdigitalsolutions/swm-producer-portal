@@ -37,6 +37,13 @@ export default async function AdminShowsPage() {
     platformLinksByShow.set(link.wpShowId, existing);
   }
 
+  // Network defaults use wpShowId = 0
+  const networkDefaultLinks = platformLinksByShow.get(0) ?? [];
+  const networkDefaults = networkDefaultLinks.map((l) => ({
+    platform: l.platform,
+    url: l.url,
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -46,6 +53,25 @@ export default async function AdminShowsPage() {
           <Badge variant="secondary">{shows.length} shows</Badge>
         </div>
       </div>
+
+      {/* Network Defaults */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-3">
+            <span>Network Defaults</span>
+            <Badge variant="outline" className="font-mono text-xs">
+              Applies to all shows
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ShowPlatformLinks
+            wpShowId={0}
+            showName="Network Defaults"
+            links={networkDefaultLinks}
+          />
+        </CardContent>
+      </Card>
 
       {shows.length === 0 ? (
         <Card>
@@ -85,6 +111,7 @@ export default async function AdminShowsPage() {
                       wpShowId={show.id}
                       showName={show.title.rendered}
                       links={platformLinks}
+                      networkDefaults={networkDefaults}
                     />
                   </div>
                 </CardContent>

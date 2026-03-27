@@ -11,7 +11,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
   apple: "Apple Podcasts",
   transistor: "Transistor",
-  patreon: "Patreon",
 };
 
 const PLATFORM_ICONS: Record<string, string> = {
@@ -19,7 +18,6 @@ const PLATFORM_ICONS: Record<string, string> = {
   spotify: "SP",
   apple: "AP",
   transistor: "TR",
-  patreon: "PA",
 };
 
 function StatusDot({ status }: { status: string }) {
