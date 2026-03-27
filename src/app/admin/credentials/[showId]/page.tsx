@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CredentialCard, EmptyPlatformCard } from "@/components/admin/credential-card";
+import { ConnectYouTubeButton } from "@/components/admin/connect-youtube-button";
 import { CredentialForm } from "./credential-form";
 
 const ALL_PLATFORMS = [
@@ -16,10 +17,13 @@ const ALL_PLATFORMS = [
 
 export default async function ShowCredentialsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ showId: string }>;
+  searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { showId: showIdParam } = await params;
+  const { success: successMsg, error: errorMsg } = await searchParams;
   const wpShowId = parseInt(showIdParam, 10);
   if (isNaN(wpShowId) || wpShowId < 0) {
     notFound();
@@ -93,6 +97,29 @@ export default async function ShowCredentialsPage({
           network defaults.
         </p>
       )}
+
+      {/* Success/error messages from OAuth callback */}
+      {successMsg && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {successMsg}
+        </div>
+      )}
+      {errorMsg && (
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {errorMsg}
+        </div>
+      )}
+
+      {/* YouTube OAuth connect button */}
+      <div className="flex items-center gap-3">
+        <ConnectYouTubeButton
+          wpShowId={wpShowId}
+          hasExisting={connectedPlatforms.has("youtube")}
+        />
+        <span className="text-xs text-muted-foreground">
+          Signs into Google to authorize YouTube channel uploads
+        </span>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {ALL_PLATFORMS.map((platform) => {
