@@ -175,8 +175,9 @@ model AiSuggestion {
 model ShowPlatformLink {
   id       String @id @default(cuid())
   wpShowId Int
-  platform String // "youtube" | "spotify" | "apple" | "transistor" | "website"
-  url      String // Channel/podcast URL for this show on this platform
+  platform String // Account: youtube_channel, transistor_account, spotify_account, apple_account, website
+                   // Show: youtube_playlist, transistor_show, spotify_show, apple_show
+  url      String // URL for this platform link (wpShowId=0 for network defaults)
 
   @@unique([wpShowId, platform])
   @@map("show_platform_links")

@@ -8,12 +8,66 @@ import { updateShowPlatformLinks } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { Loader2Icon } from "lucide-react";
 
-const PLATFORMS = [
-  { key: "youtube", label: "YouTube Channel" },
-  { key: "spotify", label: "Spotify Show" },
-  { key: "apple", label: "Apple Podcast" },
-  { key: "transistor", label: "Transistor Show" },
-  { key: "website", label: "Website" },
+// Account-level: where content gets uploaded TO (channel, account)
+const ACCOUNT_PLATFORMS = [
+  {
+    key: "youtube_channel",
+    label: "YouTube Channel",
+    placeholder: "https://www.youtube.com/channel/...",
+    help: "The channel where videos are uploaded",
+  },
+  {
+    key: "transistor_account",
+    label: "Transistor Account",
+    placeholder: "https://dashboard.transistor.fm/shows/...",
+    help: "The Transistor account for podcast hosting",
+  },
+  {
+    key: "spotify_account",
+    label: "Spotify Account",
+    placeholder: "https://podcasters.spotify.com/...",
+    help: "The Spotify for Podcasters account",
+  },
+  {
+    key: "apple_account",
+    label: "Apple Podcasts Account",
+    placeholder: "https://podcastsconnect.apple.com/...",
+    help: "The Apple Podcasts Connect account",
+  },
+  {
+    key: "website",
+    label: "Website",
+    placeholder: "https://stolenwatermedia.com",
+    help: "The main website for this network/show",
+  },
+] as const;
+
+// Show-level: where content gets organized WITHIN the account
+const SHOW_PLATFORMS = [
+  {
+    key: "youtube_playlist",
+    label: "YouTube Playlist",
+    placeholder: "https://www.youtube.com/playlist?list=...",
+    help: "Videos are added to this playlist after upload",
+  },
+  {
+    key: "transistor_show",
+    label: "Transistor Show URL",
+    placeholder: "https://share.transistor.fm/s/...",
+    help: "The specific show/podcast within Transistor",
+  },
+  {
+    key: "spotify_show",
+    label: "Spotify Show URL",
+    placeholder: "https://open.spotify.com/show/...",
+    help: "The show's public Spotify URL",
+  },
+  {
+    key: "apple_show",
+    label: "Apple Podcasts Show URL",
+    placeholder: "https://podcasts.apple.com/podcast/...",
+    help: "The show's public Apple Podcasts URL",
+  },
 ] as const;
 
 interface PlatformLink {
@@ -52,60 +106,72 @@ export function ShowPlatformLinks({
 
   const isNetworkDefaults = wpShowId === 0;
 
+  // Network defaults only show account-level fields
+  // Individual shows show both (account overrides + show-level)
+  const accountFields = ACCOUNT_PLATFORMS;
+  const showFields = isNetworkDefaults ? [] : SHOW_PLATFORMS;
+
   return (
     <div className="space-y-4">
       <p className="text-sm font-medium text-muted-foreground">
         Platform links for {showName}
       </p>
-      {!isNetworkDefaults && networkDefaults && networkDefaults.length > 0 && (
+      {!isNetworkDefaults && (
         <p className="text-xs text-muted-foreground">
-          Leave a field blank to use the network default.
+          Account fields default to the network settings. Only override if this
+          show uses a different channel/account (e.g. Your Dark Companion).
         </p>
       )}
 
-      <form action={formAction} className="space-y-3">
+      <form action={formAction} className="space-y-5">
         <input type="hidden" name="wp_show_id" value={wpShowId} />
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          {PLATFORMS.map(({ key, label }) => {
-            const showUrl = linksByPlatform.get(key);
-            const defaultUrl = defaultsByPlatform.get(key);
-            const hasOverride = !!showUrl;
-            const hasDefault = !!defaultUrl && !isNetworkDefaults;
-
-            return (
-              <div key={key} className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor={`${key}-${wpShowId}`}>{label}</Label>
-                  {!isNetworkDefaults && hasOverride && hasDefault && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      Override
-                    </Badge>
-                  )}
-                </div>
-                <Input
-                  id={`${key}-${wpShowId}`}
-                  name={`platform_${key}`}
-                  type="url"
-                  placeholder={
-                    hasDefault && !hasOverride
-                      ? defaultUrl
-                      : "https://..."
-                  }
-                  defaultValue={showUrl ?? ""}
-                  className={
-                    !isNetworkDefaults && !hasOverride && hasDefault
-                      ? "text-muted-foreground"
-                      : ""
-                  }
-                />
-                {!isNetworkDefaults && !hasOverride && hasDefault && (
-                  <p className="text-[11px] text-muted-foreground">(Network default)</p>
-                )}
-              </div>
-            );
-          })}
+        {/* Account-level fields */}
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {isNetworkDefaults
+              ? "Default Accounts / Channels"
+              : "Account Overrides"}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {accountFields.map(({ key, label, placeholder, help }) => (
+              <PlatformField
+                key={key}
+                fieldKey={key}
+                wpShowId={wpShowId}
+                label={label}
+                placeholder={placeholder}
+                help={help}
+                showUrl={linksByPlatform.get(key)}
+                defaultUrl={defaultsByPlatform.get(key)}
+                isNetworkDefaults={isNetworkDefaults}
+              />
+            ))}
+          </div>
         </div>
+
+        {/* Show-level fields (only for individual shows) */}
+        {showFields.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Show-Specific Links
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {showFields.map(({ key, label, placeholder, help }) => (
+                <PlatformField
+                  key={key}
+                  fieldKey={key}
+                  wpShowId={wpShowId}
+                  label={label}
+                  placeholder={placeholder}
+                  help={help}
+                  showUrl={linksByPlatform.get(key)}
+                  isNetworkDefaults={false}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         {state.message && (
           <p
@@ -127,6 +193,66 @@ export function ShowPlatformLinks({
           )}
         </Button>
       </form>
+    </div>
+  );
+}
+
+function PlatformField({
+  fieldKey,
+  wpShowId,
+  label,
+  placeholder,
+  help,
+  showUrl,
+  defaultUrl,
+  isNetworkDefaults,
+}: {
+  fieldKey: string;
+  wpShowId: number;
+  label: string;
+  placeholder: string;
+  help: string;
+  showUrl?: string;
+  defaultUrl?: string;
+  isNetworkDefaults: boolean;
+}) {
+  const hasOverride = !!showUrl;
+  const hasDefault = !!defaultUrl && !isNetworkDefaults;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <Label htmlFor={`${fieldKey}-${wpShowId}`} className="text-xs">
+          {label}
+        </Label>
+        {!isNetworkDefaults && hasOverride && hasDefault && (
+          <Badge
+            variant="outline"
+            className="text-[10px] px-1.5 py-0"
+          >
+            Override
+          </Badge>
+        )}
+      </div>
+      <Input
+        id={`${fieldKey}-${wpShowId}`}
+        name={`platform_${fieldKey}`}
+        type="url"
+        placeholder={
+          hasDefault && !hasOverride ? defaultUrl : placeholder
+        }
+        defaultValue={showUrl ?? ""}
+        className={
+          !isNetworkDefaults && !hasOverride && hasDefault
+            ? "text-muted-foreground"
+            : ""
+        }
+      />
+      {!isNetworkDefaults && !hasOverride && hasDefault ? (
+        <p className="text-[11px] text-muted-foreground">(Network default)</p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">{help}</p>
+      )}
     </div>
   );
 }

@@ -63,11 +63,17 @@ export async function addStakeholder(
 }
 
 const VALID_LINK_PLATFORMS = [
-  "youtube",
-  "spotify",
-  "apple",
-  "transistor",
+  // Account-level (channel/account)
+  "youtube_channel",
+  "transistor_account",
+  "spotify_account",
+  "apple_account",
   "website",
+  // Show-level (playlist/show)
+  "youtube_playlist",
+  "transistor_show",
+  "spotify_show",
+  "apple_show",
 ] as const;
 
 export async function updateShowPlatformLinks(
