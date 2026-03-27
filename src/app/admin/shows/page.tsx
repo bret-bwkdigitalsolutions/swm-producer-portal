@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShowStakeholderManager } from "./stakeholder-manager";
 import { ShowPlatformLinks } from "./platform-links";
+import { RefreshShowsButton } from "./refresh-shows-button";
 
 export default async function AdminShowsPage() {
   const [shows, allStakeholders, allPlatformLinks] = await Promise.all([
@@ -40,7 +41,10 @@ export default async function AdminShowsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Show Management</h2>
-        <Badge variant="secondary">{shows.length} shows</Badge>
+        <div className="flex items-center gap-3">
+          <RefreshShowsButton />
+          <Badge variant="secondary">{shows.length} shows</Badge>
+        </div>
       </div>
 
       {shows.length === 0 ? (

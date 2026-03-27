@@ -2,6 +2,8 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { revalidateTag } from "next/cache";
+import { revalidatePath } from "next/cache";
 
 interface FormState {
   success?: boolean;
@@ -115,6 +117,20 @@ export async function updateShowPlatformLinks(
     console.error("Failed to update platform links:", error);
     return { success: false, message: "Failed to save platform links." };
   }
+}
+
+export async function refreshShowCache(): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, message: "Unauthorized." };
+  }
+
+  revalidateTag("wp-shows", "max");
+  revalidateTag("wp-taxonomies", "max");
+  revalidatePath("/admin/shows");
+  revalidatePath("/dashboard");
+
+  return { success: true, message: "Cache cleared. Show data refreshed from WordPress." };
 }
 
 export async function removeStakeholder(
