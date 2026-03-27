@@ -1,9 +1,14 @@
-import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default auth((req) => {
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isLoggedIn = !!req.auth;
+
+  // Check for NextAuth session token cookie
+  const token =
+    req.cookies.get("authjs.session-token") ??
+    req.cookies.get("__Secure-authjs.session-token");
+  const isLoggedIn = !!token;
 
   // Protected routes
   const protectedPaths = ["/dashboard", "/settings", "/admin"];
@@ -22,7 +27,7 @@ export default auth((req) => {
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: ["/dashboard/:path*", "/settings/:path*", "/admin/:path*", "/login"],
