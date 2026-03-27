@@ -36,7 +36,7 @@ export async function saveCredential(
   const apiKey = (formData.get("apiKey") as string)?.trim() || null;
   const tokenExpiresAtRaw = formData.get("tokenExpiresAt") as string;
 
-  if (!wpShowId || isNaN(wpShowId)) {
+  if (isNaN(wpShowId) || wpShowId < 0) {
     return { success: false, message: "Invalid show." };
   }
 

@@ -44,15 +44,16 @@ export default async function AdminCredentialsPage() {
   ]);
 
   // Group credentials by show ID
-  const credentialsByShow = new Map<
-    number,
-    typeof allCredentials
-  >();
+  const credentialsByShow = new Map<number, typeof allCredentials>();
   for (const cred of allCredentials) {
     const existing = credentialsByShow.get(cred.wpShowId) ?? [];
     existing.push(cred);
     credentialsByShow.set(cred.wpShowId, existing);
   }
+
+  // Network defaults (wpShowId = 0)
+  const networkCredentials = credentialsByShow.get(0) ?? [];
+  const networkPlatforms = new Set(networkCredentials.map((c) => c.platform));
 
   // Summary counts
   const totalValid = allCredentials.filter((c) => c.status === "valid").length;
@@ -86,6 +87,79 @@ export default async function AdminCredentialsPage() {
         </div>
       </div>
 
+      {/* Network Defaults */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-3">
+            <span>Network Defaults</span>
+            <Badge variant="outline" className="font-mono text-xs">
+              Shared across all shows
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Set API keys here once — they apply to all shows unless a show has
+            its own override.
+          </p>
+
+          {networkCredentials.length > 0 && (
+            <div className="space-y-1.5">
+              {networkCredentials.map((cred) => (
+                <div
+                  key={cred.id}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="flex items-center gap-2">
+                    <StatusDot status={cred.status} />
+                    {PLATFORM_LABELS[cred.platform] ?? cred.platform}
+                  </span>
+                  <Badge
+                    variant={
+                      cred.status === "expired"
+                        ? "destructive"
+                        : cred.status === "expiring_soon"
+                          ? "secondary"
+                          : "outline"
+                    }
+                  >
+                    {cred.credentialType === "oauth" ? "OAuth" : "API Key"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {ALL_PLATFORMS.filter((p) => !networkPlatforms.has(p)).length > 0 && (
+            <div className="space-y-1.5 border-t pt-2">
+              {ALL_PLATFORMS.filter((p) => !networkPlatforms.has(p)).map(
+                (platform) => (
+                  <div
+                    key={platform}
+                    className="flex items-center justify-between text-sm text-muted-foreground"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 rounded-full bg-gray-300" />
+                      {PLATFORM_LABELS[platform]}
+                    </span>
+                    <span className="text-xs">Not set</span>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
+          <div className="pt-2">
+            <Link href="/admin/credentials/0">
+              <Button variant="outline" size="sm" className="w-full">
+                Manage Network Credentials
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Per-show credentials */}
       {shows.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
@@ -99,8 +173,12 @@ export default async function AdminCredentialsPage() {
             const connectedPlatforms = new Set(
               credentials.map((c) => c.platform)
             );
+            // Show which platforms use network defaults
+            const usingDefaults = ALL_PLATFORMS.filter(
+              (p) => !connectedPlatforms.has(p) && networkPlatforms.has(p)
+            );
             const unconnectedPlatforms = ALL_PLATFORMS.filter(
-              (p) => !connectedPlatforms.has(p)
+              (p) => !connectedPlatforms.has(p) && !networkPlatforms.has(p)
             );
 
             return (
@@ -108,13 +186,10 @@ export default async function AdminCredentialsPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span className="truncate">{show.title.rendered}</span>
-                    <Badge variant="outline" className="ml-2 shrink-0 font-mono text-xs">
-                      {credentials.length}/{ALL_PLATFORMS.length}
-                    </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {/* Connected platforms */}
+                  {/* Show-specific credentials */}
                   {credentials.length > 0 && (
                     <div className="space-y-1.5">
                       {credentials.map((cred) => (
@@ -126,25 +201,39 @@ export default async function AdminCredentialsPage() {
                             <StatusDot status={cred.status} />
                             {PLATFORM_LABELS[cred.platform] ?? cred.platform}
                           </span>
-                          <Badge
-                            variant={
-                              cred.status === "expired"
-                                ? "destructive"
-                                : cred.status === "expiring_soon"
-                                  ? "secondary"
-                                  : "outline"
-                            }
-                          >
-                            {cred.credentialType === "oauth"
-                              ? "OAuth"
-                              : "API Key"}
+                          <Badge variant="outline" className="text-[10px]">
+                            Override
                           </Badge>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* Unconnected platforms */}
+                  {/* Using network defaults */}
+                  {usingDefaults.length > 0 && (
+                    <div className="space-y-1.5 border-t pt-2">
+                      {usingDefaults.map((platform) => (
+                        <div
+                          key={platform}
+                          className="flex items-center justify-between text-sm text-muted-foreground"
+                        >
+                          <span className="flex items-center gap-2">
+                            <StatusDot
+                              status={
+                                networkCredentials.find(
+                                  (c) => c.platform === platform
+                                )?.status ?? "valid"
+                              }
+                            />
+                            {PLATFORM_LABELS[platform]}
+                          </span>
+                          <span className="text-[11px]">Network default</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Not connected at all */}
                   {unconnectedPlatforms.length > 0 && (
                     <div className="space-y-1.5 border-t pt-2">
                       {unconnectedPlatforms.map((platform) => (
@@ -165,7 +254,9 @@ export default async function AdminCredentialsPage() {
                   <div className="pt-2">
                     <Link href={`/admin/credentials/${show.id}`}>
                       <Button variant="outline" size="sm" className="w-full">
-                        Manage Credentials
+                        {credentials.length > 0
+                          ? "Manage Overrides"
+                          : "Add Overrides"}
                       </Button>
                     </Link>
                   </div>

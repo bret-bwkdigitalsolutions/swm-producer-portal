@@ -21,25 +21,44 @@ export default async function ShowCredentialsPage({
 }) {
   const { showId: showIdParam } = await params;
   const wpShowId = parseInt(showIdParam, 10);
-  if (isNaN(wpShowId)) {
+  if (isNaN(wpShowId) || wpShowId < 0) {
     notFound();
   }
 
-  const [shows, credentials] = await Promise.all([
+  const isNetworkDefaults = wpShowId === 0;
+
+  const [shows, credentials, networkCredentials] = await Promise.all([
     getCachedShows().catch(() => []),
     db.platformCredential.findMany({
       where: { wpShowId },
       orderBy: { platform: "asc" },
     }),
+    // Fetch network defaults for comparison (not needed for network page itself)
+    isNetworkDefaults
+      ? Promise.resolve([])
+      : db.platformCredential.findMany({
+          where: { wpShowId: 0 },
+          orderBy: { platform: "asc" },
+        }),
   ]);
 
-  const show = shows.find((s) => s.id === wpShowId);
-  if (!show) {
+  const show = isNetworkDefaults
+    ? null
+    : shows.find((s) => s.id === wpShowId);
+
+  if (!isNetworkDefaults && !show) {
     notFound();
   }
 
+  const pageTitle = isNetworkDefaults
+    ? "Network Default Credentials"
+    : show!.title.rendered;
+
   const connectedPlatforms = new Map(
     credentials.map((c) => [c.platform, c])
+  );
+  const networkPlatformMap = new Map(
+    networkCredentials.map((c) => [c.platform, c])
   );
 
   return (
@@ -51,19 +70,34 @@ export default async function ShowCredentialsPage({
               &larr; Back
             </Button>
           </Link>
-          <h2 className="text-2xl font-bold">{show.title.rendered}</h2>
-          <Badge variant="outline" className="font-mono text-xs">
-            ID: {wpShowId}
-          </Badge>
+          <h2 className="text-2xl font-bold">{pageTitle}</h2>
+          {isNetworkDefaults && (
+            <Badge variant="outline" className="text-xs">
+              Applies to all shows
+            </Badge>
+          )}
         </div>
-        <Badge variant="secondary">
-          {credentials.length}/{ALL_PLATFORMS.length} connected
-        </Badge>
       </div>
+
+      {isNetworkDefaults && (
+        <p className="text-sm text-muted-foreground">
+          Set API keys and OAuth tokens here once. All shows will use these
+          unless they have their own override credentials.
+        </p>
+      )}
+
+      {!isNetworkDefaults && (
+        <p className="text-sm text-muted-foreground">
+          Only add credentials here if this show uses a different account than
+          the network default (e.g. Your Dark Companion). Leave empty to use
+          network defaults.
+        </p>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {ALL_PLATFORMS.map((platform) => {
           const cred = connectedPlatforms.get(platform);
+          const networkCred = networkPlatformMap.get(platform);
 
           if (cred) {
             return (
@@ -74,8 +108,27 @@ export default async function ShowCredentialsPage({
                   platform: cred.platform,
                   credentialType: cred.credentialType,
                   status: cred.status,
-                  tokenExpiresAt: cred.tokenExpiresAt?.toISOString() ?? null,
+                  tokenExpiresAt:
+                    cred.tokenExpiresAt?.toISOString() ?? null,
                 }}
+                isOverride={!isNetworkDefaults}
+              />
+            );
+          }
+
+          if (!isNetworkDefaults && networkCred) {
+            return (
+              <CredentialCard
+                key={platform}
+                credential={{
+                  id: networkCred.id,
+                  platform: networkCred.platform,
+                  credentialType: networkCred.credentialType,
+                  status: networkCred.status,
+                  tokenExpiresAt:
+                    networkCred.tokenExpiresAt?.toISOString() ?? null,
+                }}
+                isNetworkDefault
               />
             );
           }
@@ -85,7 +138,11 @@ export default async function ShowCredentialsPage({
       </div>
 
       <div className="border-t pt-6">
-        <h3 className="mb-4 text-lg font-semibold">Add / Edit Credential</h3>
+        <h3 className="mb-4 text-lg font-semibold">
+          {isNetworkDefaults
+            ? "Add / Edit Network Credential"
+            : "Add Show Override"}
+        </h3>
         <CredentialForm
           wpShowId={wpShowId}
           existingCredentials={credentials.map((c) => ({
@@ -95,7 +152,8 @@ export default async function ShowCredentialsPage({
             accessToken: c.accessToken ? "********" : "",
             refreshToken: c.refreshToken ? "********" : "",
             apiKey: c.apiKey ? "********" : "",
-            tokenExpiresAt: c.tokenExpiresAt?.toISOString().slice(0, 16) ?? "",
+            tokenExpiresAt:
+              c.tokenExpiresAt?.toISOString().slice(0, 16) ?? "",
           }))}
         />
       </div>

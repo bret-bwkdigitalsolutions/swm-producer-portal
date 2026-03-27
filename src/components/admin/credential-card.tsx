@@ -54,9 +54,16 @@ interface CredentialCardProps {
     tokenExpiresAt: string | null;
   };
   onEdit?: () => void;
+  isOverride?: boolean;
+  isNetworkDefault?: boolean;
 }
 
-export function CredentialCard({ credential, onEdit }: CredentialCardProps) {
+export function CredentialCard({
+  credential,
+  onEdit,
+  isOverride,
+  isNetworkDefault,
+}: CredentialCardProps) {
   const [deleteState, deleteAction, isDeleting] = useActionState(
     deleteCredential,
     { success: undefined, message: undefined }
@@ -71,6 +78,16 @@ export function CredentialCard({ credential, onEdit }: CredentialCardProps) {
               {PLATFORM_ICONS[credential.platform] ?? "??"}
             </span>
             <span>{PLATFORM_LABELS[credential.platform] ?? credential.platform}</span>
+            {isOverride && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                Override
+              </Badge>
+            )}
+            {isNetworkDefault && (
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                Network default
+              </Badge>
+            )}
           </span>
           <StatusDot status={credential.status} />
         </CardTitle>
@@ -102,24 +119,26 @@ export function CredentialCard({ credential, onEdit }: CredentialCardProps) {
           <p className="text-sm text-red-600">{deleteState.message}</p>
         )}
 
-        <div className="flex items-center gap-2 pt-1">
-          {onEdit && (
-            <Button variant="outline" size="sm" onClick={onEdit}>
-              Edit
-            </Button>
-          )}
-          <form action={deleteAction}>
-            <input type="hidden" name="id" value={credential.id} />
-            <Button
-              variant="destructive"
-              size="sm"
-              type="submit"
-              disabled={isDeleting}
-            >
-              {isDeleting ? "Deleting..." : "Delete"}
-            </Button>
-          </form>
-        </div>
+        {!isNetworkDefault && (
+          <div className="flex items-center gap-2 pt-1">
+            {onEdit && (
+              <Button variant="outline" size="sm" onClick={onEdit}>
+                Edit
+              </Button>
+            )}
+            <form action={deleteAction}>
+              <input type="hidden" name="id" value={credential.id} />
+              <Button
+                variant="destructive"
+                size="sm"
+                type="submit"
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </Button>
+            </form>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
