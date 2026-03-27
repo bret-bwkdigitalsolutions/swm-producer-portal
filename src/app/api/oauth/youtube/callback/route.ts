@@ -6,11 +6,15 @@ import {
   getYouTubeChannelInfo,
 } from "@/lib/youtube-oauth";
 
+function baseUrl(): string {
+  return process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+}
+
 export async function GET(request: NextRequest) {
   // Verify the user is an authenticated admin
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/login", baseUrl()));
   }
 
   const searchParams = request.nextUrl.searchParams;
@@ -23,21 +27,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(
       new URL(
         `/admin/credentials/${wpShowId}?error=${encodeURIComponent(error)}`,
-        request.url
+        baseUrl()
       )
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      new URL("/admin/credentials?error=missing_params", request.url)
+      new URL("/admin/credentials?error=missing_params", baseUrl())
     );
   }
 
   const wpShowId = parseInt(state, 10);
   if (isNaN(wpShowId) || wpShowId < 0) {
     return NextResponse.redirect(
-      new URL("/admin/credentials?error=invalid_show", request.url)
+      new URL("/admin/credentials?error=invalid_show", baseUrl())
     );
   }
 
@@ -76,7 +80,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(
       new URL(
         `/admin/credentials/${wpShowId}?success=${successMsg}`,
-        request.url
+        baseUrl()
       )
     );
   } catch (err) {
@@ -87,7 +91,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(
       new URL(
         `/admin/credentials/${wpShowId}?error=${errorMsg}`,
-        request.url
+        baseUrl()
       )
     );
   }
