@@ -11,7 +11,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
   apple: "Apple Podcasts",
   transistor: "Transistor",
-  podbean: "Podbean",
   patreon: "Patreon",
 };
 
@@ -20,7 +19,6 @@ const PLATFORM_ICONS: Record<string, string> = {
   spotify: "SP",
   apple: "AP",
   transistor: "TR",
-  podbean: "PB",
   patreon: "PA",
 };
 

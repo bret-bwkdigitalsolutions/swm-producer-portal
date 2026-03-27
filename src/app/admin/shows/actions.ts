@@ -60,6 +60,63 @@ export async function addStakeholder(
   }
 }
 
+const VALID_LINK_PLATFORMS = [
+  "youtube",
+  "spotify",
+  "apple",
+  "transistor",
+  "patreon",
+  "website",
+] as const;
+
+export async function updateShowPlatformLinks(
+  prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, message: "Unauthorized." };
+  }
+
+  const wpShowId = parseInt(formData.get("wp_show_id") as string, 10);
+  if (!wpShowId || isNaN(wpShowId)) {
+    return { success: false, message: "Invalid show." };
+  }
+
+  const urlPattern = /^https?:\/\/.+/;
+
+  try {
+    for (const platform of VALID_LINK_PLATFORMS) {
+      const url = (formData.get(`platform_${platform}`) as string)?.trim();
+
+      if (url) {
+        if (!urlPattern.test(url)) {
+          return {
+            success: false,
+            message: `Invalid URL for ${platform}. URLs must start with http:// or https://.`,
+          };
+        }
+
+        await db.showPlatformLink.upsert({
+          where: { wpShowId_platform: { wpShowId, platform } },
+          create: { wpShowId, platform, url },
+          update: { url },
+        });
+      } else {
+        // Remove the link if the URL was cleared
+        await db.showPlatformLink.deleteMany({
+          where: { wpShowId, platform },
+        });
+      }
+    }
+
+    return { success: true, message: "Platform links saved." };
+  } catch (error) {
+    console.error("Failed to update platform links:", error);
+    return { success: false, message: "Failed to save platform links." };
+  }
+}
+
 export async function removeStakeholder(
   prevState: FormState,
   formData: FormData

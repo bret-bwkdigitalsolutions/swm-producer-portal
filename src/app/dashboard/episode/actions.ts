@@ -50,7 +50,6 @@ export async function submitEpisode(
   const durationMinutes = formData.get("duration_minutes") as string | null;
   const vimeoUrl = formData.get("vimeo_url") as string | null;
   const youtubeUrl = formData.get("youtube_url") as string | null;
-  const podbeanUrl = formData.get("podbean_url") as string | null;
   const premiumOnly = formData.get("premium_only") as string;
   const contentWarning = formData.get("content_warning") as string | null;
   const status = formData.get("status") as "publish" | "future";
@@ -81,10 +80,6 @@ export async function submitEpisode(
   if (youtubeUrl?.trim() && !urlPattern.test(youtubeUrl.trim())) {
     errors.youtube_url = ["Please enter a valid URL."];
   }
-  if (podbeanUrl?.trim() && !urlPattern.test(podbeanUrl.trim())) {
-    errors.podbean_url = ["Please enter a valid URL."];
-  }
-
   if (Object.keys(errors).length > 0) {
     return { success: false, message: "Please fix the errors below.", errors };
   }
@@ -109,7 +104,6 @@ export async function submitEpisode(
         ...(durMin !== undefined ? { _swm_duration_minutes: durMin } : {}),
         ...(vimeoUrl?.trim() ? { _swm_vimeo_url: vimeoUrl.trim() } : {}),
         ...(youtubeUrl?.trim() ? { _swm_youtube_url: youtubeUrl.trim() } : {}),
-        ...(podbeanUrl?.trim() ? { _swm_podbean_url: podbeanUrl.trim() } : {}),
         _swm_premium_only: premiumOnly === "true",
         ...(contentWarning?.trim()
           ? { _swm_content_warning: contentWarning.trim() }

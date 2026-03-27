@@ -137,15 +137,6 @@ export function EpisodeForm({ shows }: EpisodeFormProps) {
             placeholder="https://www.youtube.com/watch?v=..."
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="podbean_url">Podbean URL</Label>
-          <Input
-            id="podbean_url"
-            name="podbean_url"
-            type="url"
-            placeholder="https://www.podbean.com/..."
-          />
-        </div>
       </div>
 
       {/* Premium Only Toggle */}
@@ -164,14 +155,17 @@ export function EpisodeForm({ shows }: EpisodeFormProps) {
       </div>
 
       {/* Content Warning */}
-      <div className="space-y-2">
-        <Label htmlFor="content_warning">Content Warning</Label>
-        <Input
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
           id="content_warning"
           name="content_warning"
-          type="text"
-          placeholder="Optional content warning"
+          value="This episode contains mature content including discussions of violence, abuse, or other sensitive topics. Listener discretion is advised."
+          className="rounded border-gray-300"
         />
+        <Label htmlFor="content_warning" className="cursor-pointer text-sm">
+          Contains mature/sensitive content (adds standard content warning)
+        </Label>
       </div>
 
       {/* Publish Toggle */}

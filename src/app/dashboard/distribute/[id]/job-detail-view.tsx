@@ -23,7 +23,6 @@ import {
   RadioIcon,
   HeadphonesIcon,
   CastIcon,
-  MicIcon,
   CrownIcon,
   GlobeIcon,
   SparklesIcon,
@@ -66,7 +65,6 @@ const PLATFORM_ICONS: Record<string, React.ReactNode> = {
   spotify: <RadioIcon className="size-4" />,
   apple: <HeadphonesIcon className="size-4" />,
   transistor: <CastIcon className="size-4" />,
-  podbean: <MicIcon className="size-4" />,
   patreon: <CrownIcon className="size-4" />,
   website: <GlobeIcon className="size-4" />,
 };
@@ -76,7 +74,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
   apple: "Apple Podcasts",
   transistor: "Transistor",
-  podbean: "Podbean",
   patreon: "Patreon",
   website: "Website",
 };

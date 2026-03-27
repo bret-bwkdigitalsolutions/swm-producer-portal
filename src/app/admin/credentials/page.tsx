@@ -11,7 +11,6 @@ const ALL_PLATFORMS = [
   "spotify",
   "apple",
   "transistor",
-  "podbean",
   "patreon",
 ] as const;
 
@@ -20,7 +19,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
   apple: "Apple Podcasts",
   transistor: "Transistor",
-  podbean: "Podbean",
   patreon: "Patreon",
 };
 

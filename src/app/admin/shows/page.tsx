@@ -3,13 +3,15 @@ import { getCachedShows } from "@/lib/wordpress/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShowStakeholderManager } from "./stakeholder-manager";
+import { ShowPlatformLinks } from "./platform-links";
 
 export default async function AdminShowsPage() {
-  const [shows, allStakeholders] = await Promise.all([
+  const [shows, allStakeholders, allPlatformLinks] = await Promise.all([
     getCachedShows().catch(() => []),
     db.showStakeholder.findMany({
       orderBy: { name: "asc" },
     }),
+    db.showPlatformLink.findMany(),
   ]);
 
   // Group stakeholders by show ID
@@ -21,6 +23,17 @@ export default async function AdminShowsPage() {
     const existing = stakeholdersByShow.get(s.wpShowId) ?? [];
     existing.push({ id: s.id, email: s.email, name: s.name });
     stakeholdersByShow.set(s.wpShowId, existing);
+  }
+
+  // Group platform links by show ID
+  const platformLinksByShow = new Map<
+    number,
+    { id: string; platform: string; url: string }[]
+  >();
+  for (const link of allPlatformLinks) {
+    const existing = platformLinksByShow.get(link.wpShowId) ?? [];
+    existing.push({ id: link.id, platform: link.platform, url: link.url });
+    platformLinksByShow.set(link.wpShowId, existing);
   }
 
   return (
@@ -40,6 +53,7 @@ export default async function AdminShowsPage() {
         <div className="space-y-4">
           {shows.map((show) => {
             const stakeholders = stakeholdersByShow.get(show.id) ?? [];
+            const platformLinks = platformLinksByShow.get(show.id) ?? [];
             return (
               <Card key={show.id}>
                 <CardHeader>
@@ -56,12 +70,19 @@ export default async function AdminShowsPage() {
                     )}
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-6">
                   <ShowStakeholderManager
                     wpShowId={show.id}
                     showName={show.title.rendered}
                     stakeholders={stakeholders}
                   />
+                  <div className="border-t pt-4">
+                    <ShowPlatformLinks
+                      wpShowId={show.id}
+                      showName={show.title.rendered}
+                      links={platformLinks}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             );

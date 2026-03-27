@@ -14,7 +14,6 @@ const VALID_PLATFORMS = [
   "spotify",
   "apple",
   "transistor",
-  "podbean",
   "patreon",
 ] as const;
 

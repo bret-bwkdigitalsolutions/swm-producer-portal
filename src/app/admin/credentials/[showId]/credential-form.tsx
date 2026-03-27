@@ -12,7 +12,6 @@ const ALL_PLATFORMS = [
   { value: "spotify", label: "Spotify" },
   { value: "apple", label: "Apple Podcasts" },
   { value: "transistor", label: "Transistor" },
-  { value: "podbean", label: "Podbean" },
   { value: "patreon", label: "Patreon" },
 ];
 

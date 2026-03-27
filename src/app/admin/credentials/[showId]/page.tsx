@@ -12,7 +12,6 @@ const ALL_PLATFORMS = [
   "spotify",
   "apple",
   "transistor",
-  "podbean",
   "patreon",
 ] as const;
 

@@ -25,7 +25,6 @@ import {
   RadioIcon,
   HeadphonesIcon,
   CastIcon,
-  MicIcon,
   CrownIcon,
   GlobeIcon,
 } from "lucide-react";
@@ -47,7 +46,6 @@ const PLATFORMS = [
   { key: "spotify", label: "Spotify", icon: RadioIcon },
   { key: "apple", label: "Apple Podcasts", icon: HeadphonesIcon },
   { key: "transistor", label: "Transistor", icon: CastIcon },
-  { key: "podbean", label: "Podbean", icon: MicIcon },
   { key: "patreon", label: "Patreon", icon: CrownIcon },
   { key: "website", label: "Website", icon: GlobeIcon },
 ] as const;
