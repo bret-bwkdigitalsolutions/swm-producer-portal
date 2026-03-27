@@ -17,13 +17,14 @@ const WP_AUTH = () =>
   ).toString("base64");
 
 // Map portal content types to WP REST API post types
+// These must match the rest_base registered in WordPress
 const POST_TYPE_MAP: Record<string, string> = {
-  [ContentType.REVIEW]: "swm_reviews",
-  [ContentType.TRAILER]: "swm_trailers",
-  [ContentType.APPEARANCE]: "swm_appearances",
-  [ContentType.EPISODE]: "swm_episodes",
-  [ContentType.CASE_DOCUMENT]: "swm_case_docs",
-  [ContentType.SHOW]: "swm_shows",
+  [ContentType.REVIEW]: "swm_review",
+  [ContentType.TRAILER]: "swm_trailer",
+  [ContentType.APPEARANCE]: "swm_appearance",
+  [ContentType.EPISODE]: "swm_episode",
+  [ContentType.CASE_DOCUMENT]: "swm_case_doc",
+  [ContentType.SHOW]: "swm_show",
 };
 
 async function wpFetch<T>(
@@ -52,11 +53,11 @@ async function wpFetch<T>(
 }
 
 export async function getShows(): Promise<WpShow[]> {
-  return wpFetch<WpShow[]>("/swm_shows?per_page=100&_fields=id,title,slug,status,meta,acf");
+  return wpFetch<WpShow[]>("/swm_show?per_page=100&_fields=id,title,slug,status,meta,acf");
 }
 
 export async function getShow(id: number): Promise<WpShow> {
-  return wpFetch<WpShow>(`/swm_shows/${id}`);
+  return wpFetch<WpShow>(`/swm_show/${id}`);
 }
 
 export async function getTaxonomyTerms(

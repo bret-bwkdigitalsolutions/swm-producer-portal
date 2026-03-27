@@ -37,7 +37,7 @@ describe("WordPress client", () => {
     const expectedAuth =
       "Basic " + Buffer.from("testuser:testpass").toString("base64");
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/swm_shows"),
+      expect.stringContaining("/swm_show"),
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: expectedAuth,
@@ -71,7 +71,7 @@ describe("WordPress client", () => {
     const show = await getShow(5);
     expect(show.id).toBe(5);
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/swm_shows/5"),
+      expect.stringContaining("/swm_show/5"),
       expect.any(Object)
     );
   });
