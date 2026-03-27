@@ -13,26 +13,26 @@ const ACCOUNT_PLATFORMS = [
   {
     key: "youtube_channel",
     label: "YouTube Channel",
-    placeholder: "https://www.youtube.com/channel/...",
-    help: "The channel where videos are uploaded",
+    placeholder: "https://www.youtube.com/channel/UC...",
+    help: "The YouTube channel URL where videos are uploaded",
   },
   {
     key: "transistor_account",
-    label: "Transistor Account",
-    placeholder: "https://dashboard.transistor.fm/shows/...",
-    help: "The Transistor account for podcast hosting",
+    label: "Transistor Dashboard",
+    placeholder: "https://dashboard.transistor.fm",
+    help: "Your Transistor dashboard URL (API key goes in Credentials)",
   },
   {
     key: "spotify_account",
-    label: "Spotify Account",
+    label: "Spotify for Podcasters",
     placeholder: "https://podcasters.spotify.com/...",
-    help: "The Spotify for Podcasters account",
+    help: "Your Spotify for Podcasters dashboard",
   },
   {
     key: "apple_account",
-    label: "Apple Podcasts Account",
+    label: "Apple Podcasts Connect",
     placeholder: "https://podcastsconnect.apple.com/...",
-    help: "The Apple Podcasts Connect account",
+    help: "Your Apple Podcasts Connect dashboard",
   },
   {
     key: "website",
@@ -42,19 +42,19 @@ const ACCOUNT_PLATFORMS = [
   },
 ] as const;
 
-// Show-level: where content gets organized WITHIN the account
+// Show-level: the specific show/podcast/playlist within each account
 const SHOW_PLATFORMS = [
   {
     key: "youtube_playlist",
     label: "YouTube Playlist",
-    placeholder: "https://www.youtube.com/playlist?list=...",
-    help: "Videos are added to this playlist after upload",
+    placeholder: "https://www.youtube.com/playlist?list=PL...",
+    help: "The playlist for this show — videos added here after upload",
   },
   {
     key: "transistor_show",
-    label: "Transistor Show URL",
-    placeholder: "https://share.transistor.fm/s/...",
-    help: "The specific show/podcast within Transistor",
+    label: "Transistor Show",
+    placeholder: "https://dashboard.transistor.fm/shows/your-show-name",
+    help: "The show's dashboard URL in Transistor",
   },
   {
     key: "spotify_show",
