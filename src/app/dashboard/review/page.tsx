@@ -8,7 +8,7 @@ export default async function ReviewPage() {
   const session = await requireContentTypeAccess(ContentType.REVIEW);
 
   // Fetch all shows and filter to user's allowed shows
-  const allShows = await getCachedShows();
+  const allShows = await getCachedShows().catch(() => []);
 
   let allowedShows;
   if (session.user.role === "admin") {

@@ -19,7 +19,7 @@ export default async function DistributePage() {
   }
 
   // Fetch the user's allowed shows so we can resolve show names
-  const allShows = await getCachedShows();
+  const allShows = await getCachedShows().catch(() => []);
   let allowedShows;
   if (session.user.role === "admin") {
     allowedShows = allShows;

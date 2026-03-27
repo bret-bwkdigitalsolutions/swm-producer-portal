@@ -11,7 +11,7 @@ export default async function NewDistributionPage() {
     redirect("/dashboard");
   }
 
-  const allShows = await getCachedShows();
+  const allShows = await getCachedShows().catch(() => []);
 
   let allowedShows;
   if (session.user.role === "admin") {

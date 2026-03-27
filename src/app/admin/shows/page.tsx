@@ -6,7 +6,7 @@ import { ShowStakeholderManager } from "./stakeholder-manager";
 
 export default async function AdminShowsPage() {
   const [shows, allStakeholders] = await Promise.all([
-    getCachedShows(),
+    getCachedShows().catch(() => []),
     db.showStakeholder.findMany({
       orderBy: { name: "asc" },
     }),

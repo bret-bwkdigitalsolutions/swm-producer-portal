@@ -34,7 +34,7 @@ export default async function DistributionJobPage({ params }: Props) {
   }
 
   // Resolve show name
-  const allShows = await getCachedShows();
+  const allShows = await getCachedShows().catch(() => []);
   const show = allShows.find((s) => s.id === job.wpShowId);
   const showName = show?.title.rendered ?? `Show #${job.wpShowId}`;
 

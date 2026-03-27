@@ -28,7 +28,7 @@ export default async function ShowCredentialsPage({
   }
 
   const [shows, credentials] = await Promise.all([
-    getCachedShows(),
+    getCachedShows().catch(() => []),
     db.platformCredential.findMany({
       where: { wpShowId },
       orderBy: { platform: "asc" },

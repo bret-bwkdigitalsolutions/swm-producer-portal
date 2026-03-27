@@ -7,7 +7,7 @@ import { TrailerForm } from "@/components/forms/trailer-form";
 export default async function TrailerPage() {
   const session = await requireContentTypeAccess(ContentType.TRAILER);
 
-  const allShows = await getCachedShows();
+  const allShows = await getCachedShows().catch(() => []);
 
   let allowedShows;
   if (session.user.role === "admin") {

@@ -8,9 +8,9 @@ export default async function CaseDocumentPage() {
   const session = await requireContentTypeAccess(ContentType.CASE_DOCUMENT);
 
   const [allShows, caseSeries, docTypes] = await Promise.all([
-    getCachedShows(),
-    getCachedTaxonomyTerms("swm_case_series"),
-    getCachedTaxonomyTerms("swm_doc_type"),
+    getCachedShows().catch(() => []),
+    getCachedTaxonomyTerms("swm_case_series").catch(() => []),
+    getCachedTaxonomyTerms("swm_doc_type").catch(() => []),
   ]);
 
   // Filter shows to producer's allowed set (admins see all)

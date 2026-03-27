@@ -5,7 +5,7 @@ import { ShowForm } from "@/components/forms/show-form";
 export default async function ShowPage() {
   await requireAdmin();
 
-  const existingShows = await getCachedShows();
+  const existingShows = await getCachedShows().catch(() => []);
 
   const showsList = existingShows.map((s) => ({
     id: s.id,

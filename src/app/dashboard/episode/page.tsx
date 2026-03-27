@@ -7,7 +7,7 @@ import { EpisodeForm } from "@/components/forms/episode-form";
 export default async function EpisodePage() {
   const session = await requireContentTypeAccess(ContentType.EPISODE);
 
-  const allShows = await getCachedShows();
+  const allShows = await getCachedShows().catch(() => []);
 
   let allowedShows;
   if (session.user.role === "admin") {

@@ -7,7 +7,7 @@ import { AppearanceForm } from "@/components/forms/appearance-form";
 export default async function AppearancePage() {
   const session = await requireContentTypeAccess(ContentType.APPEARANCE);
 
-  const allShows = await getCachedShows();
+  const allShows = await getCachedShows().catch(() => []);
 
   // Filter shows to only those the producer has access to (admins see all)
   let allowedShows = allShows.map((s) => ({

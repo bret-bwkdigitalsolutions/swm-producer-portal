@@ -41,7 +41,7 @@ function StatusDot({ status }: { status: string }) {
 
 export default async function AdminCredentialsPage() {
   const [shows, allCredentials] = await Promise.all([
-    getCachedShows(),
+    getCachedShows().catch(() => []),
     db.platformCredential.findMany({
       orderBy: { platform: "asc" },
     }),
