@@ -29,7 +29,7 @@ const ALLOWED_MIME_TYPES = new Set([
   "video/quicktime",
 ]);
 
-export async function submitCaseDocument(
+export async function submitCaseDocumentBulk(
   _prevState: FormState,
   formData: FormData
 ): Promise<FormState> {
@@ -38,114 +38,113 @@ export async function submitCaseDocument(
     return { success: false, message: "Not authenticated." };
   }
 
-  // Verify content type access
   const hasContentAccess = await verifyContentTypeAccess(
     session.user.id,
     session.user.role,
     ContentType.CASE_DOCUMENT
   );
   if (!hasContentAccess) {
-    return { success: false, message: "You do not have access to this content type." };
-  }
-
-  // Extract fields
-  const title = (formData.get("title") as string)?.trim();
-  const description = formData.get("description") as string;
-  const caseSeriesId = formData.get("case_series") as string;
-  const docTypeId = formData.get("doc_type") as string;
-  const allowDownload = formData.get("allow_download") === "true";
-  const publishStatus = formData.get("status") as "publish" | "future";
-  const scheduledDate = formData.get("scheduled_date") as string | null;
-
-  // File upload
-  const documentFile = formData.get("document_file") as File | null;
-
-  // Thumbnail (dual mode from ImageInput)
-  const thumbnailFile = formData.get("thumbnail_file") as File | null;
-  const thumbnailUrl = formData.get("thumbnail_url") as string | null;
-
-  // Validation
-  const errors: Record<string, string[]> = {};
-
-  if (!title) errors.title = ["Title is required."];
-  if (!caseSeriesId) errors.case_series = ["Please select a case/series."];
-  if (!docTypeId) errors.doc_type = ["Please select a document type."];
-
-  if (documentFile && documentFile.size > 0) {
-    if (!ALLOWED_MIME_TYPES.has(documentFile.type)) {
-      errors.document_file = [
-        "Unsupported file type. Please upload PDF, DOC, images, audio, or video.",
-      ];
-    }
-    if (documentFile.size > 500 * 1024 * 1024) {
-      errors.document_file = ["File must be under 500MB."];
-    }
-  }
-
-  if (Object.keys(errors).length > 0) {
-    return { success: false, message: "Please fix the errors below.", errors };
-  }
-
-  try {
-    // Upload document file if provided
-    let documentMediaId: number | undefined;
-    if (documentFile && documentFile.size > 0) {
-      const uploaded = await uploadMedia(documentFile);
-      documentMediaId = uploaded.id;
-    }
-
-    // Upload thumbnail if file provided
-    let thumbnailMediaId: number | undefined;
-    if (thumbnailFile && thumbnailFile.size > 0) {
-      const uploaded = await uploadMedia(thumbnailFile);
-      thumbnailMediaId = uploaded.id;
-    }
-
-    // Create post in WordPress
-    const wpPost = await createPost(ContentType.CASE_DOCUMENT, {
-      title,
-      content: description || "",
-      status: publishStatus,
-      ...(publishStatus === "future" && scheduledDate
-        ? { date: scheduledDate }
-        : {}),
-      ...(thumbnailMediaId ? { featured_media: thumbnailMediaId } : {}),
-      // Taxonomy assignments
-      swm_case_series: caseSeriesId ? [Number(caseSeriesId)] : [],
-      swm_doc_type: docTypeId ? [Number(docTypeId)] : [],
-      meta: {
-        _swm_portal_user_id: session.user.id,
-        _swm_document_file: documentMediaId || "",
-        _swm_allow_download: allowDownload,
-        _swm_thumbnail_url: thumbnailUrl || "",
-      },
-    });
-
-    // Log activity
-    await db.activityLog.create({
-      data: {
-        userId: session.user.id,
-        action: "create",
-        contentType: ContentType.CASE_DOCUMENT,
-        wpPostId: wpPost.id,
-      },
-    });
-
-    return {
-      success: true,
-      message:
-        publishStatus === "future"
-          ? "Case document scheduled successfully!"
-          : "Case document published successfully!",
-    };
-  } catch (error) {
-    console.error("Failed to submit case document:", error);
-    if (error instanceof WpApiError) {
-      return { success: false, message: `WordPress error: ${error.message}` };
-    }
     return {
       success: false,
-      message: "Failed to submit case document. Please try again.",
+      message: "You do not have access to this content type.",
     };
   }
+
+  const caseSeriesId = formData.get("case_series") as string;
+  const fileCount = parseInt(formData.get("file_count") as string, 10);
+
+  if (!fileCount || fileCount < 1) {
+    return { success: false, message: "No files selected." };
+  }
+
+  let succeeded = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < fileCount; i++) {
+    const file = formData.get(`file_${i}`) as File | null;
+    const title = (formData.get(`title_${i}`) as string)?.trim();
+    const docTypeId = formData.get(`doc_type_${i}`) as string;
+    const allowDownload = formData.get(`allow_download_${i}`) === "true";
+
+    if (!file || file.size === 0) {
+      errors.push(`File ${i + 1}: No file provided.`);
+      failed++;
+      continue;
+    }
+
+    if (!ALLOWED_MIME_TYPES.has(file.type)) {
+      errors.push(`${file.name}: Unsupported file type.`);
+      failed++;
+      continue;
+    }
+
+    if (file.size > 500 * 1024 * 1024) {
+      errors.push(`${file.name}: File must be under 500MB.`);
+      failed++;
+      continue;
+    }
+
+    try {
+      // Upload file to WordPress media library
+      const uploaded = await uploadMedia(file);
+
+      // Use filename-derived title if none provided
+      const postTitle = title || file.name.replace(/\.[^.]+$/, "");
+
+      // Create post in WordPress
+      const wpPost = await createPost(ContentType.CASE_DOCUMENT, {
+        title: postTitle,
+        status: "publish",
+        ...(caseSeriesId
+          ? { swm_case_series: [Number(caseSeriesId)] }
+          : {}),
+        ...(docTypeId ? { swm_doc_type: [Number(docTypeId)] } : {}),
+        meta: {
+          _swm_portal_user_id: session.user.id,
+          _swm_document_file: uploaded.id,
+          _swm_allow_download: allowDownload,
+        },
+      });
+
+      // Log activity
+      await db.activityLog.create({
+        data: {
+          userId: session.user.id,
+          action: "create",
+          contentType: ContentType.CASE_DOCUMENT,
+          wpPostId: wpPost.id,
+        },
+      });
+
+      succeeded++;
+    } catch (error) {
+      console.error(`Failed to upload ${file.name}:`, error);
+      if (error instanceof WpApiError) {
+        errors.push(`${file.name}: WordPress error — ${error.message}`);
+      } else {
+        errors.push(`${file.name}: Upload failed.`);
+      }
+      failed++;
+    }
+  }
+
+  if (failed === fileCount) {
+    return {
+      success: false,
+      message: `All ${fileCount} uploads failed. ${errors.join(" ")}`,
+    };
+  }
+
+  if (failed > 0) {
+    return {
+      success: true,
+      message: `${succeeded} of ${fileCount} documents uploaded. ${failed} failed: ${errors.join(" ")}`,
+    };
+  }
+
+  return {
+    success: true,
+    message: `${succeeded} document${succeeded !== 1 ? "s" : ""} uploaded successfully!`,
+  };
 }

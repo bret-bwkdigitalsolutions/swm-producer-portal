@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { FormShell } from "@/components/forms/form-shell";
-import { RichTextEditor } from "@/components/forms/rich-text-editor";
-import { ImageInput } from "@/components/forms/image-input";
-import { PublishToggle, PublishState } from "@/components/forms/publish-toggle";
+import { useState, useRef, useCallback, useActionState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -15,9 +18,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { submitCaseDocument } from "@/app/dashboard/case-document/actions";
+import { Switch } from "@/components/ui/switch";
+import { submitCaseDocumentBulk } from "@/app/dashboard/case-document/actions";
 import { cn } from "@/lib/utils";
-import { UploadCloudIcon, FileIcon, XIcon } from "lucide-react";
+import {
+  UploadCloudIcon,
+  FileIcon,
+  XIcon,
+  Loader2Icon,
+  CheckCircle2Icon,
+  AlertCircleIcon,
+} from "lucide-react";
 
 interface TaxonomyOption {
   id: string;
@@ -29,252 +40,318 @@ interface Show {
   title: string;
 }
 
+interface FileEntry {
+  file: File;
+  title: string;
+  docType: string;
+  allowDownload: boolean;
+}
+
 interface CaseDocumentFormProps {
   allowedShows: Show[];
   caseSeries: TaxonomyOption[];
   docTypes: TaxonomyOption[];
 }
 
+function titleFromFilename(filename: string): string {
+  return filename
+    .replace(/\.[^.]+$/, "") // remove extension
+    .replace(/[-_]/g, " ") // replace dashes/underscores with spaces
+    .replace(/\s+/g, " ") // collapse whitespace
+    .trim();
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function CaseDocumentForm({
-  allowedShows,
   caseSeries,
   docTypes,
 }: CaseDocumentFormProps) {
-  const [description, setDescription] = useState("");
   const [caseSeriesValue, setCaseSeriesValue] = useState("");
-  const [docTypeValue, setDocTypeValue] = useState("");
-  const [allowDownload, setAllowDownload] = useState(true);
-  const [publishState, setPublishState] = useState<PublishState>({
-    status: "publish",
-  });
-  const [thumbnail, setThumbnail] = useState<File | string | null>(null);
-  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<FileEntry[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragActive(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      setDocumentFile(file);
-    }
-  }, []);
-
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        setDocumentFile(file);
-      }
+  const addFiles = useCallback(
+    (newFiles: FileList | File[]) => {
+      const entries: FileEntry[] = Array.from(newFiles).map((file) => ({
+        file,
+        title: titleFromFilename(file.name),
+        docType: "",
+        allowDownload: true,
+      }));
+      setFiles((prev) => [...prev, ...entries]);
     },
     []
   );
 
-  const clearFile = useCallback(() => {
-    setDocumentFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragActive(false);
+      if (e.dataTransfer.files.length) {
+        addFiles(e.dataTransfer.files);
+      }
+    },
+    [addFiles]
+  );
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files?.length) {
+        addFiles(e.target.files);
+      }
+      // Reset so same files can be re-selected
+      e.target.value = "";
+    },
+    [addFiles]
+  );
+
+  const removeFile = useCallback((index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  // Wrap server action to inject rich text + file data
-  const actionWithData = async (
+  const updateFile = useCallback(
+    (index: number, updates: Partial<FileEntry>) => {
+      setFiles((prev) =>
+        prev.map((entry, i) => (i === index ? { ...entry, ...updates } : entry))
+      );
+    },
+    []
+  );
+
+  // Build FormData from state and submit
+  const submitAction = async (
     prevState: { success?: boolean; message?: string; errors?: Record<string, string[]> },
-    formData: FormData
+    _formData: FormData
   ) => {
-    formData.set("description", description);
+    const fd = new FormData();
+    fd.set("case_series", caseSeriesValue);
+    fd.set("file_count", String(files.length));
 
-    // Inject document file
-    if (documentFile) {
-      formData.set("document_file", documentFile);
+    for (let i = 0; i < files.length; i++) {
+      const entry = files[i];
+      fd.set(`file_${i}`, entry.file);
+      fd.set(`title_${i}`, entry.title);
+      fd.set(`doc_type_${i}`, entry.docType);
+      fd.set(`allow_download_${i}`, entry.allowDownload ? "true" : "false");
     }
 
-    // Inject thumbnail
-    if (thumbnail instanceof File) {
-      formData.set("thumbnail_file", thumbnail);
-    } else if (typeof thumbnail === "string" && thumbnail) {
-      formData.set("thumbnail_url", thumbnail);
-    }
-
-    const result = await submitCaseDocument(prevState, formData);
+    const result = await submitCaseDocumentBulk(prevState, fd);
     if (result.success) {
-      setDescription("");
+      setFiles([]);
       setCaseSeriesValue("");
-      setDocTypeValue("");
-      setAllowDownload(true);
-      setPublishState({ status: "publish" });
-      setThumbnail(null);
-      setDocumentFile(null);
     }
     return result;
   };
 
+  const [state, formAction, isPending] = useActionState(submitAction, {});
+
+  const canSubmit = caseSeriesValue && files.length > 0;
+
   return (
-    <FormShell
-      title="New Case Document"
-      action={actionWithData}
-      submitLabel="Submit Document"
-    >
-      {/* Title */}
-      <div className="space-y-2">
-        <Label htmlFor="title">
-          Title <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          id="title"
-          name="title"
-          placeholder="Document title"
-          required
-        />
-      </div>
+    <Card className="mx-auto w-full max-w-3xl">
+      <CardHeader>
+        <CardTitle className="text-lg">Upload Case Documents</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Select a case/series, then drop your files. Titles are auto-populated
+          from filenames — edit them inline before submitting.
+        </p>
+      </CardHeader>
 
-      {/* Description (Rich Text) */}
-      <div className="space-y-2">
-        <Label>Description</Label>
-        <RichTextEditor
-          value={description}
-          onChange={setDescription}
-          placeholder="Document description or body content..."
-        />
-      </div>
-
-      {/* Case/Series */}
-      <div className="space-y-2">
-        <Label htmlFor="case_series">
-          Case / Series <span className="text-destructive">*</span>
-        </Label>
-        <Select
-          value={caseSeriesValue}
-          onValueChange={(val: string | null) => {
-            if (val !== null) setCaseSeriesValue(val);
-          }}
-          required
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a case or series" />
-          </SelectTrigger>
-          <SelectContent>
-            {caseSeries.map((term) => (
-              <SelectItem key={term.id} value={term.id}>
-                {term.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <input type="hidden" name="case_series" value={caseSeriesValue} />
-      </div>
-
-      {/* Document Type */}
-      <div className="space-y-2">
-        <Label htmlFor="doc_type">
-          Document Type <span className="text-destructive">*</span>
-        </Label>
-        <Select
-          value={docTypeValue}
-          onValueChange={(val: string | null) => {
-            if (val !== null) setDocTypeValue(val);
-          }}
-          required
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select document type" />
-          </SelectTrigger>
-          <SelectContent>
-            {docTypes.map((term) => (
-              <SelectItem key={term.id} value={term.id}>
-                {term.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <input type="hidden" name="doc_type" value={docTypeValue} />
-      </div>
-
-      {/* File Upload */}
-      <div className="space-y-2">
-        <Label>
-          File
-        </Label>
-        {documentFile ? (
-          <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2">
-            <FileIcon className="size-5 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{documentFile.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {(documentFile.size / (1024 * 1024)).toFixed(1)} MB
-              </p>
+      <form action={formAction}>
+        <CardContent className="space-y-6">
+          {/* Success / Error messages */}
+          {state.success && state.message && (
+            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+              <CheckCircle2Icon className="size-4 shrink-0" />
+              {state.message}
             </div>
-            <button
-              type="button"
-              onClick={clearFile}
-              className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+          {state.success === false && state.message && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <AlertCircleIcon className="size-4 shrink-0" />
+              {state.message}
+            </div>
+          )}
+
+          {/* Case/Series selector */}
+          <div className="space-y-2">
+            <Label>
+              Case / Series <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={caseSeriesValue}
+              onValueChange={(val: string | null) => {
+                if (val !== null) setCaseSeriesValue(val);
+              }}
             >
-              <XIcon className="size-4" />
-            </button>
+              <SelectTrigger className="w-full max-w-sm">
+                <SelectValue placeholder="Select a case or series" />
+              </SelectTrigger>
+              <SelectContent>
+                {caseSeries.length === 0 && (
+                  <SelectItem value="__none" disabled>
+                    No cases/series configured in WordPress
+                  </SelectItem>
+                )}
+                {caseSeries.map((term) => (
+                  <SelectItem key={term.id} value={term.id}>
+                    {term.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {caseSeries.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Case/series taxonomy not yet configured in WordPress. Documents
+                will be uploaded without a case assignment.
+              </p>
+            )}
           </div>
-        ) : (
+
+          {/* Drop zone */}
           <div
             onDragOver={(e) => {
               e.preventDefault();
               setDragActive(true);
             }}
             onDragLeave={() => setDragActive(false)}
-            onDrop={handleFileDrop}
+            onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             className={cn(
-              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors",
+              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors",
               dragActive
                 ? "border-ring bg-accent"
                 : "border-input hover:border-ring/50 hover:bg-muted/50"
             )}
           >
-            <UploadCloudIcon className="size-8 text-muted-foreground" />
+            <UploadCloudIcon className="size-10 text-muted-foreground" />
             <div>
               <p className="text-sm font-medium">
-                Drop file here or click to browse
+                Drop files here or click to browse
               </p>
               <p className="text-xs text-muted-foreground">
-                PDF, DOC, DOCX, images, audio, or video
+                PDF, DOC, DOCX, images, audio, or video — multiple files OK
               </p>
             </div>
           </div>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.doc,.docx,image/*,audio/*,video/*"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-      </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,image/*,audio/*,video/*"
+            onChange={handleFileSelect}
+            multiple
+            className="hidden"
+          />
 
-      {/* Allow Download */}
-      <div className="flex items-center justify-between">
-        <Label htmlFor="allow-download" className="cursor-pointer">
-          Allow download
-        </Label>
-        <Switch
-          id="allow-download"
-          checked={allowDownload}
-          onCheckedChange={setAllowDownload}
-        />
-        <input
-          type="hidden"
-          name="allow_download"
-          value={allowDownload ? "true" : "false"}
-        />
-      </div>
+          {/* File list / review table */}
+          {files.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">
+                  {files.length} file{files.length !== 1 ? "s" : ""} ready
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFiles([])}
+                  className="text-muted-foreground"
+                >
+                  Clear all
+                </Button>
+              </div>
 
-      {/* Thumbnail (optional) */}
-      <ImageInput
-        name="thumbnail"
-        label="Thumbnail (optional)"
-        value={thumbnail}
-        onChange={setThumbnail}
-      />
+              <div className="space-y-2">
+                {files.map((entry, i) => (
+                  <div
+                    key={`${entry.file.name}-${i}`}
+                    className="rounded-lg border border-border bg-muted/20 p-3 space-y-2"
+                  >
+                    {/* File info + remove */}
+                    <div className="flex items-center gap-2">
+                      <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate text-xs text-muted-foreground">
+                        {entry.file.name}{" "}
+                        <span className="text-muted-foreground/60">
+                          ({formatFileSize(entry.file.size)})
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeFile(i)}
+                        className="inline-flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <XIcon className="size-3" />
+                      </button>
+                    </div>
 
-      <PublishToggle value={publishState} onChange={setPublishState} />
-    </FormShell>
+                    {/* Inline edit row */}
+                    <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                      <Input
+                        value={entry.title}
+                        onChange={(e) =>
+                          updateFile(i, { title: e.target.value })
+                        }
+                        placeholder="Document title"
+                        className="h-8 text-sm"
+                      />
+                      <Select
+                        value={entry.docType}
+                        onValueChange={(val: string | null) =>
+                          updateFile(i, { docType: val ?? "" })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-[160px] text-xs">
+                          <SelectValue placeholder="Doc type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {docTypes.map((term) => (
+                            <SelectItem key={term.id} value={term.id}>
+                              {term.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center gap-1.5">
+                        <Switch
+                          size="sm"
+                          checked={entry.allowDownload}
+                          onCheckedChange={(checked: boolean) =>
+                            updateFile(i, { allowDownload: checked })
+                          }
+                        />
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          Download
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+
+        <CardFooter>
+          <Button
+            type="submit"
+            disabled={isPending || !canSubmit}
+            size="lg"
+            className="w-full"
+          >
+            {isPending && <Loader2Icon className="size-4 animate-spin" />}
+            {isPending
+              ? `Uploading ${files.length} document${files.length !== 1 ? "s" : ""}...`
+              : `Upload ${files.length || ""} Document${files.length !== 1 ? "s" : ""}`}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
   );
 }
