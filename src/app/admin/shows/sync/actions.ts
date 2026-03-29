@@ -44,8 +44,7 @@ export async function savePlatformMatches(
         savedCount++;
       } else if (key.startsWith("tr_")) {
         const showId = key.slice(3);
-        const showUrl = formData.get(`tr_url_${showId}`) as string;
-        const url = showUrl || `https://dashboard.transistor.fm/shows/${showId}`;
+        const url = `https://dashboard.transistor.fm/shows/${showId}`;
 
         await db.showPlatformLink.upsert({
           where: { wpShowId_platform: { wpShowId, platform: "transistor_show" } },
