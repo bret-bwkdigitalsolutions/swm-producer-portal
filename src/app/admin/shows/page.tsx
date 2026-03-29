@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { ShowStakeholderManager } from "./stakeholder-manager";
 import { ShowPlatformLinks } from "./platform-links";
 import { RefreshShowsButton } from "./refresh-shows-button";
+import Link from "next/link";
+import { ArrowRightLeftIcon } from "lucide-react";
 
 export default async function AdminShowsPage() {
   const [shows, allStakeholders, allPlatformLinks] = await Promise.all([
@@ -49,6 +51,13 @@ export default async function AdminShowsPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Show Management</h2>
         <div className="flex items-center gap-3">
+          <Link
+            href="/admin/shows/sync"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-background px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowRightLeftIcon className="size-4" />
+            Sync from APIs
+          </Link>
           <RefreshShowsButton />
           <Badge variant="secondary">{shows.length} shows</Badge>
         </div>
