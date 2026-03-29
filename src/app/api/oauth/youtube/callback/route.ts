@@ -49,10 +49,7 @@ export async function GET(request: NextRequest) {
     // Exchange the authorization code for tokens
     const tokens = await exchangeCodeForTokens(code);
 
-    // Get the channel info to verify the connection
-    const channelInfo = await getYouTubeChannelInfo(tokens.accessToken);
-
-    // Store the credential
+    // Store the credential first (before any API calls that might fail)
     await db.platformCredential.upsert({
       where: { wpShowId_platform: { wpShowId, platform: "youtube" } },
       create: {
@@ -73,9 +70,18 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Try to get channel info for the success message (non-blocking)
+    let channelLabel = "YouTube account";
+    try {
+      const channelInfo = await getYouTubeChannelInfo(tokens.accessToken);
+      channelLabel = `${channelInfo.title} (${channelInfo.channelId})`;
+    } catch (channelErr) {
+      console.warn("Could not fetch YouTube channel info:", channelErr);
+    }
+
     // Redirect back with success
     const successMsg = encodeURIComponent(
-      `YouTube connected: ${channelInfo.title} (${channelInfo.channelId})`
+      `YouTube connected: ${channelLabel}`
     );
     return NextResponse.redirect(
       new URL(
