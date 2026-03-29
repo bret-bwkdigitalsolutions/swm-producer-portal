@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import ShowSelector from "@/components/analytics/show-selector";
 import NetworkPicker from "@/components/analytics/network-picker";
 import StatCard from "@/components/analytics/stat-card";
@@ -31,6 +32,8 @@ import type {
 
 export default function AnalyticsOverviewPage() {
   const { from, to } = useDateRange();
+  const searchParams = useSearchParams();
+  const showParam = searchParams.get("show");
 
   const [shows, setShows] = useState<AccessibleShow[]>([]);
   const [selectedShowId, setSelectedShowId] = useState<number | null>(null);
@@ -56,12 +59,15 @@ export default function AnalyticsOverviewPage() {
       ([showsResult, userRole]) => {
         setShows(showsResult);
         setRole(userRole);
-        if (showsResult.length > 0) {
+        const preselected = showParam ? parseInt(showParam, 10) : null;
+        if (preselected && showsResult.some((s) => s.wpShowId === preselected)) {
+          setSelectedShowId(preselected);
+        } else if (showsResult.length > 0) {
           setSelectedShowId(showsResult[0].wpShowId);
         }
       }
     );
-  }, []);
+  }, [showParam]);
 
   const loadPodcastData = useCallback(
     async (wpShowId: number) => {
@@ -130,9 +136,9 @@ export default function AnalyticsOverviewPage() {
     return <p className="text-muted-foreground">Loading...</p>;
   }
 
-  // Admin network picker
+  // Admin network picker (skip if a specific show is selected via URL)
   const networks = getNetworksForRole(role);
-  if (networks.length > 0) {
+  if (networks.length > 0 && !showParam) {
     return (
       <div className="space-y-6">
         <div>
