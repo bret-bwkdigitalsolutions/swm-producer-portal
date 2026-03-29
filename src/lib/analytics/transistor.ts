@@ -34,6 +34,7 @@ async function transistorFetch<T>(
   });
 
   if (!res.ok) {
+    console.error(`[transistor] ${res.status} ${res.statusText} — URL: ${url.toString()} — API key: ${apiKey.substring(0, 8)}...`);
     throw new Error(`Transistor API error: ${res.status} ${res.statusText}`);
   }
 
