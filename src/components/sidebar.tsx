@@ -21,6 +21,7 @@ export function Sidebar({ visibleContentTypes }: SidebarProps) {
         CONTENT_TYPE_LABELS[type as keyof typeof CONTENT_TYPE_LABELS] ?? type,
       href: `/dashboard/${type.replace("_", "-")}`,
     })),
+    { label: "Analytics", href: "/dashboard/analytics" },
     ...(session?.user?.hasDistributionAccess
       ? [{ label: "Episode Distribution", href: "/dashboard/distribute" }]
       : []),
@@ -40,20 +41,26 @@ export function Sidebar({ visibleContentTypes }: SidebarProps) {
         </p>
       </div>
       <nav className="flex-1 space-y-1 px-2">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              pathname === item.href
-                ? "bg-gray-200 text-gray-900"
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-            )}
-          >
-            {item.label}
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          const isActive =
+            item.href === "/dashboard"
+              ? pathname === "/dashboard"
+              : pathname === item.href || pathname.startsWith(item.href + "/");
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-gray-200 text-gray-900"
+                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+              )}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
     </aside>
   );
