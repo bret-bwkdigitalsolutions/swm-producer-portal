@@ -5,19 +5,18 @@ export interface Network {
   credentialWpShowId: number;
 }
 
-// NOTE: Using placeholder show IDs. Real IDs will be populated in Task 10.
 export const NETWORKS: Network[] = [
   {
     slug: "sunset-lounge-dfw",
     name: "Sunset Lounge DFW",
-    wpShowIds: [1, 2, 3, 4, 5, 6, 7], // placeholder IDs
+    wpShowIds: [22, 23, 24, 25, 26, 27, 28],
     credentialWpShowId: 0,
   },
   {
     slug: "your-dark-companion",
     name: "Your Dark Companion",
-    wpShowIds: [8], // placeholder ID
-    credentialWpShowId: 8, // placeholder — same as the single show
+    wpShowIds: [21],
+    credentialWpShowId: 21,
   },
 ];
 
