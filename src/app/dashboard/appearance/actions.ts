@@ -51,7 +51,7 @@ export async function submitAppearance(
   const ticketUrl = formData.get("ticket_url") as string;
   const eventUrl = formData.get("event_url") as string;
   const status = formData.get("appearance_status") as string;
-  const publishStatus = formData.get("status") as "publish" | "future";
+  const publishStatus = formData.get("status") as "publish" | "future" | "draft";
   const scheduledDate = formData.get("scheduled_date") as string | null;
 
   // Validation
@@ -130,9 +130,11 @@ export async function submitAppearance(
 
     return {
       success: true,
-      message: publishStatus === "future"
-        ? "Appearance scheduled successfully!"
-        : "Appearance published successfully!",
+      message: publishStatus === "draft"
+        ? "Appearance saved as draft."
+        : publishStatus === "future"
+          ? "Appearance scheduled successfully!"
+          : "Appearance published successfully!",
     };
   } catch (error) {
     console.error("Failed to submit appearance:", error);

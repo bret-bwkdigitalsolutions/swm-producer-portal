@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
+import { PublishToggle, type PublishState } from "@/components/forms/publish-toggle";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
@@ -55,7 +55,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
   );
   const formRef = useRef<HTMLFormElement>(null);
   const [showId, setShowId] = useState("");
-  const [isScheduled, setIsScheduled] = useState(false);
+  const [publishState, setPublishState] = useState<PublishState>({ status: "publish" });
   const [videoFileName, setVideoFileName] = useState<string | null>(null);
   const [thumbnailFileName, setThumbnailFileName] = useState<string | null>(
     null
@@ -65,7 +65,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
     if (state.success) {
       formRef.current?.reset();
       setShowId("");
-      setIsScheduled(false);
+      setPublishState({ status: "publish" });
       setVideoFileName(null);
       setThumbnailFileName(null);
     }
@@ -232,35 +232,8 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
             </div>
           </fieldset>
 
-          {/* Schedule toggle */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={isScheduled}
-                onCheckedChange={setIsScheduled}
-                id="schedule_toggle"
-              />
-              <Label htmlFor="schedule_toggle" className="cursor-pointer">
-                Schedule for later
-              </Label>
-            </div>
-            <input
-              type="hidden"
-              name="schedule_mode"
-              value={isScheduled ? "schedule" : "now"}
-            />
-            {isScheduled && (
-              <div className="space-y-2">
-                <Label htmlFor="scheduled_at">Scheduled Date &amp; Time</Label>
-                <Input
-                  id="scheduled_at"
-                  name="scheduled_at"
-                  type="datetime-local"
-                  required={isScheduled}
-                />
-              </div>
-            )}
-          </div>
+          {/* Publish mode */}
+          <PublishToggle value={publishState} onChange={setPublishState} />
         </CardContent>
 
         <CardFooter>
@@ -268,9 +241,11 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
             {isPending && <Loader2Icon className="size-4 animate-spin" />}
             {isPending
               ? "Submitting..."
-              : isScheduled
-                ? "Schedule Distribution"
-                : "Distribute Now"}
+              : publishState.status === "draft"
+                ? "Save as Draft (Unlisted)"
+                : publishState.status === "future"
+                  ? "Schedule Distribution"
+                  : "Distribute Now"}
           </Button>
         </CardFooter>
       </form>

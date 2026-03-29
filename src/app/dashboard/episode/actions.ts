@@ -52,7 +52,7 @@ export async function submitEpisode(
   const youtubeUrl = formData.get("youtube_url") as string | null;
   const premiumOnly = formData.get("premium_only") as string;
   const contentWarning = formData.get("content_warning") as string | null;
-  const status = formData.get("status") as "publish" | "future";
+  const status = formData.get("status") as "publish" | "future" | "draft";
   const scheduledDate = formData.get("scheduled_date") as string | null;
 
   // Validate required fields
@@ -127,7 +127,7 @@ export async function submitEpisode(
 
     return {
       success: true,
-      message: `Episode "${title.trim()}" ${status === "future" ? "scheduled" : "published"} successfully.`,
+      message: `Episode "${title.trim()}" ${status === "draft" ? "saved as draft" : status === "future" ? "scheduled" : "published"} successfully.`,
     };
   } catch (error) {
     if (error instanceof WpApiError) {

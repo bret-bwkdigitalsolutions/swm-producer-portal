@@ -46,7 +46,7 @@ export async function submitTrailer(
   const movieTitle = formData.get("movie_title") as string;
   const youtubeUrl = formData.get("youtube_url") as string;
   const releaseDate = formData.get("release_date") as string | null;
-  const status = formData.get("status") as "publish" | "future";
+  const status = formData.get("status") as "publish" | "future" | "draft";
   const scheduledDate = formData.get("scheduled_date") as string | null;
 
   // Validate required fields
@@ -101,7 +101,7 @@ export async function submitTrailer(
 
     return {
       success: true,
-      message: `Trailer "${movieTitle.trim()}" ${status === "future" ? "scheduled" : "published"} successfully.`,
+      message: `Trailer "${movieTitle.trim()}" ${status === "draft" ? "saved as draft" : status === "future" ? "scheduled" : "published"} successfully.`,
     };
   } catch (error) {
     if (error instanceof WpApiError) {

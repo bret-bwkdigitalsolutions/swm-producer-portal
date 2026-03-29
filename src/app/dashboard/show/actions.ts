@@ -30,7 +30,7 @@ export async function submitShow(
   const appleUrl = (formData.get("apple_url") as string)?.trim();
   const websiteUrl = (formData.get("website_url") as string)?.trim();
   const accentColor = (formData.get("accent_color") as string)?.trim();
-  const publishStatus = formData.get("status") as "publish" | "future";
+  const publishStatus = formData.get("status") as "publish" | "future" | "draft";
   const scheduledDate = formData.get("scheduled_date") as string | null;
 
   // Validation
@@ -93,9 +93,11 @@ export async function submitShow(
     return {
       success: true,
       message:
-        publishStatus === "future"
-          ? "Show scheduled successfully!"
-          : "Show created successfully!",
+        publishStatus === "draft"
+          ? "Show saved as draft."
+          : publishStatus === "future"
+            ? "Show scheduled successfully!"
+            : "Show created successfully!",
     };
   } catch (error) {
     console.error("Failed to create show:", error);

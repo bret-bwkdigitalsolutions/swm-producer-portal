@@ -91,12 +91,18 @@ export async function submitDistribution(
         .filter(Boolean)
     : [];
 
+  // Check if this is a draft/test upload
+  const publishStatus = formData.get("status") as string | null;
+  const isDraft = publishStatus === "draft";
+
   // Build metadata JSON
   const metadata = {
     description: description!.trim(),
     tags: parsedTags,
-    scheduleMode: scheduleMode ?? "now",
-    scheduledAt: scheduleMode === "schedule" ? scheduledAt : null,
+    isDraft,
+    scheduleMode: isDraft ? "now" : (scheduleMode ?? "now"),
+    scheduledAt: scheduleMode === "schedule" && !isDraft ? scheduledAt : null,
+    youtubePrivacy: isDraft ? "unlisted" : "public",
     // Thumbnail and video file references will be populated by the upload pipeline
     thumbnailUploaded: (formData.get("thumbnail") as File | null)?.size
       ? true

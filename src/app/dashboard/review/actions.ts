@@ -51,7 +51,7 @@ export async function submitReview(
   const movieTitle = formData.get("movie_title") as string;
   const rating = formData.get("rating") as string;
   const reviewBody = formData.get("review_body") as string;
-  const status = formData.get("status") as "publish" | "future";
+  const status = formData.get("status") as "publish" | "future" | "draft";
   const scheduledDate = formData.get("scheduled_date") as string | null;
 
   // Poster image — can be file or URL
@@ -160,7 +160,7 @@ export async function submitReview(
 
     return {
       success: true,
-      message: `Review "${movieTitle.trim()}" ${status === "future" ? "scheduled" : "published"} successfully.`,
+      message: `Review "${movieTitle.trim()}" ${status === "draft" ? "saved as draft" : status === "future" ? "scheduled" : "published"} successfully.`,
     };
   } catch (error) {
     if (error instanceof WpApiError) {
