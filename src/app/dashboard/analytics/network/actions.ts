@@ -49,6 +49,13 @@ export async function fetchNetworkPodcastAnalytics(
     network.wpShowIds.map((id) => getTransistorShowAnalytics(id, dateRange))
   );
 
+  for (let i = 0; i < allShowData.length; i++) {
+    const result = allShowData[i];
+    if (result.status === "rejected") {
+      console.error(`[network-analytics] Transistor failed for wpShowId=${network.wpShowIds[i]}:`, result.reason?.message ?? result.reason);
+    }
+  }
+
   const dateMap = new Map<string, number>();
   for (const result of allShowData) {
     if (result.status !== "fulfilled") continue;
