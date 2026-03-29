@@ -1,9 +1,8 @@
 import "server-only";
 
 const YOUTUBE_SCOPES = [
-  "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube",
-  "https://www.googleapis.com/auth/youtube.readonly",
+  "https://www.googleapis.com/auth/yt-analytics.readonly",
 ].join(" ");
 
 function getClientId(): string {
@@ -81,6 +80,7 @@ export async function exchangeCodeForTokens(code: string): Promise<{
  */
 export async function refreshAccessToken(refreshToken: string): Promise<{
   accessToken: string;
+  refreshToken: string | null;
   expiresAt: Date;
 }> {
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -103,6 +103,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
 
   return {
     accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? null,
     expiresAt: new Date(Date.now() + data.expires_in * 1000),
   };
 }

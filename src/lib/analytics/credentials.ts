@@ -68,18 +68,28 @@ export async function getYouTubeAccessToken(
     return cred.accessToken;
   }
 
-  const { accessToken, expiresAt } = await refreshAccessToken(cred.refreshToken);
+  try {
+    const { accessToken, refreshToken: newRefreshToken, expiresAt } =
+      await refreshAccessToken(cred.refreshToken);
 
-  await db.platformCredential.update({
-    where: { id: cred.id },
-    data: {
-      accessToken,
-      tokenExpiresAt: expiresAt,
-      status: "valid",
-    },
-  });
+    await db.platformCredential.update({
+      where: { id: cred.id },
+      data: {
+        accessToken,
+        tokenExpiresAt: expiresAt,
+        status: "valid",
+        ...(newRefreshToken ? { refreshToken: newRefreshToken } : {}),
+      },
+    });
 
-  return accessToken;
+    return accessToken;
+  } catch (error) {
+    await db.platformCredential.update({
+      where: { id: cred.id },
+      data: { status: "expired" },
+    });
+    throw error;
+  }
 }
 
 /**
