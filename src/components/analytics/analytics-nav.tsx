@@ -14,6 +14,8 @@ const tabs = [
 export default function AnalyticsNav() {
   const pathname = usePathname();
 
+  if (pathname.startsWith("/dashboard/analytics/network")) return null;
+
   return (
     <nav className="flex gap-1 border-b">
       {tabs.map((tab) => {
