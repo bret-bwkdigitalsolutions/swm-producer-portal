@@ -2,14 +2,17 @@
 
 import { useState, useEffect, useCallback } from "react";
 import ShowSelector from "@/components/analytics/show-selector";
+import NetworkPicker from "@/components/analytics/network-picker";
 import StatCard from "@/components/analytics/stat-card";
 import TimeSeriesChart from "@/components/analytics/charts/time-series-chart";
 import EpisodeTable from "@/components/analytics/episode-table";
 import VideoTable from "@/components/analytics/video-table";
 import { useDateRange } from "@/components/analytics/date-range-provider";
 import { formatNumber } from "@/lib/analytics/date-utils";
+import { getNetworksForRole } from "@/lib/analytics/networks";
 import {
   fetchAccessibleShows,
+  fetchCurrentUserRole,
   fetchPodcastAnalytics,
   fetchPodcastEpisodes,
   fetchYouTubeChannel,
@@ -32,6 +35,7 @@ export default function AnalyticsOverviewPage() {
   const [shows, setShows] = useState<AccessibleShow[]>([]);
   const [selectedShowId, setSelectedShowId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
 
   // Podcast state
   const [podcastData, setPodcastData] = useState<TransistorAnalyticsPoint[]>([]);
@@ -46,14 +50,17 @@ export default function AnalyticsOverviewPage() {
   const [ytLoading, setYtLoading] = useState(false);
   const [ytError, setYtError] = useState(false);
 
-  // Load shows on mount
+  // Load shows and role on mount
   useEffect(() => {
-    fetchAccessibleShows().then((result) => {
-      setShows(result);
-      if (result.length > 0) {
-        setSelectedShowId(result[0].wpShowId);
+    Promise.all([fetchAccessibleShows(), fetchCurrentUserRole()]).then(
+      ([showsResult, userRole]) => {
+        setShows(showsResult);
+        setRole(userRole);
+        if (showsResult.length > 0) {
+          setSelectedShowId(showsResult[0].wpShowId);
+        }
       }
-    });
+    );
   }, []);
 
   const loadPodcastData = useCallback(
@@ -116,6 +123,27 @@ export default function AnalyticsOverviewPage() {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  // Loading state
+  if (role === null) {
+    return <p className="text-muted-foreground">Loading...</p>;
+  }
+
+  // Admin network picker
+  const networks = getNetworksForRole(role);
+  if (networks.length > 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Analytics</h1>
+          <p className="text-sm text-muted-foreground">
+            Select a network to view analytics
+          </p>
+        </div>
+        <NetworkPicker networks={networks} />
+      </div>
+    );
   }
 
   // Derived stats

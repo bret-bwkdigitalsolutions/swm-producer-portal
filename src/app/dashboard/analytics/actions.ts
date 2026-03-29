@@ -52,6 +52,12 @@ export async function fetchAccessibleShows(): Promise<AccessibleShow[]> {
   return getAccessibleShows(session.user.id, session.user.role);
 }
 
+export async function fetchCurrentUserRole(): Promise<string> {
+  const session = await auth();
+  if (!session?.user) return "producer";
+  return session.user.role;
+}
+
 // --- Transistor actions ---
 
 export async function fetchPodcastEpisodes(
