@@ -52,7 +52,7 @@ describe("getTransistorShowAnalytics", () => {
       { date: "2026-03-02", downloads: 150 },
     ]);
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("show_id=12345"),
+      expect.stringContaining("/analytics/12345"),
       expect.objectContaining({
         headers: { "x-api-key": "test-key" },
       })

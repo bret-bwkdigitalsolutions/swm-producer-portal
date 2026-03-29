@@ -34,7 +34,6 @@ async function transistorFetch<T>(
   });
 
   if (!res.ok) {
-    console.error(`[transistor] ${res.status} ${res.statusText} — URL: ${url.toString()} — API key: ${apiKey.substring(0, 8)}...`);
     throw new Error(`Transistor API error: ${res.status} ${res.statusText}`);
   }
 
@@ -100,8 +99,7 @@ export async function getTransistorShowAnalytics(
     async () => {
       const raw = await transistorFetch<{
         data: { attributes: { downloads: TransistorAnalyticsPoint[] } };
-      }>("/analytics", apiKey, {
-        show_id: showId,
+      }>(`/analytics/${showId}`, apiKey, {
         start_date: dateRange.from,
         end_date: dateRange.to,
       });
@@ -144,7 +142,7 @@ export async function getTransistorCountryAnalytics(
     async () => {
       const raw = await transistorFetch<{
         data: { attributes: { countries: TransistorCountryData[] } };
-      }>("/analytics/countries", apiKey, { show_id: showId });
+      }>(`/analytics/${showId}/countries`, apiKey);
       return raw.data?.attributes?.countries ?? [];
     }
   );
@@ -162,7 +160,7 @@ export async function getTransistorAppAnalytics(
     async () => {
       const raw = await transistorFetch<{
         data: { attributes: { applications: TransistorAppData[] } };
-      }>("/analytics/applications", apiKey, { show_id: showId });
+      }>(`/analytics/${showId}/applications`, apiKey);
       return raw.data?.attributes?.applications ?? [];
     }
   );
@@ -180,7 +178,7 @@ export async function getTransistorDeviceAnalytics(
     async () => {
       const raw = await transistorFetch<{
         data: { attributes: { devices: TransistorDeviceData[] } };
-      }>("/analytics/devices", apiKey, { show_id: showId });
+      }>(`/analytics/${showId}/devices`, apiKey);
       return raw.data?.attributes?.devices ?? [];
     }
   );
