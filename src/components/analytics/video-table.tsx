@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import type { YouTubeVideo } from "@/lib/analytics/types";
 import { formatNumber } from "@/lib/analytics/date-utils";
 
@@ -93,7 +92,7 @@ export default function VideoTable({ videos, limit }: VideoTableProps) {
             <tr key={video.id} className="border-b hover:bg-muted/50">
               <td className="px-4 py-3">
                 {video.thumbnailUrl && (
-                  <Image
+                  <img
                     src={video.thumbnailUrl}
                     alt=""
                     width={64}

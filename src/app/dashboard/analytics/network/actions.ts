@@ -21,6 +21,27 @@ import type {
   YouTubeAnalyticsPoint,
 } from "@/lib/analytics/types";
 
+const THROTTLE_MS = 200;
+
+async function throttledMap<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = [];
+  for (const item of items) {
+    try {
+      const value = await fn(item);
+      results.push({ status: "fulfilled", value });
+    } catch (reason) {
+      results.push({ status: "rejected", reason });
+    }
+    if (items.indexOf(item) < items.length - 1) {
+      await new Promise((r) => setTimeout(r, THROTTLE_MS));
+    }
+  }
+  return results;
+}
+
 export interface NetworkShowBreakdown {
   wpShowId: number;
   totalDownloads: number;
@@ -45,8 +66,8 @@ export async function fetchNetworkPodcastAnalytics(
 ): Promise<TransistorAnalyticsPoint[]> {
   const network = await requireAdminForNetwork(slug);
 
-  const allShowData = await Promise.allSettled(
-    network.wpShowIds.map((id) => getTransistorShowAnalytics(id, dateRange))
+  const allShowData = await throttledMap(network.wpShowIds, (id) =>
+    getTransistorShowAnalytics(id, dateRange)
   );
 
   const dateMap = new Map<string, number>();
@@ -67,8 +88,8 @@ export async function fetchNetworkPodcastEpisodes(
 ): Promise<TransistorEpisode[]> {
   const network = await requireAdminForNetwork(slug);
 
-  const allEpisodes = await Promise.allSettled(
-    network.wpShowIds.map((id) => getTransistorEpisodes(id))
+  const allEpisodes = await throttledMap(network.wpShowIds, (id) =>
+    getTransistorEpisodes(id)
   );
 
   const merged: TransistorEpisode[] = [];
@@ -91,25 +112,26 @@ export async function fetchNetworkShowBreakdown(
 ): Promise<NetworkShowBreakdown[]> {
   const network = await requireAdminForNetwork(slug);
 
-  const results = await Promise.all(
-    network.wpShowIds.map(async (wpShowId) => {
-      const [analytics, episodes] = await Promise.allSettled([
-        getTransistorShowAnalytics(wpShowId, dateRange),
-        getTransistorEpisodes(wpShowId),
-      ]);
+  const results = await throttledMap(network.wpShowIds, async (wpShowId) => {
+    const [analyticsResult, episodesResult] = await Promise.allSettled([
+      getTransistorShowAnalytics(wpShowId, dateRange),
+      getTransistorEpisodes(wpShowId),
+    ]);
 
-      const totalDownloads =
-        analytics.status === "fulfilled"
-          ? analytics.value.reduce((sum, p) => sum + p.downloads, 0)
-          : 0;
-      const episodeCount =
-        episodes.status === "fulfilled" ? episodes.value.length : 0;
+    const totalDownloads =
+      analyticsResult.status === "fulfilled"
+        ? analyticsResult.value.reduce((sum, p) => sum + p.downloads, 0)
+        : 0;
+    const episodeCount =
+      episodesResult.status === "fulfilled" ? episodesResult.value.length : 0;
 
-      return { wpShowId, totalDownloads, episodeCount };
-    })
-  );
+    return { wpShowId, totalDownloads, episodeCount };
+  });
 
-  return results.sort((a, b) => b.totalDownloads - a.totalDownloads);
+  return results
+    .filter((r): r is PromiseFulfilledResult<NetworkShowBreakdown> => r.status === "fulfilled")
+    .map((r) => r.value)
+    .sort((a, b) => b.totalDownloads - a.totalDownloads);
 }
 
 export async function fetchNetworkYouTubeChannel(
