@@ -17,6 +17,12 @@ import type {
 
 const BASE_URL = "https://api.transistor.fm/v1";
 
+/** Convert yyyy-mm-dd to dd-mm-yyyy for Transistor API */
+function toTransistorDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-");
+  return `${d}-${m}-${y}`;
+}
+
 async function transistorFetch<T>(
   path: string,
   apiKey: string,
@@ -100,8 +106,8 @@ export async function getTransistorShowAnalytics(
       const raw = await transistorFetch<{
         data: { attributes: { downloads: TransistorAnalyticsPoint[] } };
       }>(`/analytics/${showId}`, apiKey, {
-        start_date: dateRange.from,
-        end_date: dateRange.to,
+        start_date: toTransistorDate(dateRange.from),
+        end_date: toTransistorDate(dateRange.to),
       });
       return raw.data?.attributes?.downloads ?? [];
     }
@@ -122,8 +128,8 @@ export async function getTransistorEpisodeAnalytics(
       const raw = await transistorFetch<{
         data: { attributes: { downloads: TransistorAnalyticsPoint[] } };
       }>(`/analytics/episodes/${episodeId}`, apiKey, {
-        start_date: dateRange.from,
-        end_date: dateRange.to,
+        start_date: toTransistorDate(dateRange.from),
+        end_date: toTransistorDate(dateRange.to),
       });
       return raw.data?.attributes?.downloads ?? [];
     }
