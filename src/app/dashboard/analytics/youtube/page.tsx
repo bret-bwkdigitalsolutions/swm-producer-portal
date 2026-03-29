@@ -9,11 +9,8 @@ import BarChart from "@/components/analytics/charts/bar-chart";
 import DonutChart from "@/components/analytics/charts/donut-chart";
 import AreaChart from "@/components/analytics/charts/area-chart";
 import VideoTable from "@/components/analytics/video-table";
-import YouTubeNetworkBanner from "@/components/analytics/youtube-network-banner";
-import { showHasOwnYouTube } from "@/lib/analytics/networks";
 import {
   fetchAccessibleShows,
-  fetchCurrentUserRole,
   fetchYouTubeChannel,
   fetchYouTubeVideos,
   fetchYouTubeAnalytics,
@@ -35,7 +32,6 @@ export default function YouTubeAnalyticsPage() {
   const [shows, setShows] = useState<AccessibleShow[]>([]);
   const [selectedShowId, setSelectedShowId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<string>("producer");
 
   const [channel, setChannel] = useState<YouTubeChannelStats | null>(null);
   const [videos, setVideos] = useState<YouTubeVideo[]>([]);
@@ -47,16 +43,13 @@ export default function YouTubeAnalyticsPage() {
 
   // Load accessible shows on mount, auto-select first
   useEffect(() => {
-    Promise.all([fetchAccessibleShows(), fetchCurrentUserRole()]).then(
-      ([result, userRole]) => {
-        setShows(result);
-        setRole(userRole);
-        if (result.length > 0) {
-          setSelectedShowId(result[0].wpShowId);
-        }
-        setLoading(false);
+    fetchAccessibleShows().then((result) => {
+      setShows(result);
+      if (result.length > 0) {
+        setSelectedShowId(result[0].wpShowId);
       }
-    );
+      setLoading(false);
+    });
   }, []);
 
   // Fetch channel stats + videos when show changes (non-date-dependent)
@@ -115,22 +108,6 @@ export default function YouTubeAnalyticsPage() {
     return (
       <div className="space-y-6">
         <p className="text-muted-foreground">No shows available.</p>
-      </div>
-    );
-  }
-
-  if (selectedShowId !== null && !showHasOwnYouTube(selectedShowId)) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">YouTube Analytics</h2>
-          <ShowSelector
-            shows={shows}
-            selectedShowId={selectedShowId}
-            onChange={setSelectedShowId}
-          />
-        </div>
-        <YouTubeNetworkBanner wpShowId={selectedShowId} isAdmin={role === "admin"} />
       </div>
     );
   }

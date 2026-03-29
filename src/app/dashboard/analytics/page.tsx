@@ -9,8 +9,7 @@ import EpisodeTable from "@/components/analytics/episode-table";
 import VideoTable from "@/components/analytics/video-table";
 import { useDateRange } from "@/components/analytics/date-range-provider";
 import { formatNumber } from "@/lib/analytics/date-utils";
-import { getNetworksForRole, showHasOwnYouTube } from "@/lib/analytics/networks";
-import YouTubeNetworkBanner from "@/components/analytics/youtube-network-banner";
+import { getNetworksForRole } from "@/lib/analytics/networks";
 import {
   fetchAccessibleShows,
   fetchCurrentUserRole,
@@ -86,12 +85,6 @@ export default function AnalyticsOverviewPage() {
 
   const loadYouTubeData = useCallback(
     async (wpShowId: number) => {
-      if (!showHasOwnYouTube(wpShowId)) {
-        setYtChannel(null);
-        setYtVideos([]);
-        setYtAnalytics([]);
-        return;
-      }
       setYtLoading(true);
       setYtError(false);
       try {
@@ -153,11 +146,9 @@ export default function AnalyticsOverviewPage() {
     );
   }
 
-  const hasYouTube = selectedShowId !== null ? showHasOwnYouTube(selectedShowId) : true;
-
   // Derived stats
   const totalDownloads = podcastData.reduce((sum, p) => sum + p.downloads, 0);
-  const ytTotalViews = ytChannel?.viewCount ?? 0;
+  const ytTotalViews = ytAnalytics.reduce((sum, p) => sum + p.views, 0);
   const watchHours = ytAnalytics.reduce(
     (sum, p) => sum + p.estimatedMinutesWatched,
     0
@@ -199,24 +190,20 @@ export default function AnalyticsOverviewPage() {
           subtitle={`${from} – ${to}`}
           loading={podcastLoading}
         />
-        {hasYouTube && (
-          <StatCard
-            title="YouTube Views (All Time)"
-            value={loading ? "" : formatNumber(ytTotalViews)}
-            subtitle="Channel lifetime"
-            loading={ytLoading}
-          />
-        )}
-        {hasYouTube && (
-          <StatCard
-            title="Watch Hours"
-            value={
-              loading ? "" : formatNumber(Math.round(watchHours / 60))
-            }
-            subtitle={`${from} – ${to}`}
-            loading={ytLoading}
-          />
-        )}
+        <StatCard
+          title="YouTube Views"
+          value={loading ? "" : formatNumber(ytTotalViews)}
+          subtitle={`${from} – ${to}`}
+          loading={ytLoading}
+        />
+        <StatCard
+          title="Watch Hours"
+          value={
+            loading ? "" : formatNumber(Math.round(watchHours / 60))
+          }
+          subtitle={`${from} – ${to}`}
+          loading={ytLoading}
+        />
       </div>
 
       {/* Time Series Charts */}
@@ -243,29 +230,25 @@ export default function AnalyticsOverviewPage() {
         </div>
 
         {/* YouTube Views Chart */}
-        {hasYouTube ? (
-          <div className="rounded-lg border bg-card p-4">
-            <h2 className="mb-4 text-base font-semibold">YouTube Views</h2>
-            {ytError ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Failed to load YouTube data.
-              </p>
-            ) : ytLoading ? (
-              <div className="h-[300px] animate-pulse rounded bg-muted" />
-            ) : (
-              <TimeSeriesChart
-                data={ytAnalytics as unknown as Record<string, unknown>[]}
-                xKey="date"
-                series={[
-                  { dataKey: "views", name: "Views", color: "#f43f5e" },
-                ]}
-                height={300}
-              />
-            )}
-          </div>
-        ) : selectedShowId !== null ? (
-          <YouTubeNetworkBanner wpShowId={selectedShowId} isAdmin={role === "admin"} />
-        ) : null}
+        <div className="rounded-lg border bg-card p-4">
+          <h2 className="mb-4 text-base font-semibold">YouTube Views</h2>
+          {ytError ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Failed to load YouTube data.
+            </p>
+          ) : ytLoading ? (
+            <div className="h-[300px] animate-pulse rounded bg-muted" />
+          ) : (
+            <TimeSeriesChart
+              data={ytAnalytics as unknown as Record<string, unknown>[]}
+              xKey="date"
+              series={[
+                { dataKey: "views", name: "Views", color: "#f43f5e" },
+              ]}
+              height={300}
+            />
+          )}
+        </div>
       </div>
 
       {/* Tables */}
@@ -292,27 +275,25 @@ export default function AnalyticsOverviewPage() {
         </div>
 
         {/* Top Videos */}
-        {hasYouTube ? (
-          <div className="rounded-lg border bg-card p-4">
-            <h2 className="mb-4 text-base font-semibold">Top Videos</h2>
-            {ytError ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Failed to load videos.
-              </p>
-            ) : ytLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-10 animate-pulse rounded bg-muted"
-                  />
-                ))}
-              </div>
-            ) : (
-              <VideoTable videos={ytVideos} limit={10} />
-            )}
-          </div>
-        ) : null}
+        <div className="rounded-lg border bg-card p-4">
+          <h2 className="mb-4 text-base font-semibold">Top Videos</h2>
+          {ytError ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Failed to load videos.
+            </p>
+          ) : ytLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-10 animate-pulse rounded bg-muted"
+                />
+              ))}
+            </div>
+          ) : (
+            <VideoTable videos={ytVideos} limit={10} />
+          )}
+        </div>
       </div>
     </div>
   );

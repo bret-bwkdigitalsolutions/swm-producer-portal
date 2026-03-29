@@ -152,6 +152,129 @@ export async function getYouTubeVideos(
   );
 }
 
+/**
+ * Get all video IDs from a YouTube playlist.
+ */
+export async function getPlaylistVideoIds(
+  wpShowId: number,
+  playlistId: string
+): Promise<string[]> {
+  const accessToken = await requireAccessToken(wpShowId);
+
+  return getCached(
+    `analytics:youtube:${wpShowId}:playlist-videos:${playlistId}`,
+    3600,
+    async () => {
+      const videoIds: string[] = [];
+      let pageToken: string | undefined;
+
+      do {
+        const params: Record<string, string> = {
+          part: "contentDetails",
+          playlistId,
+          maxResults: "50",
+        };
+        if (pageToken) params.pageToken = pageToken;
+
+        const data = await fetchDataApi(accessToken, "/playlistItems", params);
+        for (const item of data.items || []) {
+          if (item.contentDetails?.videoId) {
+            videoIds.push(item.contentDetails.videoId);
+          }
+        }
+        pageToken = data.nextPageToken;
+      } while (pageToken);
+
+      return videoIds;
+    }
+  );
+}
+
+/**
+ * Get YouTube analytics filtered to videos in a specific playlist.
+ */
+export async function getPlaylistAnalytics(
+  wpShowId: number,
+  playlistId: string,
+  dateRange: DateRange
+): Promise<YouTubeAnalyticsPoint[]> {
+  const videoIds = await getPlaylistVideoIds(wpShowId, playlistId);
+  if (videoIds.length === 0) return [];
+
+  const accessToken = await requireAccessToken(wpShowId);
+  const videoFilter = `video==${videoIds.join(",")}`;
+
+  return getCached(
+    `analytics:youtube:${wpShowId}:playlist:${playlistId}:${dateRange.from}:${dateRange.to}`,
+    21600,
+    async () => {
+      const data = await fetchAnalyticsApi(accessToken, {
+        metrics:
+          "views,estimatedMinutesWatched,subscribersGained,subscribersLost",
+        dimensions: "day",
+        filters: videoFilter,
+        startDate: dateRange.from,
+        endDate: dateRange.to,
+      });
+
+      return (data.rows || []).map((row: number[]) => ({
+        date: row[0],
+        views: row[1],
+        estimatedMinutesWatched: row[2],
+        subscribersGained: row[3],
+        subscribersLost: row[4],
+      }));
+    }
+  );
+}
+
+/**
+ * Get videos from a specific playlist with full details.
+ */
+export async function getPlaylistVideos(
+  wpShowId: number,
+  playlistId: string
+): Promise<YouTubeVideo[]> {
+  const accessToken = await requireAccessToken(wpShowId);
+
+  return getCached(
+    `analytics:youtube:${wpShowId}:playlist-details:${playlistId}`,
+    3600,
+    async () => {
+      const videoIds = await getPlaylistVideoIds(wpShowId, playlistId);
+      if (videoIds.length === 0) return [];
+
+      const videos: YouTubeVideo[] = [];
+      for (let i = 0; i < videoIds.length; i += 50) {
+        const chunk = videoIds.slice(i, i + 50);
+        const detailData = await fetchDataApi(accessToken, "/videos", {
+          part: "snippet,statistics,contentDetails",
+          id: chunk.join(","),
+        });
+
+        for (const item of detailData.items || []) {
+          videos.push({
+            id: item.id,
+            title: item.snippet.title,
+            description: item.snippet.description,
+            publishedAt: item.snippet.publishedAt,
+            thumbnailUrl:
+              item.snippet.thumbnails?.medium?.url ||
+              item.snippet.thumbnails?.default?.url ||
+              "",
+            duration: item.contentDetails.duration,
+            viewCount: Number(item.statistics.viewCount || 0),
+            likeCount: Number(item.statistics.likeCount || 0),
+            commentCount: Number(item.statistics.commentCount || 0),
+          });
+        }
+      }
+
+      return videos;
+    }
+  );
+}
+
 export async function getYouTubeChannelAnalytics(
   wpShowId: number,
   dateRange: DateRange

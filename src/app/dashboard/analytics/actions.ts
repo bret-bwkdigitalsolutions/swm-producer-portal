@@ -18,7 +18,10 @@ import {
   getYouTubeVideoAnalytics,
   getYouTubeTrafficSources,
   getYouTubeGeoAnalytics,
+  getPlaylistAnalytics,
+  getPlaylistVideos,
 } from "@/lib/analytics/youtube";
+import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { bustCachePrefix } from "@/lib/analytics/cache";
 import type {
   AccessibleShow,
@@ -107,6 +110,17 @@ export async function fetchPodcastDevices(
 
 // --- YouTube actions ---
 
+async function resolvePlaylistId(wpShowId: number): Promise<string | null> {
+  const url = await resolvePlatformId(wpShowId, "youtube_playlist");
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.searchParams.get("list");
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchYouTubeChannel(
   wpShowId: number
 ): Promise<YouTubeChannelStats> {
@@ -118,6 +132,8 @@ export async function fetchYouTubeVideos(
   wpShowId: number
 ): Promise<YouTubeVideo[]> {
   await requireShowAccess(wpShowId);
+  const playlistId = await resolvePlaylistId(wpShowId);
+  if (playlistId) return getPlaylistVideos(wpShowId, playlistId);
   return getYouTubeVideos(wpShowId);
 }
 
@@ -126,6 +142,8 @@ export async function fetchYouTubeAnalytics(
   dateRange: DateRange
 ): Promise<YouTubeAnalyticsPoint[]> {
   await requireShowAccess(wpShowId);
+  const playlistId = await resolvePlaylistId(wpShowId);
+  if (playlistId) return getPlaylistAnalytics(wpShowId, playlistId, dateRange);
   return getYouTubeChannelAnalytics(wpShowId, dateRange);
 }
 
