@@ -86,7 +86,7 @@ export default function EpisodeDetailPage() {
           </div>
         ) : (
           <TimeSeriesChart
-            data={downloads}
+            data={downloads as unknown as Record<string, unknown>[]}
             xKey="date"
             series={[
               { dataKey: "downloads", name: "Downloads", color: "#6366f1" },
