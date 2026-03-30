@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { jobId?: string };
+  let body: { jobId?: string; skipProcessing?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { jobId } = body;
+  const { jobId, skipProcessing } = body;
   if (!jobId) {
     return NextResponse.json(
       { error: "Missing required field: jobId." },
@@ -47,25 +47,35 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (job.status !== "uploading") {
+  // Allow "uploading" (normal flow) or "pending" (AI path triggering processing after review)
+  const allowedStatuses = ["uploading", "pending"];
+  if (!allowedStatuses.includes(job.status)) {
     return NextResponse.json(
-      { error: `Job is not in uploading state (current: ${job.status}).` },
+      { error: `Job is not in a confirmable state (current: ${job.status}).` },
       { status: 409 }
     );
   }
 
-  if (!job.gcsPath) {
+  if (!job.gcsPath && job.status === "uploading") {
     return NextResponse.json(
       { error: "No file has been uploaded for this job." },
       { status: 400 }
     );
   }
 
-  // Move to pending
-  await db.distributionJob.update({
-    where: { id: jobId },
-    data: { status: "pending" },
-  });
+  // Move to pending if still uploading
+  if (job.status === "uploading") {
+    await db.distributionJob.update({
+      where: { id: jobId },
+      data: { status: "pending" },
+    });
+  }
+
+  // If skipProcessing is set, just mark upload as done without triggering processing
+  // (used by AI path to confirm upload before running analysis)
+  if (skipProcessing) {
+    return NextResponse.json({ success: true, status: "pending" });
+  }
 
   // Check if this is a scheduled post
   const metadata = job.metadata as Record<string, unknown>;

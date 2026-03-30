@@ -8,7 +8,7 @@ import {
   useCallback,
 } from "react";
 import { useRouter } from "next/navigation";
-import { submitDistribution } from "./actions";
+import { submitDistribution, updateDistribution } from "./actions";
 import { ShowSelect } from "@/components/forms/show-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -351,18 +351,47 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
 
   /**
    * AI path: after review, user clicks distribute.
-   * The job already exists and video is uploaded. Just confirm and redirect.
+   * The job already exists and video is uploaded. Update metadata/platforms, then confirm.
    */
   const distributeAfterAi = useCallback(async () => {
-    if (!aiUploadedJobId) return;
+    if (!aiUploadedJobId || !formRef.current) return;
 
     setUploading(true);
     setUploadError(null);
 
     try {
-      // Update the job with the final description, chapters, platforms etc.
-      // We do this by creating a new form submission that the server action handles.
-      // But since the job already exists, we call confirm to trigger processing.
+      // Collect selected platforms from the form checkboxes
+      const fd = new FormData(formRef.current);
+      const selectedPlatforms = PLATFORMS
+        .map((p) => p.key)
+        .filter((key) => fd.get(`platform_${key}`) === "on");
+
+      if (selectedPlatforms.length === 0) {
+        throw new Error("Please select at least one target platform.");
+      }
+
+      // Collect tags
+      const tagsRaw = fd.get("tags") as string | null;
+      const tags = tagsRaw
+        ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
+        : [];
+
+      // Update job with final description, chapters, platforms
+      const updateResult = await updateDistribution(aiUploadedJobId, {
+        description: description.trim(),
+        chapters: chapters.trim() || undefined,
+        tags,
+        platforms: selectedPlatforms,
+        isDraft: publishState.status === "draft",
+        scheduleMode: publishState.status === "future" ? "schedule" : "now",
+        scheduledAt: publishState.status === "future" ? (publishState as any).scheduledDate : null,
+      });
+
+      if (!updateResult.success) {
+        throw new Error(updateResult.message ?? "Failed to update job");
+      }
+
+      // Now confirm to trigger processing
       const confirmRes = await fetch("/api/upload/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -380,7 +409,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
       setUploadError(message);
       setUploading(false);
     }
-  }, [aiUploadedJobId, router]);
+  }, [aiUploadedJobId, description, chapters, publishState, router]);
 
   // Trigger upload after successful manual-path job creation
   useEffect(() => {

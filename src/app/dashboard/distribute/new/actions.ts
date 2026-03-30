@@ -169,3 +169,78 @@ export async function submitDistribution(
     jobId: job.id,
   };
 }
+
+/**
+ * Update a distribution job's metadata and platforms before triggering processing.
+ * Used by the AI path after the producer reviews suggestions and selects final platforms.
+ */
+export async function updateDistribution(
+  jobId: string,
+  data: {
+    description: string;
+    chapters?: string;
+    tags?: string[];
+    platforms: string[];
+    isDraft?: boolean;
+    scheduleMode?: string;
+    scheduledAt?: string | null;
+  }
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user) {
+    return { success: false, message: "Please sign in to continue." };
+  }
+
+  const job = await db.distributionJob.findUnique({
+    where: { id: jobId },
+    select: { id: true, userId: true, metadata: true },
+  });
+
+  if (!job) {
+    return { success: false, message: "Job not found." };
+  }
+
+  if (job.userId !== session.user.id && session.user.role !== "admin") {
+    return { success: false, message: "You do not own this job." };
+  }
+
+  const existingMetadata = job.metadata as Record<string, unknown>;
+
+  await db.$transaction(async (tx) => {
+    // Update job metadata with final description, chapters, tags
+    await tx.distributionJob.update({
+      where: { id: jobId },
+      data: {
+        metadata: {
+          ...existingMetadata,
+          description: data.description,
+          ...(data.chapters ? { chapters: data.chapters } : {}),
+          ...(data.tags ? { tags: data.tags } : {}),
+          isDraft: data.isDraft ?? false,
+          scheduleMode: data.scheduleMode ?? "now",
+          scheduledAt: data.scheduledAt ?? null,
+        },
+      },
+    });
+
+    // Replace platform records with the user's final selection
+    await tx.distributionJobPlatform.deleteMany({
+      where: { jobId },
+    });
+
+    const validPlatforms = VALID_PLATFORMS.filter((p) =>
+      data.platforms.includes(p)
+    );
+    if (validPlatforms.length > 0) {
+      await tx.distributionJobPlatform.createMany({
+        data: validPlatforms.map((platform) => ({
+          jobId,
+          platform,
+          status: "queued" as const,
+        })),
+      });
+    }
+  });
+
+  return { success: true, jobId };
+}
