@@ -1,172 +1,187 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type AiSuggestionType = "chapters" | "summary" | "blog";
 
-interface JobContext {
+interface AnalysisContext {
   title: string;
   description?: string;
-  transcript?: string;
+  transcript?: string; // timestamped transcript text
+  language?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Client singleton
-// ---------------------------------------------------------------------------
 
 let _client: Anthropic | null = null;
 
 function getClient(): Anthropic | null {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return null;
-  }
+  if (!process.env.ANTHROPIC_API_KEY) return null;
   if (!_client) {
     _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
   return _client;
 }
 
-// ---------------------------------------------------------------------------
-// Prompt builders
-// ---------------------------------------------------------------------------
-
-function buildChapterPrompt(ctx: JobContext): string {
-  const source = ctx.transcript
-    ? `Transcript:\n${ctx.transcript}`
-    : `Title: ${ctx.title}\nDescription: ${ctx.description ?? "N/A"}`;
+function buildChapterPrompt(ctx: AnalysisContext): string {
+  if (!ctx.transcript) {
+    return [
+      "You are helping a podcast producer create chapter markers for an episode.",
+      `Episode title: "${ctx.title}"`,
+      `Description: ${ctx.description ?? "N/A"}`,
+      "",
+      "Based on the title and description, suggest a logical chapter structure.",
+      "Format each chapter as: HH:MM:SS - Chapter Title",
+      "Include a brief one-sentence description for each chapter.",
+    ].join("\n");
+  }
 
   return [
     "You are helping a podcast producer create timestamped chapter markers for an episode.",
-    "Analyze the content below and suggest chapter breakdowns with timestamps.",
+    "Analyze the timestamped transcript below and identify natural topic breaks.",
     "Format each chapter as: HH:MM:SS - Chapter Title",
+    "Use the actual timestamps from the transcript. Aim for chapters every 5-15 minutes depending on topic changes.",
     "Include a brief one-sentence description for each chapter.",
-    "If you are working from a title/description only (no transcript), provide your best guess at a logical chapter structure.",
     "",
-    source,
+    `Episode title: "${ctx.title}"`,
+    "",
+    "Transcript:",
+    ctx.transcript,
   ].join("\n");
 }
 
-function buildSummaryPrompt(ctx: JobContext): string {
+function buildSummaryPrompt(ctx: AnalysisContext): string {
   const source = ctx.transcript
     ? `Transcript:\n${ctx.transcript}`
-    : `Title: ${ctx.title}\nDescription: ${ctx.description ?? "N/A"}`;
+    : `Title: "${ctx.title}"\nDescription: ${ctx.description ?? "N/A"}`;
 
   return [
-    "You are helping a podcast producer write a concise episode summary suitable for podcast platforms (Apple Podcasts, Spotify, etc.).",
-    "The summary should be 2-4 sentences, engaging, and optimized for discoverability.",
-    "Do not use markdown formatting. Write plain text only.",
+    "You are helping a podcast producer write an episode summary for podcast platforms (Apple Podcasts, Spotify, YouTube).",
+    "Write a compelling 2-4 sentence summary that:",
+    "- Hooks the listener with what they'll learn or experience",
+    "- Mentions key topics or guests",
+    "- Is optimized for search discoverability",
+    "- Uses plain text only, no markdown",
+    ctx.language === "es"
+      ? "- Write the summary in Spanish since the episode is in Spanish"
+      : "",
     "",
     source,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-function buildBlogPrompt(ctx: JobContext): string {
+function buildBlogPrompt(ctx: AnalysisContext): string {
   const source = ctx.transcript
     ? `Transcript:\n${ctx.transcript}`
-    : `Title: ${ctx.title}\nDescription: ${ctx.description ?? "N/A"}`;
+    : `Title: "${ctx.title}"\nDescription: ${ctx.description ?? "N/A"}`;
 
   return [
-    "You are helping a podcast producer brainstorm companion blog content ideas based on an episode.",
-    "Suggest 2-3 blog post ideas that could complement this episode. For each suggestion provide:",
-    "1. A compelling blog post title",
-    "2. A 2-3 sentence description of what the post would cover",
-    "3. Key SEO keywords to target",
+    "You are an SEO content strategist analyzing a podcast episode to find companion blog post opportunities.",
+    "",
+    "Your goal: identify 2-3 topics that were MENTIONED but NOT deeply explored in the episode.",
+    "These topics should be:",
+    "- Tangential to the episode content, not a retelling of it",
+    "- Interesting enough to stand alone as a blog post",
+    "- Likely to attract search engine and AI traffic",
+    "- Deep enough to write 800-1200 words about",
+    "",
+    "For each suggestion, provide:",
+    "1. A compelling, SEO-optimized blog post title",
+    "2. A 2-3 sentence description of what the post would cover and why it's valuable",
+    "3. 5-8 target SEO keywords",
+    "4. How it connects to the episode (so we can cross-link)",
+    "",
+    "DO NOT suggest posts that simply summarize or recap the episode.",
+    "DO suggest posts that a listener would want to read AFTER hearing the episode to learn more about something that caught their interest.",
     "",
     source,
   ].join("\n");
 }
-
-// ---------------------------------------------------------------------------
-// Core function
-// ---------------------------------------------------------------------------
 
 /**
- * Generate AI suggestions for a distribution job and persist them as
- * AiSuggestion records.
+ * Generate AI suggestions for a distribution job.
  *
- * If the Anthropic API key is not configured the function logs a warning and
- * returns without creating any suggestions.
+ * @param jobId - The distribution job ID
+ * @param transcript - Optional timestamped transcript text
+ * @param language - Optional detected language code
+ * @param types - Which suggestion types to generate (defaults to all)
  */
 export async function generateAiSuggestions(
   jobId: string,
-  transcript?: string | null
+  transcript?: string | null,
+  language?: string | null,
+  types?: AiSuggestionType[]
 ): Promise<void> {
   const client = getClient();
 
   if (!client) {
     console.warn(
-      "[ai-processor] ANTHROPIC_API_KEY is not set. Skipping AI suggestion generation."
+      "[ai-processor] ANTHROPIC_API_KEY is not set. Skipping AI suggestions."
     );
     return;
   }
 
-  // Fetch job context from the database
-  const job = await db.distributionJob.findUnique({
-    where: { id: jobId },
-  });
-
+  const job = await db.distributionJob.findUnique({ where: { id: jobId } });
   if (!job) {
     console.error(`[ai-processor] Job ${jobId} not found.`);
     return;
   }
 
   const metadata = job.metadata as Record<string, unknown>;
-
-  const ctx: JobContext = {
+  const ctx: AnalysisContext = {
     title: job.title,
     description: (metadata.description as string) ?? undefined,
     transcript: transcript ?? undefined,
+    language: language ?? undefined,
   };
 
-  // Generate all three suggestion types in parallel
-  const suggestionConfigs: {
-    type: AiSuggestionType;
-    prompt: string;
-  }[] = [
-    { type: "chapters", prompt: buildChapterPrompt(ctx) },
-    { type: "summary", prompt: buildSummaryPrompt(ctx) },
-    { type: "blog", prompt: buildBlogPrompt(ctx) },
-  ];
+  const typesToGenerate = types ?? ["chapters", "summary", "blog"];
+
+  const suggestionConfigs: { type: AiSuggestionType; prompt: string }[] = [];
+
+  if (typesToGenerate.includes("chapters")) {
+    suggestionConfigs.push({ type: "chapters", prompt: buildChapterPrompt(ctx) });
+  }
+  if (typesToGenerate.includes("summary")) {
+    suggestionConfigs.push({ type: "summary", prompt: buildSummaryPrompt(ctx) });
+  }
+  if (typesToGenerate.includes("blog")) {
+    suggestionConfigs.push({ type: "blog", prompt: buildBlogPrompt(ctx) });
+  }
 
   const results = await Promise.allSettled(
     suggestionConfigs.map(async ({ type, prompt }) => {
       const response = await client.messages.create({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
+        max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       });
 
-      // Extract text from the response
-      const textBlock = response.content.find(
-        (block) => block.type === "text"
-      );
+      const textBlock = response.content.find((b) => b.type === "text");
       const content = textBlock ? textBlock.text : "";
 
-      await db.aiSuggestion.create({
-        data: {
-          jobId,
-          type,
-          content,
-          accepted: false,
+      // Upsert: replace existing suggestion of same type for this job
+      await db.aiSuggestion.upsert({
+        where: {
+          // Use a raw query since there's no compound unique on jobId+type
+          // Fall back to create
+          id: (
+            await db.aiSuggestion.findFirst({
+              where: { jobId, type },
+              select: { id: true },
+            })
+          )?.id ?? "nonexistent",
         },
+        create: { jobId, type, content, accepted: false },
+        update: { content, accepted: false },
       });
 
-      console.log(
-        `[ai-processor] Generated "${type}" suggestion for job ${jobId}`
-      );
+      console.log(`[ai-processor] Generated "${type}" for job ${jobId}`);
     })
   );
 
-  // Log any failures but do not throw — partial results are acceptable
   for (const result of results) {
     if (result.status === "rejected") {
-      console.error(
-        `[ai-processor] Failed to generate suggestion:`,
-        result.reason
-      );
+      console.error("[ai-processor] Failed:", result.reason);
     }
   }
 }
