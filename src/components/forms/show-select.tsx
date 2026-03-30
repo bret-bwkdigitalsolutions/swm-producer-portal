@@ -54,7 +54,13 @@ export function ShowSelect({
       )}
       <Select value={value} onValueChange={handleValueChange(onValueChange)} required={required}>
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Select a show" />
+          <SelectValue placeholder="Select a show">
+            {(selectedValue: string | null) => {
+              if (!selectedValue) return "Select a show";
+              const show = allowedShows.find((s) => s.id === selectedValue);
+              return show?.title ?? selectedValue;
+            }}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {allowedShows.map((show) => (
