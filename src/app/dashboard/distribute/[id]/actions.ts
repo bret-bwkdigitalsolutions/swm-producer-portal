@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { deleteFile } from "@/lib/gcs";
 
 interface FormState {
   success?: boolean;
@@ -156,4 +157,51 @@ export async function retryPlatform(
   revalidatePath(`/dashboard/distribute/${platformJob.job.id}`);
 
   return { success: true, message: `${platformJob.platform} job requeued.` };
+}
+
+/**
+ * Delete a distribution job, its platform records, AI suggestions, and GCS files.
+ */
+export async function deleteJob(jobId: string): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
+  const job = await db.distributionJob.findUnique({
+    where: { id: jobId },
+    select: { id: true, userId: true, gcsPath: true, metadata: true },
+  });
+
+  if (!job) {
+    return { success: false, message: "Job not found." };
+  }
+
+  if (job.userId !== session.user.id && session.user.role !== "admin") {
+    return { success: false, message: "You do not have access to this job." };
+  }
+
+  // Delete GCS files (video + extracted audio if present)
+  if (job.gcsPath) {
+    await deleteFile(job.gcsPath).catch((e) =>
+      console.error("[deleteJob] Failed to delete video from GCS:", e)
+    );
+
+    const metadata = job.metadata as Record<string, unknown>;
+    const audioPath = metadata?.gcsAudioPath as string | undefined;
+    if (audioPath) {
+      await deleteFile(audioPath).catch((e) =>
+        console.error("[deleteJob] Failed to delete audio from GCS:", e)
+      );
+    }
+  }
+
+  // Delete related records then the job itself
+  await db.$transaction(async (tx) => {
+    await tx.aiSuggestion.deleteMany({ where: { jobId } });
+    await tx.distributionJobPlatform.deleteMany({ where: { jobId } });
+    await tx.distributionJob.delete({ where: { id: jobId } });
+  });
+
+  redirect("/dashboard/distribute");
 }

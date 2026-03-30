@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
-import { updateAiSuggestion, retryPlatform } from "./actions";
+import { useActionState, useState } from "react";
+import { updateAiSuggestion, retryPlatform, deleteJob } from "./actions";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +28,7 @@ import {
   FileTextIcon,
   BookOpenIcon,
   ListIcon,
+  Trash2Icon,
 } from "lucide-react";
 
 interface Platform {
@@ -248,6 +249,9 @@ function AiSuggestionCard({ suggestion }: { suggestion: AiSuggestion }) {
 }
 
 export function JobDetailView({ job }: { job: SerializedJob }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const metadata = job.metadata;
   const description = (metadata.description as string) ?? "";
   const tags = (metadata.tags as string[]) ?? [];
@@ -262,6 +266,15 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
     hour: "numeric",
     minute: "2-digit",
   });
+
+  async function handleDelete() {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setDeleting(true);
+    await deleteJob(job.id);
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -280,9 +293,25 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
             {job.showName} &middot; {createdDate}
           </p>
         </div>
-        <Badge className={STATUS_COLORS[job.status] ?? ""}>
-          {STATUS_LABELS[job.status] ?? job.status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge className={STATUS_COLORS[job.status] ?? ""}>
+            {STATUS_LABELS[job.status] ?? job.status}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={deleting}
+            onClick={handleDelete}
+            className={confirmDelete ? "border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground" : ""}
+          >
+            {deleting ? (
+              <Loader2Icon className="size-3.5 animate-spin" />
+            ) : (
+              <Trash2Icon className="size-3.5" />
+            )}
+            {confirmDelete ? "Confirm delete" : "Delete"}
+          </Button>
+        </div>
       </div>
 
       {/* Metadata card */}
