@@ -68,11 +68,8 @@ export async function generateSignedUploadUrl(
   const bucket = storage.bucket(bucketName);
   const file = bucket.file(gcsPath);
 
-  const [url] = await file.getSignedUrl({
-    version: "v4",
-    action: "write",
-    expires: Date.now() + 4 * 60 * 60 * 1000, // 4 hours for large video uploads
-    contentType,
+  const [url] = await file.createResumableUpload({
+    metadata: { contentType },
   });
 
   return { uploadUrl: url, gcsPath };

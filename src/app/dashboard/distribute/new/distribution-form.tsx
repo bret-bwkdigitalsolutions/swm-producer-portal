@@ -97,31 +97,57 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
 
       const { uploadUrl } = await signedUrlRes.json();
 
-      // 2. Upload directly to GCS using XMLHttpRequest for progress tracking
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
+      // 2. Resumable upload to GCS with chunk retry
+      const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks
+      const MAX_RETRIES = 5;
+      let offset = 0;
 
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            setUploadProgress(Math.round((e.loaded / e.total) * 100));
+      while (offset < file.size) {
+        const end = Math.min(offset + CHUNK_SIZE, file.size);
+        const chunk = file.slice(offset, end);
+        const isLastChunk = end === file.size;
+        const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
+
+        let success = false;
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          try {
+            const res = await fetch(uploadUrl, {
+              method: "PUT",
+              headers: {
+                "Content-Range": contentRange,
+                "Content-Type": file.type,
+              },
+              body: chunk,
+            });
+
+            // 308 Resume Incomplete = chunk accepted, continue
+            // 200/201 = upload complete
+            if (res.status === 308 || res.ok) {
+              success = true;
+              break;
+            }
+
+            // 5xx = retryable server error
+            if (res.status >= 500) {
+              await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
+              continue;
+            }
+
+            // 4xx = not retryable
+            throw new Error(`Upload failed with status ${res.status}`);
+          } catch (error) {
+            if (attempt === MAX_RETRIES - 1) throw error;
+            await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
           }
-        };
+        }
 
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
-          }
-        };
+        if (!success) {
+          throw new Error("Upload failed after maximum retries");
+        }
 
-        xhr.onerror = () => reject(new Error("Upload failed — network error"));
-        xhr.onabort = () => reject(new Error("Upload was cancelled"));
-
-        xhr.send(file);
-      });
+        offset = end;
+        setUploadProgress(Math.round((offset / file.size) * 100));
+      }
 
       // 3. Mark job as ready for processing
       const confirmRes = await fetch(`/api/upload/confirm`, {
