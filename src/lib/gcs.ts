@@ -3,21 +3,21 @@ import { Storage } from "@google-cloud/storage";
 let storageInstance: Storage | null = null;
 
 function getStorage(): Storage {
-  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-
-  if (!credentialsPath) {
-    console.warn(
-      "[GCS] GOOGLE_APPLICATION_CREDENTIALS is not set. GCS operations will fail."
-    );
-    throw new Error(
-      "Google Cloud credentials not configured. Set GOOGLE_APPLICATION_CREDENTIALS to the path of your service account key file."
-    );
-  }
-
   if (!storageInstance) {
-    storageInstance = new Storage({
-      keyFilename: credentialsPath,
-    });
+    // Support JSON credentials inline (for Railway/containers) or a file path
+    const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+    if (credentialsJson) {
+      const credentials = JSON.parse(credentialsJson);
+      storageInstance = new Storage({ credentials });
+    } else if (credentialsPath) {
+      storageInstance = new Storage({ keyFilename: credentialsPath });
+    } else {
+      throw new Error(
+        "Google Cloud credentials not configured. Set GCS_CREDENTIALS_JSON (recommended for Railway) or GOOGLE_APPLICATION_CREDENTIALS."
+      );
+    }
   }
 
   return storageInstance;
