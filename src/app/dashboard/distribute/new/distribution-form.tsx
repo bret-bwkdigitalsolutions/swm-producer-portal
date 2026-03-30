@@ -1,6 +1,12 @@
 "use client";
 
-import { useActionState, useState, useRef, useEffect, useCallback } from "react";
+import {
+  useActionState,
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+} from "react";
 import { useRouter } from "next/navigation";
 import { submitDistribution } from "./actions";
 import { ShowSelect } from "@/components/forms/show-select";
@@ -8,7 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PublishToggle, type PublishState } from "@/components/forms/publish-toggle";
+import {
+  PublishToggle,
+  type PublishState,
+} from "@/components/forms/publish-toggle";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
@@ -27,6 +36,9 @@ import {
   HeadphonesIcon,
   CastIcon,
   GlobeIcon,
+  PenLineIcon,
+  SparklesIcon,
+  BookOpenIcon,
 } from "lucide-react";
 
 interface Show {
@@ -41,6 +53,15 @@ interface FormState {
   jobId?: string;
 }
 
+interface AiSuggestion {
+  id: string;
+  type: "chapters" | "summary" | "blog";
+  content: string;
+  accepted: boolean;
+}
+
+type DescriptionMode = "manual" | "ai" | null;
+
 const PLATFORMS = [
   { key: "youtube", label: "YouTube", icon: MonitorPlayIcon },
   { key: "spotify", label: "Spotify", icon: RadioIcon },
@@ -48,6 +69,9 @@ const PLATFORMS = [
   { key: "transistor", label: "Transistor", icon: CastIcon },
   { key: "website", label: "Website", icon: GlobeIcon },
 ] as const;
+
+const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB
+const MAX_RETRIES = 5;
 
 export function DistributionForm({ shows }: { shows: Show[] }) {
   const router = useRouter();
@@ -58,148 +82,328 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
   const formRef = useRef<HTMLFormElement>(null);
   const videoFileRef = useRef<File | null>(null);
   const [showId, setShowId] = useState("");
-  const [publishState, setPublishState] = useState<PublishState>({ status: "publish" });
+  const [title, setTitle] = useState("");
+  const [publishState, setPublishState] = useState<PublishState>({
+    status: "publish",
+  });
   const [videoFileName, setVideoFileName] = useState<string | null>(null);
   const [videoFileSize, setVideoFileSize] = useState<number>(0);
   const [videoContentType, setVideoContentType] = useState<string>("");
-  const [thumbnailFileName, setThumbnailFileName] = useState<string | null>(null);
+  const [thumbnailFileName, setThumbnailFileName] = useState<string | null>(
+    null
+  );
 
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // After job is created, upload video to GCS
+  // Two-path description state
+  const [descriptionMode, setDescriptionMode] = useState<DescriptionMode>(null);
+  const [description, setDescription] = useState("");
+  const [chapters, setChapters] = useState("");
+
+  // AI analysis state
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState("");
+  const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  // Track whether upload was done for AI path (video uploaded before form submit)
+  const [aiUploadedJobId, setAiUploadedJobId] = useState<string | null>(null);
+
+  /**
+   * Upload video to GCS via resumable upload. Returns when upload is complete.
+   * Does NOT call /api/upload/confirm — caller decides what to do next.
+   */
   const uploadVideoToGCS = useCallback(async (jobId: string) => {
     const file = videoFileRef.current;
-    if (!file) return;
+    if (!file) throw new Error("No video file selected");
 
     setUploading(true);
     setUploadProgress(0);
     setUploadError(null);
 
+    // 1. Get signed upload URL
+    const signedUrlRes = await fetch("/api/upload/signed-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type,
+        jobId,
+      }),
+    });
+
+    if (!signedUrlRes.ok) {
+      const err = await signedUrlRes.json();
+      throw new Error(err.error ?? "Failed to get upload URL");
+    }
+
+    const { uploadUrl } = await signedUrlRes.json();
+
+    // 2. Initiate resumable upload session
+    const sessionUri = await new Promise<string>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", uploadUrl);
+      xhr.setRequestHeader("Content-Type", file.type);
+      xhr.setRequestHeader("x-goog-resumable", "start");
+      xhr.setRequestHeader("Content-Length", "0");
+
+      xhr.onload = () => {
+        const location = xhr.getResponseHeader("Location");
+        if (xhr.status === 201 && location) {
+          resolve(location);
+        } else {
+          reject(
+            new Error(
+              `Failed to initiate upload session (status ${xhr.status})`
+            )
+          );
+        }
+      };
+      xhr.onerror = () =>
+        reject(new Error("Network error initiating upload session"));
+      xhr.send();
+    });
+
+    // 3. Upload chunks
+    let offset = 0;
+    while (offset < file.size) {
+      const end = Math.min(offset + CHUNK_SIZE, file.size);
+      const chunk = file.slice(offset, end);
+      const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
+
+      let success = false;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          const status = await new Promise<number>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("PUT", sessionUri);
+            xhr.setRequestHeader("Content-Range", contentRange);
+            xhr.onload = () => resolve(xhr.status);
+            xhr.onerror = () =>
+              reject(new Error("Network error during chunk upload"));
+            xhr.onabort = () => reject(new Error("Upload was cancelled"));
+            xhr.send(chunk);
+          });
+
+          if (status === 308 || (status >= 200 && status < 300)) {
+            success = true;
+            break;
+          }
+          if (status >= 500) {
+            await new Promise((r) =>
+              setTimeout(r, Math.pow(2, attempt) * 1000)
+            );
+            continue;
+          }
+          throw new Error(`Upload failed with status ${status}`);
+        } catch (error) {
+          if (attempt === MAX_RETRIES - 1) throw error;
+          await new Promise((r) =>
+            setTimeout(r, Math.pow(2, attempt) * 1000)
+          );
+        }
+      }
+
+      if (!success) {
+        throw new Error("Upload failed after maximum retries");
+      }
+
+      offset = end;
+      setUploadProgress(Math.round((offset / file.size) * 100));
+    }
+
+    setUploading(false);
+  }, []);
+
+  /**
+   * AI path: create job -> upload video -> analyze -> show suggestions
+   */
+  const startAiAnalysis = useCallback(async () => {
+    // We need a job first. Submit the form data programmatically
+    // to create the job, then upload + analyze.
+    if (!formRef.current) return;
+
+    setAnalyzing(true);
+    setAnalysisError(null);
+    setSuggestions([]);
+    setAnalysisStep("Creating job...");
+
     try {
-      // 1. Get signed upload URL
-      const signedUrlRes = await fetch("/api/upload/signed-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type,
-          jobId,
-        }),
-      });
+      // Build FormData from current state for job creation
+      const fd = new FormData();
+      fd.set("show_id", showId);
+      fd.set("title", title);
+      fd.set("description", "AI-generated description pending");
+      fd.set("video_file_name", videoFileName ?? "");
+      fd.set("video_file_size", videoFileSize.toString());
+      fd.set("video_content_type", videoContentType);
+      // Need at least one platform for validation - use youtube as placeholder
+      // The actual platforms will be set when the form is submitted for real
+      fd.set("platform_youtube", "on");
+      if (publishState.status === "draft") fd.set("status", "draft");
 
-      if (!signedUrlRes.ok) {
-        const err = await signedUrlRes.json();
-        throw new Error(err.error ?? "Failed to get upload URL");
+      // Create the job via server action
+      const result = await submitDistribution({}, fd);
+      if (!result.success || !result.jobId) {
+        throw new Error(result.message ?? "Failed to create job");
       }
 
-      const { uploadUrl } = await signedUrlRes.json();
+      const jobId = result.jobId;
+      setAiUploadedJobId(jobId);
 
-      // 2. Initiate resumable upload session via POST to signed URL
-      const sessionUri = await new Promise<string>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", uploadUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.setRequestHeader("x-goog-resumable", "start");
-        xhr.setRequestHeader("Content-Length", "0");
+      // Upload video
+      setAnalysisStep("Uploading video...");
+      await uploadVideoToGCS(jobId);
 
-        xhr.onload = () => {
-          const location = xhr.getResponseHeader("Location");
-          if (xhr.status === 201 && location) {
-            resolve(location);
-          } else {
-            reject(new Error(`Failed to initiate upload session (status ${xhr.status})`));
-          }
-        };
-        xhr.onerror = () => reject(new Error("Network error initiating upload session"));
-        xhr.send();
-      });
-
-      // 3. Upload chunks to the session URI
-      const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks
-      const MAX_RETRIES = 5;
-      let offset = 0;
-
-      while (offset < file.size) {
-        const end = Math.min(offset + CHUNK_SIZE, file.size);
-        const chunk = file.slice(offset, end);
-        const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
-
-        let success = false;
-        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-          try {
-            const status = await new Promise<number>((resolve, reject) => {
-              const xhr = new XMLHttpRequest();
-              xhr.open("PUT", sessionUri);
-              xhr.setRequestHeader("Content-Range", contentRange);
-
-              xhr.onload = () => resolve(xhr.status);
-              xhr.onerror = () => reject(new Error("Network error during chunk upload"));
-              xhr.onabort = () => reject(new Error("Upload was cancelled"));
-
-              xhr.send(chunk);
-            });
-
-            // 308 Resume Incomplete = chunk accepted, continue
-            // 200/201 = upload complete
-            if (status === 308 || (status >= 200 && status < 300)) {
-              success = true;
-              break;
-            }
-
-            // 5xx = retryable server error
-            if (status >= 500) {
-              await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
-              continue;
-            }
-
-            // 4xx = not retryable
-            throw new Error(`Upload failed with status ${status}`);
-          } catch (error) {
-            if (attempt === MAX_RETRIES - 1) throw error;
-            await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
-          }
-        }
-
-        if (!success) {
-          throw new Error("Upload failed after maximum retries");
-        }
-
-        offset = end;
-        setUploadProgress(Math.round((offset / file.size) * 100));
-      }
-
-      // 3. Mark job as ready for processing
-      const confirmRes = await fetch(`/api/upload/confirm`, {
+      // Mark upload complete (sets gcsPath on server)
+      setAnalysisStep("Extracting audio...");
+      const confirmRes = await fetch("/api/upload/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId }),
+        body: JSON.stringify({ jobId, skipProcessing: true }),
       });
-
       if (!confirmRes.ok) {
         const err = await confirmRes.json();
         throw new Error(err.error ?? "Failed to confirm upload");
       }
 
-      // Success — redirect to job detail page
-      router.push(`/dashboard/distribute/${jobId}`);
+      // Run AI analysis
+      setAnalysisStep("Transcribing... this may take a few minutes");
+      const analyzeRes = await fetch("/api/distribute/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+
+      if (!analyzeRes.ok) {
+        const err = await analyzeRes.json();
+        throw new Error(err.error ?? "Analysis failed");
+      }
+
+      setAnalysisStep("Generating recommendations...");
+      const data = await analyzeRes.json();
+      const aiSuggestions: AiSuggestion[] = data.suggestions ?? [];
+      setSuggestions(aiSuggestions);
+
+      // Pre-populate description and chapters from suggestions
+      const summarySuggestion = aiSuggestions.find((s) => s.type === "summary");
+      if (summarySuggestion) {
+        setDescription(summarySuggestion.content);
+      }
+      const chaptersSuggestion = aiSuggestions.find(
+        (s) => s.type === "chapters"
+      );
+      if (chaptersSuggestion) {
+        setChapters(chaptersSuggestion.content);
+      }
+
+      setAnalysisStep("");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Upload failed";
+      const message =
+        error instanceof Error ? error.message : "Analysis failed";
+      setAnalysisError(message);
+      setAnalysisStep("");
+    } finally {
+      setAnalyzing(false);
+      setUploading(false);
+    }
+  }, [
+    showId,
+    title,
+    videoFileName,
+    videoFileSize,
+    videoContentType,
+    publishState.status,
+    uploadVideoToGCS,
+  ]);
+
+  /**
+   * Manual path: after form submission creates a job, upload + confirm + redirect
+   */
+  const uploadAndConfirmManual = useCallback(
+    async (jobId: string) => {
+      try {
+        await uploadVideoToGCS(jobId);
+
+        const confirmRes = await fetch("/api/upload/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        });
+        if (!confirmRes.ok) {
+          const err = await confirmRes.json();
+          throw new Error(err.error ?? "Failed to confirm upload");
+        }
+
+        router.push(`/dashboard/distribute/${jobId}`);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Upload failed";
+        setUploadError(message);
+        setUploading(false);
+      }
+    },
+    [uploadVideoToGCS, router]
+  );
+
+  /**
+   * AI path: after review, user clicks distribute.
+   * The job already exists and video is uploaded. Just confirm and redirect.
+   */
+  const distributeAfterAi = useCallback(async () => {
+    if (!aiUploadedJobId) return;
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      // Update the job with the final description, chapters, platforms etc.
+      // We do this by creating a new form submission that the server action handles.
+      // But since the job already exists, we call confirm to trigger processing.
+      const confirmRes = await fetch("/api/upload/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: aiUploadedJobId }),
+      });
+      if (!confirmRes.ok) {
+        const err = await confirmRes.json();
+        throw new Error(err.error ?? "Failed to start distribution");
+      }
+
+      router.push(`/dashboard/distribute/${aiUploadedJobId}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Distribution failed";
       setUploadError(message);
       setUploading(false);
     }
-  }, [router]);
+  }, [aiUploadedJobId, router]);
 
-  // Trigger upload after successful job creation
+  // Trigger upload after successful manual-path job creation
   useEffect(() => {
-    if (state.success && state.jobId) {
-      uploadVideoToGCS(state.jobId);
+    if (
+      state.success &&
+      state.jobId &&
+      descriptionMode === "manual" &&
+      !aiUploadedJobId
+    ) {
+      uploadAndConfirmManual(state.jobId);
     }
-  }, [state.success, state.jobId, uploadVideoToGCS]);
+  }, [
+    state.success,
+    state.jobId,
+    descriptionMode,
+    aiUploadedJobId,
+    uploadAndConfirmManual,
+  ]);
 
-  const isDisabled = isPending || uploading;
+  const isDisabled = isPending || uploading || analyzing;
+  const showModeChoice = !!videoFileName && title.trim().length > 0 && !descriptionMode;
+  const blogSuggestions = suggestions.filter((s) => s.type === "blog");
+  const aiReady = descriptionMode === "ai" && suggestions.length > 0 && !analyzing;
 
   return (
     <Card className="mx-auto w-full max-w-2xl">
@@ -207,20 +411,40 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
         <CardTitle className="text-lg">New Episode Distribution</CardTitle>
       </CardHeader>
 
-      <form ref={formRef} action={formAction}>
+      <form
+        ref={formRef}
+        action={formAction}
+        onSubmit={(e) => {
+          // For AI path, prevent default form submission and handle manually
+          if (descriptionMode === "ai" && aiUploadedJobId) {
+            e.preventDefault();
+            distributeAfterAi();
+          }
+        }}
+      >
         <CardContent className="space-y-6">
           {/* Upload progress */}
           {uploading && (
             <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3">
               <div className="flex items-center gap-2 text-sm text-blue-800">
                 <Loader2Icon className="size-4 animate-spin" />
-                Uploading video... {uploadProgress}%
+                {analysisStep || `Uploading video... ${uploadProgress}%`}
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-blue-200">
                 <div
                   className="h-full rounded-full bg-blue-600 transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* AI analysis progress (not during upload phase) */}
+          {analyzing && !uploading && (
+            <div className="space-y-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-3">
+              <div className="flex items-center gap-2 text-sm text-purple-800">
+                <Loader2Icon className="size-4 animate-spin" />
+                {analysisStep}
               </div>
             </div>
           )}
@@ -233,13 +457,25 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
             </div>
           )}
 
-          {/* Success message (before upload starts) */}
-          {state.success && state.message && !uploading && !uploadError && (
-            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800 dark:border-green-800/50 dark:bg-green-950/30 dark:text-green-300">
-              <CheckCircle2Icon className="size-4 shrink-0" />
-              {state.message}
+          {/* Analysis error */}
+          {analysisError && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <AlertCircleIcon className="size-4 shrink-0" />
+              {analysisError}
             </div>
           )}
+
+          {/* Success message (manual path, before upload starts) */}
+          {state.success &&
+            state.message &&
+            !uploading &&
+            !uploadError &&
+            descriptionMode === "manual" && (
+              <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800 dark:border-green-800/50 dark:bg-green-950/30 dark:text-green-300">
+                <CheckCircle2Icon className="size-4 shrink-0" />
+                {state.message}
+              </div>
+            )}
 
           {/* Error message */}
           {state.success === false && state.message && (
@@ -272,7 +508,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
             onValueChange={setShowId}
           />
 
-          {/* Video file select (not uploaded via form — stored in ref) */}
+          {/* Video file select */}
           <div className="space-y-2">
             <Label htmlFor="video_file">
               Video File <span className="text-destructive">*</span>
@@ -301,21 +537,33 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
                   setVideoFileName(file?.name ?? null);
                   setVideoFileSize(file?.size ?? 0);
                   setVideoContentType(file?.type ?? "");
+                  // Reset mode if video changes
+                  setDescriptionMode(null);
+                  setSuggestions([]);
+                  setAiUploadedJobId(null);
                 }}
               />
             </label>
           </div>
 
-          {/* Hidden fields for video metadata (sent in FormData instead of the file) */}
+          {/* Hidden fields for video metadata */}
           {videoFileName && (
             <>
               <input type="hidden" name="video_file_name" value={videoFileName} />
-              <input type="hidden" name="video_file_size" value={videoFileSize.toString()} />
-              <input type="hidden" name="video_content_type" value={videoContentType} />
+              <input
+                type="hidden"
+                name="video_file_size"
+                value={videoFileSize.toString()}
+              />
+              <input
+                type="hidden"
+                name="video_content_type"
+                value={videoContentType}
+              />
             </>
           )}
 
-          {/* Episode metadata */}
+          {/* Episode title */}
           <div className="space-y-2">
             <Label htmlFor="title">
               Episode Title <span className="text-destructive">*</span>
@@ -326,100 +574,236 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
               placeholder="e.g., Episode 42: The Cold Case"
               required
               disabled={isDisabled}
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                // Reset mode if title changes after being set
+                if (descriptionMode && !suggestions.length) {
+                  // Only reset if they haven't gotten AI results yet
+                }
+              }}
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="description">
-              Description <span className="text-destructive">*</span>
-            </Label>
-            <Textarea
-              id="description"
-              name="description"
-              placeholder="Episode description for podcast platforms..."
-              rows={5}
-              required
-              disabled={isDisabled}
-            />
-          </div>
+          {/* Two-path choice: appears after video + title are provided */}
+          {showModeChoice && (
+            <div className="space-y-3">
+              <Label>How would you like to write your description?</Label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setDescriptionMode("manual")}
+                  className="flex flex-col items-center gap-2 rounded-lg border-2 border-input px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
+                >
+                  <PenLineIcon className="size-6 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    I&apos;ll write my own description
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Enter your description manually
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDescriptionMode("ai");
+                    startAiAnalysis();
+                  }}
+                  className="flex flex-col items-center gap-2 rounded-lg border-2 border-input px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/5"
+                >
+                  <SparklesIcon className="size-6 text-primary" />
+                  <span className="text-sm font-medium">
+                    Get AI recommendations
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Upload video first, then get AI-generated suggestions
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
 
-          <div className="space-y-2">
-            <Label htmlFor="tags">Tags</Label>
-            <Input
-              id="tags"
-              name="tags"
-              placeholder="true crime, cold case, investigation (comma-separated)"
-              disabled={isDisabled}
-            />
-          </div>
+          {/* Manual description textarea */}
+          {descriptionMode === "manual" && (
+            <div className="space-y-2">
+              <Label htmlFor="description">
+                Description <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="description"
+                placeholder="Episode description for podcast platforms..."
+                rows={5}
+                disabled={isDisabled}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* AI suggestions review */}
+          {descriptionMode === "ai" && suggestions.length > 0 && (
+            <div className="space-y-4">
+              {/* Summary / Description */}
+              <div className="space-y-2">
+                <Label htmlFor="ai-description">
+                  Episode Description{" "}
+                  <span className="text-xs text-muted-foreground">
+                    (AI-generated, edit as needed)
+                  </span>
+                </Label>
+                <Textarea
+                  id="ai-description"
+                  rows={6}
+                  disabled={isDisabled}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+
+              {/* Chapters */}
+              {chapters && (
+                <div className="space-y-2">
+                  <Label htmlFor="ai-chapters">
+                    Chapters{" "}
+                    <span className="text-xs text-muted-foreground">
+                      (edit as needed)
+                    </span>
+                  </Label>
+                  <Textarea
+                    id="ai-chapters"
+                    rows={8}
+                    disabled={isDisabled}
+                    value={chapters}
+                    onChange={(e) => setChapters(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+
+              {/* Blog ideas (read-only) */}
+              {blogSuggestions.length > 0 && (
+                <div className="space-y-2">
+                  <Label>
+                    <BookOpenIcon className="mr-1 inline size-4" />
+                    Blog Ideas{" "}
+                    <span className="text-xs text-muted-foreground">
+                      (saved for later)
+                    </span>
+                  </Label>
+                  <div className="space-y-2">
+                    {blogSuggestions.map((blog) => (
+                      <div
+                        key={blog.id}
+                        className="rounded-lg border bg-muted/30 px-3 py-2 text-sm"
+                      >
+                        {blog.content}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Hidden description input for form submission */}
+          <input type="hidden" name="description" value={description} />
+
+          {/* Tags */}
+          {descriptionMode && (
+            <div className="space-y-2">
+              <Label htmlFor="tags">Tags</Label>
+              <Input
+                id="tags"
+                name="tags"
+                placeholder="true crime, cold case, investigation (comma-separated)"
+                disabled={isDisabled}
+              />
+            </div>
+          )}
 
           {/* Thumbnail upload */}
-          <div className="space-y-2">
-            <Label htmlFor="thumbnail">Thumbnail</Label>
-            <label
-              htmlFor="thumbnail"
-              className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
-            >
-              <UploadIcon className="size-6 text-muted-foreground" />
-              {thumbnailFileName ? (
-                <span className="text-sm font-medium">{thumbnailFileName}</span>
-              ) : (
-                <span className="text-sm text-muted-foreground">
-                  Upload episode thumbnail image
-                </span>
-              )}
-              <input
-                id="thumbnail"
-                name="thumbnail"
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                disabled={isDisabled}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  setThumbnailFileName(file?.name ?? null);
-                }}
-              />
-            </label>
-          </div>
-
-          {/* Target platforms */}
-          <fieldset className="space-y-3" disabled={isDisabled}>
-            <legend className="text-sm font-medium">
-              Target Platforms <span className="text-destructive">*</span>
-            </legend>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {PLATFORMS.map(({ key, label, icon: Icon }) => (
-                <label
-                  key={key}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors has-[:checked]:border-primary/50 has-[:checked]:bg-primary/5 hover:bg-muted/50"
-                >
-                  <Checkbox name={`platform_${key}`} />
-                  <Icon className="size-4 text-muted-foreground" />
-                  <span className="text-sm">{label}</span>
-                </label>
-              ))}
+          {descriptionMode && (
+            <div className="space-y-2">
+              <Label htmlFor="thumbnail">Thumbnail</Label>
+              <label
+                htmlFor="thumbnail"
+                className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
+              >
+                <UploadIcon className="size-6 text-muted-foreground" />
+                {thumbnailFileName ? (
+                  <span className="text-sm font-medium">
+                    {thumbnailFileName}
+                  </span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    Upload episode thumbnail image
+                  </span>
+                )}
+                <input
+                  id="thumbnail"
+                  name="thumbnail"
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  disabled={isDisabled}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    setThumbnailFileName(file?.name ?? null);
+                  }}
+                />
+              </label>
             </div>
-          </fieldset>
+          )}
+
+          {/* Target platforms — shown for manual path always, AI path after suggestions */}
+          {(descriptionMode === "manual" || aiReady) && (
+            <fieldset className="space-y-3" disabled={isDisabled}>
+              <legend className="text-sm font-medium">
+                Target Platforms <span className="text-destructive">*</span>
+              </legend>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {PLATFORMS.map(({ key, label, icon: Icon }) => (
+                  <label
+                    key={key}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors has-[:checked]:border-primary/50 has-[:checked]:bg-primary/5 hover:bg-muted/50"
+                  >
+                    <Checkbox name={`platform_${key}`} />
+                    <Icon className="size-4 text-muted-foreground" />
+                    <span className="text-sm">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           {/* Publish mode */}
-          <PublishToggle value={publishState} onChange={setPublishState} />
+          {(descriptionMode === "manual" || aiReady) && (
+            <PublishToggle value={publishState} onChange={setPublishState} />
+          )}
         </CardContent>
 
-        <CardFooter>
-          <Button type="submit" disabled={isDisabled} size="lg" className="w-full">
-            {isPending && <Loader2Icon className="size-4 animate-spin" />}
-            {uploading
-              ? "Uploading..."
-              : isPending
-                ? "Submitting..."
-                : publishState.status === "draft"
-                  ? "Save as Draft (Unlisted)"
-                  : publishState.status === "future"
-                    ? "Schedule Distribution"
-                    : "Distribute Now"}
-          </Button>
-        </CardFooter>
+        {/* Submit button — shown only after description mode is chosen */}
+        {(descriptionMode === "manual" || aiReady) && (
+          <CardFooter>
+            <Button
+              type="submit"
+              disabled={isDisabled || !description.trim()}
+              size="lg"
+              className="w-full"
+            >
+              {isPending && <Loader2Icon className="size-4 animate-spin" />}
+              {uploading
+                ? "Uploading..."
+                : isPending
+                  ? "Submitting..."
+                  : publishState.status === "draft"
+                    ? "Save as Draft (Unlisted)"
+                    : publishState.status === "future"
+                      ? "Schedule Distribution"
+                      : "Distribute Now"}
+            </Button>
+          </CardFooter>
+        )}
       </form>
     </Card>
   );
