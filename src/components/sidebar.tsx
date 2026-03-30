@@ -16,11 +16,13 @@ export function Sidebar({ visibleContentTypes }: SidebarProps) {
 
   const navItems = [
     { label: "Dashboard", href: "/dashboard" },
-    ...visibleContentTypes.map((type) => ({
-      label:
-        CONTENT_TYPE_LABELS[type as keyof typeof CONTENT_TYPE_LABELS] ?? type,
-      href: `/dashboard/${type.replace("_", "-")}`,
-    })),
+    ...visibleContentTypes
+      .filter((type) => type !== "episode")
+      .map((type) => ({
+        label:
+          CONTENT_TYPE_LABELS[type as keyof typeof CONTENT_TYPE_LABELS] ?? type,
+        href: `/dashboard/${type.replace("_", "-")}`,
+      })),
     { label: "Analytics", href: "/dashboard/analytics" },
     ...(session?.user?.hasDistributionAccess
       ? [{ label: "Episode Distribution", href: "/dashboard/distribute" }]
