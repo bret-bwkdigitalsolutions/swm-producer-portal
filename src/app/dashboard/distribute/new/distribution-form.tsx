@@ -97,7 +97,27 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
 
       const { uploadUrl } = await signedUrlRes.json();
 
-      // 2. Resumable upload to GCS using XMLHttpRequest for proper 308 handling
+      // 2. Initiate resumable upload session via POST to signed URL
+      const sessionUri = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", uploadUrl);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.setRequestHeader("x-goog-resumable", "start");
+        xhr.setRequestHeader("Content-Length", "0");
+
+        xhr.onload = () => {
+          const location = xhr.getResponseHeader("Location");
+          if (xhr.status === 201 && location) {
+            resolve(location);
+          } else {
+            reject(new Error(`Failed to initiate upload session (status ${xhr.status})`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network error initiating upload session"));
+        xhr.send();
+      });
+
+      // 3. Upload chunks to the session URI
       const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks
       const MAX_RETRIES = 5;
       let offset = 0;
@@ -112,9 +132,8 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
           try {
             const status = await new Promise<number>((resolve, reject) => {
               const xhr = new XMLHttpRequest();
-              xhr.open("PUT", uploadUrl);
+              xhr.open("PUT", sessionUri);
               xhr.setRequestHeader("Content-Range", contentRange);
-              xhr.setRequestHeader("Content-Type", file.type);
 
               xhr.onload = () => resolve(xhr.status);
               xhr.onerror = () => reject(new Error("Network error during chunk upload"));
