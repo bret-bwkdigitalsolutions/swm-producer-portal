@@ -384,7 +384,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
         platforms: selectedPlatforms,
         isDraft: publishState.status === "draft",
         scheduleMode: publishState.status === "future" ? "schedule" : "now",
-        scheduledAt: publishState.status === "future" ? (publishState as any).scheduledDate : null,
+        scheduledAt: publishState.status === "future" ? publishState.date ?? null : null,
       });
 
       if (!updateResult.success) {
@@ -604,13 +604,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
               required
               disabled={isDisabled}
               value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                // Reset mode if title changes after being set
-                if (descriptionMode && !suggestions.length) {
-                  // Only reset if they haven't gotten AI results yet
-                }
-              }}
+              onChange={(e) => setTitle(e.target.value)}
             />
           </div>
 

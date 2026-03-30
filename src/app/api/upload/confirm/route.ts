@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!job.gcsPath && job.status === "uploading") {
+  if (!job.gcsPath) {
     return NextResponse.json(
       { error: "No file has been uploaded for this job." },
       { status: 400 }
@@ -77,16 +77,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, status: "pending" });
   }
 
-  // Check if this is a scheduled post
-  const metadata = job.metadata as Record<string, unknown>;
+  // Re-read metadata (may have been updated by updateDistribution)
+  const freshJob = await db.distributionJob.findUnique({
+    where: { id: jobId },
+    select: { metadata: true },
+  });
+  const metadata = (freshJob?.metadata ?? job.metadata) as Record<string, unknown>;
   const scheduleMode = (metadata.scheduleMode as string) ?? "now";
 
   if (scheduleMode === "schedule") {
-    // Leave as pending — a scheduled job cron will pick it up
     return NextResponse.json({ success: true, status: "scheduled" });
   }
 
-  // Trigger processing immediately (non-blocking)
+  // Atomically transition to processing to prevent double invocation
+  const updated = await db.distributionJob.updateMany({
+    where: { id: jobId, status: "pending" },
+    data: { status: "processing" },
+  });
+
+  if (updated.count === 0) {
+    return NextResponse.json(
+      { error: "Job is already being processed." },
+      { status: 409 }
+    );
+  }
+
+  // Trigger processing (non-blocking)
   processJob(jobId).catch((error) => {
     console.error(`[confirm] Background processing failed for job ${jobId}:`, error);
   });
