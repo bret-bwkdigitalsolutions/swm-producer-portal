@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { processNextJob } from "@/lib/jobs/processor";
+import { processJob } from "@/lib/jobs/processor";
 
 /**
  * POST /api/jobs/process
  *
- * Triggers processing of the next pending distribution job.
- * Protected by a shared secret so it can be called from a cron scheduler
- * (e.g., Railway cron) or an external webhook without exposing the
+ * Triggers processing of a specific distribution job by ID.
+ * Protected by a shared secret so it can be called from internal
+ * endpoints (e.g., the confirm action) without exposing the
  * endpoint publicly.
+ *
+ * Body:
+ *   { "jobId": "<distribution-job-id>" }
  *
  * Headers:
  *   Authorization: Bearer <JOB_PROCESSING_SECRET>
@@ -34,15 +37,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const result = await processNextJob();
+  // Parse the job ID from the request body
+  const body = await request.json().catch(() => null);
+  const jobId = body?.jobId;
+  if (!jobId || typeof jobId !== "string") {
+    return NextResponse.json(
+      { error: "Missing or invalid jobId in request body" },
+      { status: 400 }
+    );
+  }
 
-    if (!result) {
-      return NextResponse.json(
-        { message: "No pending jobs", processed: false },
-        { status: 200 }
-      );
-    }
+  try {
+    const result = await processJob(jobId);
 
     return NextResponse.json(
       {

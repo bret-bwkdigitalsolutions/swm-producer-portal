@@ -1,14 +1,22 @@
 import { db } from "@/lib/db";
 import { generateAiSuggestions } from "./ai-processor";
 import { extractAudio } from "./audio-extractor";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { uploadToYouTube, addToPlaylist } from "@/lib/platforms/youtube";
+import { uploadToTransistor } from "@/lib/platforms/transistor";
+import { publishToWordPress } from "@/lib/platforms/wordpress";
+import { sendDistributionErrorNotification } from "@/lib/notifications";
+import { resolvePlatformId } from "@/lib/analytics/credentials";
+import { generateSignedDownloadUrl } from "@/lib/gcs";
+import { createWriteStream } from "node:fs";
+import { unlink, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
 
 export interface ProcessingResult {
   jobId: string;
-  status: "processing" | "awaiting_review" | "failed";
+  status: "completed" | "awaiting_review" | "failed";
   platformResults: {
     platform: string;
     status: "completed" | "failed";
@@ -16,191 +24,343 @@ export interface ProcessingResult {
   }[];
 }
 
-// ---------------------------------------------------------------------------
-// Platform upload simulation
-// ---------------------------------------------------------------------------
-
 /**
- * Simulate uploading content to a platform. In production this will be
- * replaced with actual API calls to YouTube, Spotify, Apple, etc.
+ * Process a specific distribution job by ID.
+ * Uploads to platforms in dependency order:
+ *   1. YouTube (first — WordPress needs the video URL)
+ *   2. Transistor (parallel-safe, uses extracted audio)
+ *   3. WordPress (last — needs YouTube URL for embed)
  */
-async function simulatePlatformUpload(
-  platform: string,
-  _jobTitle: string
-): Promise<{ externalId: string; externalUrl: string }> {
-  // Simulate varying upload durations per platform
-  const delayMs: Record<string, number> = {
-    youtube: 2000,
-    spotify: 1500,
-    apple: 1500,
-    transistor: 1000,
-    website: 500,
-  };
-
-  const delay = delayMs[platform] ?? 1000;
-  await new Promise((resolve) => setTimeout(resolve, delay));
-
-  console.log(`[processor] Simulated upload to ${platform} completed`);
-
-  return {
-    externalId: `sim_${platform}_${Date.now()}`,
-    externalUrl: `https://${platform}.example.com/episode/${Date.now()}`,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Single platform processing
-// ---------------------------------------------------------------------------
-
-async function processPlatform(
-  platformRecord: { id: string; platform: string },
-  jobTitle: string,
-  gcsPath: string | null
-): Promise<{ platform: string; status: "completed" | "failed"; error?: string }> {
-  const { id: platformId, platform } = platformRecord;
-
-  try {
-    // Mark as uploading
-    await db.distributionJobPlatform.update({
-      where: { id: platformId },
-      data: { status: "uploading" },
-    });
-
-    // For audio-only platforms, extract audio first
-    if (platform === "transistor" && gcsPath) {
-      await extractAudio(gcsPath);
-    }
-
-    // Mark as processing
-    await db.distributionJobPlatform.update({
-      where: { id: platformId },
-      data: { status: "processing" },
-    });
-
-    // Simulate the actual upload
-    const { externalId, externalUrl } = await simulatePlatformUpload(
-      platform,
-      jobTitle
-    );
-
-    // Mark as completed
-    await db.distributionJobPlatform.update({
-      where: { id: platformId },
-      data: {
-        status: "completed",
-        externalId,
-        externalUrl,
-        completedAt: new Date(),
-      },
-    });
-
-    console.log(`[processor] Platform "${platform}" completed successfully`);
-    return { platform, status: "completed" };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    console.error(
-      `[processor] Platform "${platform}" failed: ${errorMessage}`
-    );
-
-    await db.distributionJobPlatform.update({
-      where: { id: platformId },
-      data: {
-        status: "failed",
-        error: errorMessage,
-      },
-    });
-
-    return { platform, status: "failed", error: errorMessage };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Main job processor
-// ---------------------------------------------------------------------------
-
-/**
- * Find and process the next pending distribution job.
- *
- * Returns `null` if there are no pending jobs. Otherwise returns a
- * `ProcessingResult` describing what happened.
- */
-export async function processNextJob(): Promise<ProcessingResult | null> {
-  // Atomically claim the oldest pending job
-  // Using a transaction to avoid race conditions with concurrent workers
-  const job = await db.$transaction(async (tx) => {
-    const pending = await tx.distributionJob.findFirst({
-      where: { status: "pending" },
-      orderBy: { createdAt: "asc" },
-      include: { platforms: true },
-    });
-
-    if (!pending) return null;
-
-    // Mark as processing so no other worker picks it up
-    await tx.distributionJob.update({
-      where: { id: pending.id },
-      data: { status: "processing" },
-    });
-
-    return pending;
+export async function processJob(jobId: string): Promise<ProcessingResult> {
+  const job = await db.distributionJob.findUnique({
+    where: { id: jobId },
+    include: {
+      platforms: true,
+    },
   });
 
   if (!job) {
-    console.log("[processor] No pending jobs found.");
-    return null;
+    throw new Error(`Job ${jobId} not found.`);
   }
+
+  // Mark as processing
+  await db.distributionJob.update({
+    where: { id: jobId },
+    data: { status: "processing" },
+  });
 
   console.log(
     `[processor] Processing job ${job.id}: "${job.title}" (${job.platforms.length} platforms)`
   );
 
-  // Process each platform — continue even if some fail
-  const platformResults = await Promise.all(
-    job.platforms.map((p) =>
-      processPlatform(
-        { id: p.id, platform: p.platform },
-        job.title,
-        job.gcsPath
-      )
-    )
-  );
+  const metadata = job.metadata as Record<string, unknown>;
+  const platformResults: ProcessingResult["platformResults"] = [];
 
-  const allFailed = platformResults.every((r) => r.status === "failed");
-  const anySucceeded = platformResults.some((r) => r.status === "completed");
-
-  if (allFailed) {
-    // If every platform failed the job is failed
-    await db.distributionJob.update({
-      where: { id: job.id },
-      data: { status: "failed" },
-    });
-
-    console.log(`[processor] Job ${job.id} failed — all platforms failed.`);
-    return { jobId: job.id, status: "failed", platformResults };
-  }
-
-  // At least one platform succeeded — trigger AI processing
-  if (anySucceeded) {
+  // Extract audio if needed (for Transistor)
+  let gcsAudioPath: string | null = null;
+  const needsAudio = job.platforms.some((p) => p.platform === "transistor");
+  if (needsAudio && job.gcsPath) {
     try {
-      const metadata = job.metadata as Record<string, unknown>;
-      const transcript = (metadata.transcript as string) ?? null;
-      await generateAiSuggestions(job.id, transcript);
+      gcsAudioPath = await extractAudio(job.gcsPath);
     } catch (error) {
-      // AI failures should not tank the job
-      console.error(
-        `[processor] AI processing failed for job ${job.id}:`,
-        error
+      console.error("[processor] Audio extraction failed:", error);
+      // Mark Transistor as failed but continue with other platforms
+      const transistorPlatform = job.platforms.find(
+        (p) => p.platform === "transistor"
       );
+      if (transistorPlatform) {
+        const errMsg =
+          error instanceof Error ? error.message : "Audio extraction failed";
+        await db.distributionJobPlatform.update({
+          where: { id: transistorPlatform.id },
+          data: { status: "failed", error: errMsg },
+        });
+        platformResults.push({
+          platform: "transistor",
+          status: "failed",
+          error: errMsg,
+        });
+      }
     }
   }
 
-  // Move job to awaiting_review — producer needs to review AI suggestions
+  // Download video to temp file (for YouTube upload)
+  let tempVideoPath: string | null = null;
+  const needsYouTube = job.platforms.some((p) => p.platform === "youtube");
+  if (needsYouTube && job.gcsPath) {
+    try {
+      const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
+      tempVideoPath = join(tempDir, "video.mp4");
+      const downloadUrl = await generateSignedDownloadUrl(job.gcsPath);
+      const response = await fetch(downloadUrl);
+      if (!response.ok || !response.body) {
+        throw new Error(`Failed to download video: ${response.status}`);
+      }
+      const fileStream = createWriteStream(tempVideoPath);
+      await pipeline(Readable.fromWeb(response.body as any), fileStream);
+    } catch (error) {
+      console.error("[processor] Video download failed:", error);
+      tempVideoPath = null;
+    }
+  }
+
+  // --- Phase 1: YouTube (must complete first for WordPress) ---
+  let youtubeUrl: string | null = null;
+  let youtubeVideoId: string | null = null;
+  const youtubePlatform = job.platforms.find((p) => p.platform === "youtube");
+
+  if (youtubePlatform) {
+    await db.distributionJobPlatform.update({
+      where: { id: youtubePlatform.id },
+      data: { status: "uploading" },
+    });
+
+    try {
+      if (!tempVideoPath) {
+        throw new Error("Video file not available for YouTube upload.");
+      }
+
+      const description = (metadata.description as string) ?? "";
+      const chapters = (metadata.chapters as string) ?? "";
+      const fullDescription = chapters
+        ? `${description}\n\n${chapters}`
+        : description;
+      const tags = (metadata.tags as string[]) ?? [];
+      const isDraft = (metadata.isDraft as boolean) ?? false;
+
+      const result = await uploadToYouTube({
+        wpShowId: job.wpShowId,
+        title: job.title,
+        description: fullDescription,
+        tags,
+        privacy: isDraft ? "unlisted" : "public",
+        videoFilePath: tempVideoPath,
+      });
+
+      youtubeUrl = result.videoUrl;
+      youtubeVideoId = result.videoId;
+
+      await db.distributionJobPlatform.update({
+        where: { id: youtubePlatform.id },
+        data: {
+          status: "completed",
+          externalId: result.videoId,
+          externalUrl: result.videoUrl,
+          completedAt: new Date(),
+        },
+      });
+
+      // Add to show playlist if configured
+      const playlistUrl = await resolvePlatformId(
+        job.wpShowId,
+        "youtube_playlist"
+      );
+      if (playlistUrl && youtubeVideoId) {
+        const playlistId = playlistUrl.split("list=").pop() ?? playlistUrl;
+        await addToPlaylist(job.wpShowId, playlistId, youtubeVideoId);
+      }
+
+      platformResults.push({ platform: "youtube", status: "completed" });
+    } catch (error) {
+      const errMsg =
+        error instanceof Error ? error.message : "YouTube upload failed";
+      console.error(`[processor] YouTube failed: ${errMsg}`);
+      await db.distributionJobPlatform.update({
+        where: { id: youtubePlatform.id },
+        data: { status: "failed", error: errMsg },
+      });
+      platformResults.push({
+        platform: "youtube",
+        status: "failed",
+        error: errMsg,
+      });
+    }
+  }
+
+  // Clean up temp video file
+  if (tempVideoPath) {
+    await unlink(tempVideoPath).catch(() => {});
+  }
+
+  // --- Phase 2: Transistor (independent of YouTube) ---
+  const transistorPlatform = job.platforms.find(
+    (p) => p.platform === "transistor"
+  );
+  // Only process if not already failed from audio extraction
+  if (
+    transistorPlatform &&
+    !platformResults.some(
+      (r) => r.platform === "transistor" && r.status === "failed"
+    )
+  ) {
+    await db.distributionJobPlatform.update({
+      where: { id: transistorPlatform.id },
+      data: { status: "uploading" },
+    });
+
+    try {
+      if (!gcsAudioPath) {
+        throw new Error("Audio file not available for Transistor upload.");
+      }
+
+      const result = await uploadToTransistor({
+        wpShowId: job.wpShowId,
+        title: job.title,
+        description: (metadata.description as string) ?? "",
+        seasonNumber: (metadata.seasonNumber as number) ?? undefined,
+        episodeNumber: (metadata.episodeNumber as number) ?? undefined,
+        gcsAudioPath,
+      });
+
+      await db.distributionJobPlatform.update({
+        where: { id: transistorPlatform.id },
+        data: {
+          status: "completed",
+          externalId: result.episodeId,
+          externalUrl: result.episodeUrl,
+          completedAt: new Date(),
+        },
+      });
+
+      platformResults.push({ platform: "transistor", status: "completed" });
+    } catch (error) {
+      const errMsg =
+        error instanceof Error ? error.message : "Transistor upload failed";
+      console.error(`[processor] Transistor failed: ${errMsg}`);
+      await db.distributionJobPlatform.update({
+        where: { id: transistorPlatform.id },
+        data: { status: "failed", error: errMsg },
+      });
+      platformResults.push({
+        platform: "transistor",
+        status: "failed",
+        error: errMsg,
+      });
+    }
+  }
+
+  // --- Phase 3: WordPress (needs YouTube URL) ---
+  const websitePlatform = job.platforms.find((p) => p.platform === "website");
+  if (websitePlatform) {
+    await db.distributionJobPlatform.update({
+      where: { id: websitePlatform.id },
+      data: { status: "uploading" },
+    });
+
+    try {
+      if (!youtubeUrl) {
+        throw new Error(
+          "YouTube URL not available. WordPress post requires the YouTube embed."
+        );
+      }
+
+      const description = (metadata.description as string) ?? "";
+      const chapters = (metadata.chapters as string) ?? "";
+      const isDraft = (metadata.isDraft as boolean) ?? false;
+      const scheduleMode = (metadata.scheduleMode as string) ?? "now";
+      const scheduledAt = (metadata.scheduledAt as string) ?? undefined;
+
+      const wpStatus: "publish" | "draft" | "future" = isDraft
+        ? "draft"
+        : scheduleMode === "schedule"
+          ? "future"
+          : "publish";
+
+      const result = await publishToWordPress({
+        wpShowId: job.wpShowId,
+        title: job.title,
+        description,
+        chapters: chapters || undefined,
+        youtubeUrl,
+        status: wpStatus,
+        scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
+        portalUserId: job.userId,
+      });
+
+      await db.distributionJobPlatform.update({
+        where: { id: websitePlatform.id },
+        data: {
+          status: "completed",
+          externalId: String(result.postId),
+          externalUrl: result.postUrl,
+          completedAt: new Date(),
+        },
+      });
+
+      platformResults.push({ platform: "website", status: "completed" });
+    } catch (error) {
+      const errMsg =
+        error instanceof Error ? error.message : "WordPress publish failed";
+      console.error(`[processor] WordPress failed: ${errMsg}`);
+      await db.distributionJobPlatform.update({
+        where: { id: websitePlatform.id },
+        data: { status: "failed", error: errMsg },
+      });
+      platformResults.push({
+        platform: "website",
+        status: "failed",
+        error: errMsg,
+      });
+    }
+  }
+
+  // --- Handle any remaining platforms (Spotify, Apple — future) ---
+  for (const p of job.platforms) {
+    if (!platformResults.some((r) => r.platform === p.platform)) {
+      await db.distributionJobPlatform.update({
+        where: { id: p.id },
+        data: { status: "failed", error: `Platform "${p.platform}" is not yet supported.` },
+      });
+      platformResults.push({
+        platform: p.platform,
+        status: "failed",
+        error: `Platform "${p.platform}" is not yet supported.`,
+      });
+    }
+  }
+
+  // --- Determine final job status ---
+  const allFailed = platformResults.every((r) => r.status === "failed");
+  const anyFailed = platformResults.some((r) => r.status === "failed");
+
+  const finalStatus = allFailed ? "failed" : "completed";
+
   await db.distributionJob.update({
     where: { id: job.id },
-    data: { status: "awaiting_review" },
+    data: { status: finalStatus },
   });
 
-  console.log(`[processor] Job ${job.id} moved to awaiting_review.`);
-  return { jobId: job.id, status: "awaiting_review", platformResults };
+  // --- Send error notification if any platform failed ---
+  if (anyFailed) {
+    const user = await db.user.findUnique({
+      where: { id: job.userId },
+      select: { name: true },
+    });
+
+    // Resolve show name
+    let showName = `Show #${job.wpShowId}`;
+    try {
+      const { getShow } = await import("@/lib/wordpress/client");
+      const show = await getShow(job.wpShowId);
+      showName = show.title.rendered;
+    } catch {
+      // Fall back to ID
+    }
+
+    const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+
+    await sendDistributionErrorNotification({
+      jobTitle: job.title,
+      showName,
+      producerName: user?.name ?? "Unknown",
+      failures: platformResults
+        .filter((r) => r.status === "failed")
+        .map((r) => ({ platform: r.platform, error: r.error ?? "Unknown error" })),
+      jobUrl: `${baseUrl}/dashboard/distribute/${job.id}`,
+    });
+  }
+
+  console.log(`[processor] Job ${job.id} ${finalStatus}.`);
+
+  return { jobId: job.id, status: finalStatus, platformResults };
 }

@@ -4,48 +4,80 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock Prisma
 // ---------------------------------------------------------------------------
 
-const mockFindFirst = vi.fn();
+const mockFindUnique = vi.fn();
 const mockJobUpdate = vi.fn();
 const mockPlatformUpdate = vi.fn();
-const mockTransaction = vi.fn();
+const mockUserFindUnique = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
-    $transaction: (...args: unknown[]) => mockTransaction(...args),
     distributionJob: {
-      findFirst: (...args: unknown[]) => mockFindFirst(...args),
+      findUnique: (...args: unknown[]) => mockFindUnique(...args),
       update: (...args: unknown[]) => mockJobUpdate(...args),
     },
     distributionJobPlatform: {
       update: (...args: unknown[]) => mockPlatformUpdate(...args),
     },
+    user: {
+      findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
+    },
   },
 }));
 
 // ---------------------------------------------------------------------------
-// Mock AI processor (called on success)
+// Mock platform modules
 // ---------------------------------------------------------------------------
 
-const mockGenerateAiSuggestions = vi.fn();
+const mockUploadToYouTube = vi.fn();
+const mockAddToPlaylist = vi.fn();
+const mockUploadToTransistor = vi.fn();
+const mockPublishToWordPress = vi.fn();
+const mockSendDistributionErrorNotification = vi.fn();
+const mockResolvePlatformId = vi.fn();
+const mockExtractAudio = vi.fn();
+const mockGenerateSignedDownloadUrl = vi.fn();
 
-vi.mock("@/lib/jobs/ai-processor", () => ({
-  generateAiSuggestions: (...args: unknown[]) =>
-    mockGenerateAiSuggestions(...args),
+vi.mock("@/lib/platforms/youtube", () => ({
+  uploadToYouTube: (...args: unknown[]) => mockUploadToYouTube(...args),
+  addToPlaylist: (...args: unknown[]) => mockAddToPlaylist(...args),
 }));
 
-// ---------------------------------------------------------------------------
-// Mock audio extractor
-// ---------------------------------------------------------------------------
+vi.mock("@/lib/platforms/transistor", () => ({
+  uploadToTransistor: (...args: unknown[]) => mockUploadToTransistor(...args),
+}));
+
+vi.mock("@/lib/platforms/wordpress", () => ({
+  publishToWordPress: (...args: unknown[]) => mockPublishToWordPress(...args),
+}));
+
+vi.mock("@/lib/notifications", () => ({
+  sendDistributionErrorNotification: (...args: unknown[]) =>
+    mockSendDistributionErrorNotification(...args),
+}));
+
+vi.mock("@/lib/analytics/credentials", () => ({
+  resolvePlatformId: (...args: unknown[]) => mockResolvePlatformId(...args),
+}));
 
 vi.mock("@/lib/jobs/audio-extractor", () => ({
-  extractAudio: vi.fn().mockResolvedValue(undefined),
+  extractAudio: (...args: unknown[]) => mockExtractAudio(...args),
+}));
+
+vi.mock("@/lib/gcs", () => ({
+  generateSignedDownloadUrl: (...args: unknown[]) =>
+    mockGenerateSignedDownloadUrl(...args),
+}));
+
+// Mock AI processor (unused in new processor but imported)
+vi.mock("@/lib/jobs/ai-processor", () => ({
+  generateAiSuggestions: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
 // Import module under test
 // ---------------------------------------------------------------------------
 
-import { processNextJob } from "@/lib/jobs/processor";
+import { processJob } from "@/lib/jobs/processor";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,12 +88,11 @@ function makeJob(overrides: Record<string, unknown> = {}) {
     id: "job-1",
     title: "Episode 1",
     status: "pending",
+    userId: "user-1",
+    wpShowId: 42,
     gcsPath: "uploads/2026/03/video.mp4",
     metadata: { description: "A test episode" },
-    platforms: [
-      { id: "plat-1", platform: "youtube" },
-      { id: "plat-2", platform: "spotify" },
-    ],
+    platforms: [{ id: "plat-yt", platform: "youtube" }],
     ...overrides,
   };
 }
@@ -70,26 +101,19 @@ function makeJob(overrides: Record<string, unknown> = {}) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("processNextJob", () => {
+describe("processJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // By default, the $transaction mock executes the callback with a fake tx
-    // that behaves the same as the top-level db mock.
-    mockTransaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
-      const tx = {
-        distributionJob: {
-          findFirst: mockFindFirst,
-          update: mockJobUpdate,
-        },
-      };
-      return fn(tx);
-    });
-
-    // Default: platform uploads "succeed" (no throw)
     mockPlatformUpdate.mockResolvedValue({});
     mockJobUpdate.mockResolvedValue({});
-    mockGenerateAiSuggestions.mockResolvedValue(undefined);
+    mockUserFindUnique.mockResolvedValue({ name: "Test User" });
+    mockResolvePlatformId.mockResolvedValue(null);
+    mockExtractAudio.mockResolvedValue("uploads/2026/03/video.mp3");
+    mockGenerateSignedDownloadUrl.mockResolvedValue(
+      "https://storage.example.com/signed-url"
+    );
+    mockSendDistributionErrorNotification.mockResolvedValue(undefined);
 
     // Suppress console output during tests
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -97,169 +121,133 @@ describe("processNextJob", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
-  it("returns null when there are no pending jobs", async () => {
-    mockFindFirst.mockResolvedValue(null);
-
-    const result = await processNextJob();
-    expect(result).toBeNull();
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  it("throws when job is not found", async () => {
+    mockFindUnique.mockResolvedValue(null);
+    await expect(processJob("nonexistent")).rejects.toThrow(
+      "Job nonexistent not found."
+    );
   });
 
-  it("picks the oldest pending job and transitions it to processing", async () => {
-    const job = makeJob();
-    mockFindFirst.mockResolvedValue(job);
+  it("marks the job as processing immediately", async () => {
+    const job = makeJob({ platforms: [] });
+    mockFindUnique.mockResolvedValue(job);
 
-    await processNextJob();
+    await processJob("job-1");
 
-    // The transaction should update the job status to "processing"
     expect(mockJobUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "job-1" },
         data: { status: "processing" },
       })
     );
-
-    // findFirst should have been called with the correct query
-    expect(mockFindFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { status: "pending" },
-        orderBy: { createdAt: "asc" },
-        include: { platforms: true },
-      })
-    );
   });
 
-  it("moves job to awaiting_review when at least one platform succeeds", async () => {
+  it("uploads to YouTube and records success", async () => {
     const job = makeJob();
-    mockFindFirst.mockResolvedValue(job);
+    mockFindUnique.mockResolvedValue(job);
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
 
-    const result = await processNextJob();
+    // Mock the fetch for video download
+    const mockBody = {
+      [Symbol.asyncIterator]: async function* () {
+        yield new Uint8Array([0]);
+      },
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: mockBody,
+    }) as unknown as typeof fetch;
 
-    expect(result).not.toBeNull();
-    expect(result!.status).toBe("awaiting_review");
-    expect(result!.jobId).toBe("job-1");
+    const result = await processJob("job-1");
 
-    // Final status update should be "awaiting_review"
-    const lastJobUpdateCall =
-      mockJobUpdate.mock.calls[mockJobUpdate.mock.calls.length - 1];
-    expect(lastJobUpdateCall[0]).toEqual(
-      expect.objectContaining({
-        where: { id: "job-1" },
-        data: { status: "awaiting_review" },
-      })
+    expect(result.status).toBe("completed");
+    expect(
+      result.platformResults.find(
+        (r: { platform: string }) => r.platform === "youtube"
+      )?.status
+    ).toBe("completed");
+  });
+
+  it("marks unsupported platforms as failed", async () => {
+    const job = makeJob({
+      platforms: [{ id: "plat-future", platform: "tiktok" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+
+    const result = await processJob("job-1");
+
+    expect(
+      result.platformResults.find(
+        (r: { platform: string }) => r.platform === "tiktok"
+      )?.status
+    ).toBe("failed");
+    expect(
+      result.platformResults.find(
+        (r: { platform: string }) => r.platform === "tiktok"
+      )?.error
+    ).toContain("not yet supported");
+  });
+
+  it("sends error notification when any platform fails", async () => {
+    const job = makeJob({
+      platforms: [
+        { id: "plat-yt", platform: "youtube" },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+
+    // YouTube succeeds
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
+
+    const mockBody = {
+      [Symbol.asyncIterator]: async function* () {
+        yield new Uint8Array([0]);
+      },
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: mockBody,
+    }) as unknown as typeof fetch;
+
+    // WordPress fails (simulated by publishToWordPress throwing)
+    mockPublishToWordPress.mockRejectedValue(
+      new Error("WP API unreachable")
     );
+
+    const result = await processJob("job-1");
+
+    // Job should still be completed because YouTube succeeded
+    expect(result.status).toBe("completed");
+    expect(mockSendDistributionErrorNotification).toHaveBeenCalledTimes(1);
   });
 
   it("marks job as failed when all platforms fail", async () => {
-    const job = makeJob();
-    mockFindFirst.mockResolvedValue(job);
-
-    // Track per-platform call counts so the first update (uploading) throws
-    // while the second update (error recording in catch) succeeds.
-    const platformCallCounts: Record<string, number> = {};
-    mockPlatformUpdate.mockImplementation(
-      async (args: { where: { id: string }; data: { status: string } }) => {
-        const id = args.where.id;
-        platformCallCounts[id] = (platformCallCounts[id] ?? 0) + 1;
-        // First call per platform is the "uploading" phase — make it fail
-        if (platformCallCounts[id] === 1) {
-          throw new Error("Platform unavailable");
-        }
-        return {};
-      }
-    );
-
-    const result = await processNextJob();
-
-    expect(result).not.toBeNull();
-    expect(result!.status).toBe("failed");
-    expect(result!.platformResults.every((r) => r.status === "failed")).toBe(
-      true
-    );
-  });
-
-  it("continues processing other platforms when one fails", async () => {
     const job = makeJob({
-      platforms: [
-        { id: "plat-1", platform: "youtube" },
-        { id: "plat-2", platform: "spotify" },
-      ],
+      platforms: [{ id: "plat-yt", platform: "youtube" }],
     });
-    mockFindFirst.mockResolvedValue(job);
+    mockFindUnique.mockResolvedValue(job);
 
-    // First platform call chain: fail on the first update (uploading phase)
-    // Second platform call chain: succeed
-    let callCount = 0;
-    mockPlatformUpdate.mockImplementation(async (args: { where: { id: string } }) => {
-      callCount++;
-      // Fail the first platform's first status update
-      if (args.where.id === "plat-1" && callCount <= 1) {
-        throw new Error("YouTube API down");
-      }
-      return {};
-    });
+    // Video download fails
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      body: null,
+    }) as unknown as typeof fetch;
 
-    const result = await processNextJob();
+    const result = await processJob("job-1");
 
-    expect(result).not.toBeNull();
-    // Overall job should be awaiting_review because spotify succeeded
-    expect(result!.status).toBe("awaiting_review");
-
-    const youtubeResult = result!.platformResults.find(
-      (r) => r.platform === "youtube"
-    );
-    const spotifyResult = result!.platformResults.find(
-      (r) => r.platform === "spotify"
-    );
-
-    expect(youtubeResult!.status).toBe("failed");
-    expect(spotifyResult!.status).toBe("completed");
-  });
-
-  it("triggers AI suggestion generation after successful platform uploads", async () => {
-    const job = makeJob({
-      metadata: { transcript: "Hello world" },
-    });
-    mockFindFirst.mockResolvedValue(job);
-
-    await processNextJob();
-
-    expect(mockGenerateAiSuggestions).toHaveBeenCalledWith(
-      "job-1",
-      "Hello world"
-    );
-  });
-
-  it("does not fail the job when AI processing throws", async () => {
-    const job = makeJob();
-    mockFindFirst.mockResolvedValue(job);
-    mockGenerateAiSuggestions.mockRejectedValue(
-      new Error("AI service unavailable")
-    );
-
-    const result = await processNextJob();
-
-    // Job should still move to awaiting_review despite AI failure
-    expect(result).not.toBeNull();
-    expect(result!.status).toBe("awaiting_review");
-  });
-
-  it("returns platform results for each platform in the job", async () => {
-    const job = makeJob({
-      platforms: [
-        { id: "plat-1", platform: "youtube" },
-        { id: "plat-2", platform: "spotify" },
-        { id: "plat-3", platform: "apple" },
-      ],
-    });
-    mockFindFirst.mockResolvedValue(job);
-
-    const result = await processNextJob();
-
-    expect(result!.platformResults).toHaveLength(3);
-    const platforms = result!.platformResults.map((r) => r.platform);
-    expect(platforms).toContain("youtube");
-    expect(platforms).toContain("spotify");
-    expect(platforms).toContain("apple");
+    expect(result.status).toBe("failed");
+    expect(
+      result.platformResults.every(
+        (r: { status: string }) => r.status === "failed"
+      )
+    ).toBe(true);
   });
 });
