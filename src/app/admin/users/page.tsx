@@ -26,6 +26,8 @@ export default async function AdminUsersPage({
     include: {
       allowedContentTypes: true,
       allowedShows: true,
+      inviteToken: { select: { usedAt: true } },
+      accounts: { select: { provider: true } },
     },
   });
 
@@ -62,6 +64,7 @@ export default async function AdminUsersPage({
                 <TableHead>Content Types</TableHead>
                 <TableHead>Shows</TableHead>
                 <TableHead>Distribution</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -116,6 +119,19 @@ export default async function AdminUsersPage({
                       <span className="text-xs text-muted-foreground">No</span>
                     )}
                   </TableCell>
+                  <TableCell>
+                    {user.accounts.some((a) => a.provider === "google") ? (
+                      <Badge variant="default">Active</Badge>
+                    ) : user.inviteToken?.usedAt ? (
+                      <Badge variant="default">Active</Badge>
+                    ) : user.inviteSentAt ? (
+                      <Badge variant="secondary">Pending</Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Not invited
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm" render={<Link href={`/admin/users/${user.id}`} />}>
                       Edit
@@ -125,7 +141,7 @@ export default async function AdminUsersPage({
               ))}
               {users.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     No users found.
                   </TableCell>
                 </TableRow>
