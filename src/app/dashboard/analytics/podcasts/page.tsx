@@ -5,24 +5,16 @@ import { useDateRange } from "@/components/analytics/date-range-provider";
 import ShowSelector from "@/components/analytics/show-selector";
 import StatCard from "@/components/analytics/stat-card";
 import TimeSeriesChart from "@/components/analytics/charts/time-series-chart";
-import BarChart from "@/components/analytics/charts/bar-chart";
-import DonutChart from "@/components/analytics/charts/donut-chart";
 import EpisodeTable from "@/components/analytics/episode-table";
 import {
   fetchAccessibleShows,
   fetchPodcastAnalytics,
   fetchPodcastEpisodes,
-  fetchPodcastCountries,
-  fetchPodcastApps,
-  fetchPodcastDevices,
 } from "@/app/dashboard/analytics/actions";
 import type {
   AccessibleShow,
   TransistorAnalyticsPoint,
   TransistorEpisode,
-  TransistorCountryData,
-  TransistorAppData,
-  TransistorDeviceData,
 } from "@/lib/analytics/types";
 
 export default function PodcastAnalyticsPage() {
@@ -34,9 +26,6 @@ export default function PodcastAnalyticsPage() {
 
   const [downloads, setDownloads] = useState<TransistorAnalyticsPoint[]>([]);
   const [episodes, setEpisodes] = useState<TransistorEpisode[]>([]);
-  const [countries, setCountries] = useState<TransistorCountryData[]>([]);
-  const [apps, setApps] = useState<TransistorAppData[]>([]);
-  const [devices, setDevices] = useState<TransistorDeviceData[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   // Load accessible shows on mount
@@ -60,15 +49,9 @@ export default function PodcastAnalyticsPage() {
     Promise.all([
       fetchPodcastAnalytics(selectedShowId, dateRange),
       fetchPodcastEpisodes(selectedShowId),
-      fetchPodcastCountries(selectedShowId),
-      fetchPodcastApps(selectedShowId),
-      fetchPodcastDevices(selectedShowId),
-    ]).then(([analyticsData, episodesData, countriesData, appsData, devicesData]) => {
+    ]).then(([analyticsData, episodesData]) => {
       setDownloads(analyticsData);
       setEpisodes(episodesData);
-      setCountries(countriesData);
-      setApps(appsData);
-      setDevices(devicesData);
       setDataLoading(false);
     });
   }, [selectedShowId, from, to]);
@@ -133,42 +116,6 @@ export default function PodcastAnalyticsPage() {
           series={[
             { dataKey: "downloads", name: "Downloads", color: "#6366f1" },
           ]}
-        />
-      </div>
-
-      {/* Listening Platforms + Top Countries */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border bg-card p-4">
-          <h2 className="mb-4 text-base font-semibold">Listening Platforms</h2>
-          <BarChart
-            data={apps.slice(0, 10) as unknown as Record<string, unknown>[]}
-            xKey="app"
-            series={[
-              { dataKey: "downloads", name: "Downloads", color: "#6366f1" },
-            ]}
-            layout="horizontal"
-            height={350}
-          />
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <h2 className="mb-4 text-base font-semibold">Top Countries</h2>
-          <BarChart
-            data={countries.slice(0, 10) as unknown as Record<string, unknown>[]}
-            xKey="country"
-            series={[
-              { dataKey: "downloads", name: "Downloads", color: "#8b5cf6" },
-            ]}
-            layout="horizontal"
-            height={350}
-          />
-        </div>
-      </div>
-
-      {/* Devices */}
-      <div className="rounded-lg border bg-card p-4">
-        <h2 className="mb-4 text-base font-semibold">Devices</h2>
-        <DonutChart
-          data={devices.map((d) => ({ name: d.device, value: d.downloads }))}
         />
       </div>
 

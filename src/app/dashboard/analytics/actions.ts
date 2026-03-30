@@ -7,9 +7,6 @@ import {
   getTransistorEpisodes,
   getTransistorShowAnalytics,
   getTransistorEpisodeAnalytics,
-  getTransistorCountryAnalytics,
-  getTransistorAppAnalytics,
-  getTransistorDeviceAnalytics,
 } from "@/lib/analytics/transistor";
 import {
   getYouTubeChannelStats,
@@ -28,9 +25,6 @@ import type {
   DateRange,
   TransistorAnalyticsPoint,
   TransistorEpisode,
-  TransistorCountryData,
-  TransistorAppData,
-  TransistorDeviceData,
   YouTubeChannelStats,
   YouTubeVideo,
   YouTubeAnalyticsPoint,
@@ -87,26 +81,6 @@ export async function fetchEpisodeAnalytics(
   return getTransistorEpisodeAnalytics(wpShowId, episodeId, dateRange);
 }
 
-export async function fetchPodcastCountries(
-  wpShowId: number
-): Promise<TransistorCountryData[]> {
-  await requireShowAccess(wpShowId);
-  return getTransistorCountryAnalytics(wpShowId);
-}
-
-export async function fetchPodcastApps(
-  wpShowId: number
-): Promise<TransistorAppData[]> {
-  await requireShowAccess(wpShowId);
-  return getTransistorAppAnalytics(wpShowId);
-}
-
-export async function fetchPodcastDevices(
-  wpShowId: number
-): Promise<TransistorDeviceData[]> {
-  await requireShowAccess(wpShowId);
-  return getTransistorDeviceAnalytics(wpShowId);
-}
 
 // --- YouTube actions ---
 
