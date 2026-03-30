@@ -24,6 +24,8 @@ model User {
   allowedContentTypes   UserContentTypeAccess[]
   preferences           UserPreference?
   activityLogs          ActivityLog[]
+  inviteSentAt          DateTime?
+  inviteToken           InviteToken?
 
   @@map("users")
 }
@@ -196,4 +198,17 @@ model ActivityLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("activity_logs")
+}
+
+model InviteToken {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("invite_tokens")
 }
