@@ -70,8 +70,8 @@ export async function generateSignedUploadUrl(
 
   const [url] = await file.getSignedUrl({
     version: "v4",
-    action: "resumable",
-    expires: Date.now() + 60 * 60 * 1000, // 1 hour
+    action: "write",
+    expires: Date.now() + 4 * 60 * 60 * 1000, // 4 hours for large video uploads
     contentType,
   });
 

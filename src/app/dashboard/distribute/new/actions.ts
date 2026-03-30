@@ -2,7 +2,6 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { redirect } from "next/navigation";
 
 interface FormState {
   success?: boolean;
@@ -25,7 +24,7 @@ export async function submitDistribution(
 ): Promise<FormState> {
   const session = await auth();
   if (!session?.user) {
-    redirect("/login");
+    return { success: false, message: "Please sign in to continue." };
   }
 
   if (!session.user.hasDistributionAccess && session.user.role !== "admin") {
@@ -39,6 +38,9 @@ export async function submitDistribution(
   const tags = formData.get("tags") as string | null;
   const scheduleMode = formData.get("schedule_mode") as string | null;
   const scheduledAt = formData.get("scheduled_at") as string | null;
+  const videoFileName = formData.get("video_file_name") as string | null;
+  const videoFileSize = formData.get("video_file_size") as string | null;
+  const videoContentType = formData.get("video_content_type") as string | null;
 
   // Collect selected platforms
   const selectedPlatforms = VALID_PLATFORMS.filter(
@@ -68,11 +70,8 @@ export async function submitDistribution(
     errors.scheduled_at = ["Please select a date and time for scheduling."];
   }
 
-  // Check for video file — in this UI layer we validate presence; actual upload
-  // to GCS will be handled by the pipeline implementation later.
-  const videoFile = formData.get("video_file") as File | null;
-  if (!videoFile || videoFile.size === 0) {
-    errors.video_file = ["Please upload a video file."];
+  if (!videoFileName) {
+    errors.video_file = ["Please select a video file."];
   }
 
   if (Object.keys(errors).length > 0) {
@@ -103,12 +102,12 @@ export async function submitDistribution(
     scheduleMode: isDraft ? "now" : (scheduleMode ?? "now"),
     scheduledAt: scheduleMode === "schedule" && !isDraft ? scheduledAt : null,
     youtubePrivacy: isDraft ? "unlisted" : "public",
-    // Thumbnail and video file references will be populated by the upload pipeline
     thumbnailUploaded: (formData.get("thumbnail") as File | null)?.size
       ? true
       : false,
-    videoFileName: videoFile!.name,
-    videoFileSize: videoFile!.size,
+    videoFileName,
+    videoFileSize: videoFileSize ? parseInt(videoFileSize, 10) : 0,
+    videoContentType,
   };
 
   // Verify user has access to this show
@@ -131,6 +130,7 @@ export async function submitDistribution(
   }
 
   // Create the distribution job and platform records in a transaction
+  // Job starts as "uploading" — will move to "pending" after video upload completes
   const job = await db.$transaction(async (tx) => {
     const newJob = await tx.distributionJob.create({
       data: {
@@ -138,7 +138,7 @@ export async function submitDistribution(
         wpShowId: parseInt(showId!, 10),
         title: title!.trim(),
         metadata,
-        status: "pending",
+        status: "uploading",
       },
     });
 
@@ -150,7 +150,6 @@ export async function submitDistribution(
       })),
     });
 
-    // Log activity
     await tx.activityLog.create({
       data: {
         userId: session.user.id,
@@ -164,5 +163,9 @@ export async function submitDistribution(
     return newJob;
   });
 
-  redirect(`/dashboard/distribute/${job.id}`);
+  return {
+    success: true,
+    message: "Job created. Uploading video...",
+    jobId: job.id,
+  };
 }
