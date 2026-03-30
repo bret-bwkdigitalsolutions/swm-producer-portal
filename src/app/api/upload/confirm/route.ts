@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { processJob } from "@/lib/jobs/processor";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
 
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
-    select: { id: true, userId: true, status: true, gcsPath: true },
+    select: { id: true, userId: true, status: true, gcsPath: true, metadata: true },
   });
 
   if (!job) {
@@ -60,11 +61,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Move job to pending — ready for the processor to pick up
+  // Move to pending
   await db.distributionJob.update({
     where: { id: jobId },
     data: { status: "pending" },
   });
 
-  return NextResponse.json({ success: true, status: "pending" });
+  // Check if this is a scheduled post
+  const metadata = job.metadata as Record<string, unknown>;
+  const scheduleMode = (metadata.scheduleMode as string) ?? "now";
+
+  if (scheduleMode === "schedule") {
+    // Leave as pending — a scheduled job cron will pick it up
+    return NextResponse.json({ success: true, status: "scheduled" });
+  }
+
+  // Trigger processing immediately (non-blocking)
+  processJob(jobId).catch((error) => {
+    console.error(`[confirm] Background processing failed for job ${jobId}:`, error);
+  });
+
+  return NextResponse.json({ success: true, status: "processing" });
 }
