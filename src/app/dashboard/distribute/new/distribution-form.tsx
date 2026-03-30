@@ -97,7 +97,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
 
       const { uploadUrl } = await signedUrlRes.json();
 
-      // 2. Resumable upload to GCS with chunk retry
+      // 2. Resumable upload to GCS using XMLHttpRequest for proper 308 handling
       const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks
       const MAX_RETRIES = 5;
       let offset = 0;
@@ -105,36 +105,39 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
       while (offset < file.size) {
         const end = Math.min(offset + CHUNK_SIZE, file.size);
         const chunk = file.slice(offset, end);
-        const isLastChunk = end === file.size;
         const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
 
         let success = false;
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
           try {
-            const res = await fetch(uploadUrl, {
-              method: "PUT",
-              headers: {
-                "Content-Range": contentRange,
-                "Content-Type": file.type,
-              },
-              body: chunk,
+            const status = await new Promise<number>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open("PUT", uploadUrl);
+              xhr.setRequestHeader("Content-Range", contentRange);
+              xhr.setRequestHeader("Content-Type", file.type);
+
+              xhr.onload = () => resolve(xhr.status);
+              xhr.onerror = () => reject(new Error("Network error during chunk upload"));
+              xhr.onabort = () => reject(new Error("Upload was cancelled"));
+
+              xhr.send(chunk);
             });
 
             // 308 Resume Incomplete = chunk accepted, continue
             // 200/201 = upload complete
-            if (res.status === 308 || res.ok) {
+            if (status === 308 || (status >= 200 && status < 300)) {
               success = true;
               break;
             }
 
             // 5xx = retryable server error
-            if (res.status >= 500) {
+            if (status >= 500) {
               await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
               continue;
             }
 
             // 4xx = not retryable
-            throw new Error(`Upload failed with status ${res.status}`);
+            throw new Error(`Upload failed with status ${status}`);
           } catch (error) {
             if (attempt === MAX_RETRIES - 1) throw error;
             await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
