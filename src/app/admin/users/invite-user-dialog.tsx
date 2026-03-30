@@ -33,8 +33,8 @@ export function InviteUserDialog() {
         <DialogHeader>
           <DialogTitle>Invite New User</DialogTitle>
           <DialogDescription>
-            Create a new user account with a temporary password. The user can
-            sign in with these credentials or use Google OAuth.
+            Create a new user account. You'll configure their permissions next,
+            then send them an invite.
           </DialogDescription>
         </DialogHeader>
 
@@ -73,18 +73,6 @@ export function InviteUserDialog() {
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="invite-password">Temporary Password</Label>
-            <Input
-              id="invite-password"
-              name="tempPassword"
-              type="password"
-              required
-              placeholder="Temporary password"
-              minLength={8}
-            />
           </div>
 
           <DialogFooter>

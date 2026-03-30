@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import bcrypt from "bcryptjs";
+import { createAndSendInvite } from "@/lib/invite";
 
 async function requireAdminSession() {
   const session = await auth();
@@ -20,9 +20,8 @@ export async function inviteUser(formData: FormData) {
   const name = formData.get("name") as string;
   const email = formData.get("email") as string;
   const role = formData.get("role") as string;
-  const tempPassword = formData.get("tempPassword") as string;
 
-  if (!name || !email || !role || !tempPassword) {
+  if (!name || !email || !role) {
     throw new Error("All fields are required");
   }
 
@@ -31,19 +30,40 @@ export async function inviteUser(formData: FormData) {
     throw new Error("A user with this email already exists");
   }
 
-  const hashedPassword = await bcrypt.hash(tempPassword, 12);
-
-  await db.user.create({
-    data: {
-      name,
-      email,
-      role,
-      hashedPassword,
-    },
+  const user = await db.user.create({
+    data: { name, email, role },
   });
 
   revalidatePath("/admin/users");
-  redirect("/admin/users?invited=true");
+  redirect(`/admin/users/${user.id}`);
+}
+
+export async function sendInvite(formData: FormData) {
+  await requireAdminSession();
+
+  const userId = formData.get("userId") as string;
+  if (!userId) {
+    throw new Error("User ID is required");
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true },
+  });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  await createAndSendInvite({
+    userId: user.id,
+    userName: user.name,
+    userEmail: user.email,
+  });
+
+  revalidatePath(`/admin/users/${userId}`);
+  revalidatePath("/admin/users");
+  redirect(`/admin/users/${userId}?invited=true`);
 }
 
 export async function updateUserPermissions(formData: FormData) {
