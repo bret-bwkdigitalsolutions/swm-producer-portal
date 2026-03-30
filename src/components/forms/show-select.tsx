@@ -58,7 +58,7 @@ export function ShowSelect({
         </SelectTrigger>
         <SelectContent>
           {allowedShows.map((show) => (
-            <SelectItem key={show.id} value={show.id}>
+            <SelectItem key={show.id} value={show.id} label={show.title}>
               {show.title}
             </SelectItem>
           ))}
