@@ -49,10 +49,12 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
 USER nextjs
 
 ENV PORT=${PORT:-3000}
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+# Run pending migrations then start the server
+CMD npx prisma migrate deploy && node server.js
