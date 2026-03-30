@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { updateUserPermissions, deleteUser } from "../actions";
+import { updateUserPermissions, deleteUser, sendInvite } from "../actions";
 import { ConfirmDeleteButton } from "@/components/admin/confirm-delete-button";
 
 const ALL_CONTENT_TYPES = Object.values(ContentType);
@@ -17,16 +17,18 @@ export default async function UserEditPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; invited?: string }>;
 }) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, invited } = await searchParams;
 
   const user = await db.user.findUnique({
     where: { id },
     include: {
       allowedContentTypes: true,
       allowedShows: true,
+      inviteToken: true,
+      accounts: { select: { provider: true } },
     },
   });
 
@@ -52,6 +54,12 @@ export default async function UserEditPage({
       {saved && (
         <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
           User permissions updated successfully.
+        </div>
+      )}
+
+      {invited && (
+        <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+          Invite email sent successfully.
         </div>
       )}
 
@@ -170,6 +178,70 @@ export default async function UserEditPage({
           </CardContent>
         </Card>
       </form>
+
+      {/* Invite */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Invite</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {user.accounts.some((a) => a.provider === "google") ? (
+            <p className="text-sm text-muted-foreground">
+              This user has signed in with Google. No invite needed.
+            </p>
+          ) : user.inviteToken?.usedAt ? (
+            <p className="text-sm text-muted-foreground">
+              Invite accepted on{" "}
+              {user.inviteToken.usedAt.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+              .
+            </p>
+          ) : user.inviteSentAt ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Invite sent on{" "}
+                {user.inviteSentAt.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+                .
+                {user.inviteToken &&
+                  user.inviteToken.expiresAt < new Date() && (
+                    <span className="text-red-600 font-medium">
+                      {" "}
+                      Link expired.
+                    </span>
+                  )}
+              </p>
+              <form action={sendInvite}>
+                <input type="hidden" name="userId" value={user.id} />
+                <Button type="submit" variant="outline" size="sm">
+                  Resend Invite
+                </Button>
+              </form>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {user.allowedContentTypes.length === 0 && (
+                <p className="text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">
+                  This user has no content types assigned yet. Consider
+                  configuring permissions above before sending the invite.
+                </p>
+              )}
+              <form action={sendInvite}>
+                <input type="hidden" name="userId" value={user.id} />
+                <Button type="submit" size="sm">
+                  Send Invite
+                </Button>
+              </form>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Delete User */}
       <Card className="border-red-200">
