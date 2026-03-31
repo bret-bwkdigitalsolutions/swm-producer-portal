@@ -103,12 +103,14 @@ export async function submitReview(
       ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
       meta: {
         _swm_portal_user_id: session.user.id,
-        _swm_reviewer_name: resolvedReviewer,
-        _swm_review_category: category,
-        _swm_show_id: parseInt(showId, 10),
-        ...(ratingNum ? { _swm_rating: ratingNum } : {}),
+        _swm_portal_submission: true,
+        reviewer_name: resolvedReviewer,
+        review_category: category,
+        parent_show_id: parseInt(showId, 10),
+        movie_title: movieTitle.trim(),
+        ...(ratingNum ? { rating: ratingNum } : {}),
         ...(posterImageUrl && !featuredMediaId
-          ? { _swm_poster_url: posterImageUrl }
+          ? { poster_image_url: posterImageUrl }
           : {}),
       },
     };

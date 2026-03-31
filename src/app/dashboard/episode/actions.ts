@@ -98,15 +98,16 @@ export async function submitEpisode(
       content: description || "",
       meta: {
         _swm_portal_user_id: session.user.id,
-        _swm_show_id: parseInt(showId, 10),
-        _swm_episode_number: epNum,
-        ...(seaNum !== undefined ? { _swm_season_number: seaNum } : {}),
-        ...(durMin !== undefined ? { _swm_duration_minutes: durMin } : {}),
-        ...(vimeoUrl?.trim() ? { _swm_vimeo_url: vimeoUrl.trim() } : {}),
-        ...(youtubeUrl?.trim() ? { _swm_youtube_url: youtubeUrl.trim() } : {}),
-        _swm_premium_only: premiumOnly === "true",
+        _swm_portal_submission: true,
+        parent_show_id: parseInt(showId, 10),
+        episode_number: epNum,
+        ...(seaNum !== undefined ? { season_number: seaNum } : {}),
+        ...(durMin !== undefined ? { duration_minutes: durMin } : {}),
+        ...(vimeoUrl?.trim() ? { vimeo_video_url: vimeoUrl.trim() } : {}),
+        ...(youtubeUrl?.trim() ? { youtube_video_url: youtubeUrl.trim() } : {}),
+        is_premium_only: premiumOnly === "true",
         ...(contentWarning?.trim()
-          ? { _swm_content_warning: contentWarning.trim() }
+          ? { content_warning: contentWarning.trim() }
           : {}),
       },
     };

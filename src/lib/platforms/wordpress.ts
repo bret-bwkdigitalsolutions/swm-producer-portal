@@ -55,16 +55,17 @@ export async function publishToWordPress(
     ...(status === "future" && scheduledDate ? { date: scheduledDate } : {}),
     meta: {
       _swm_portal_user_id: portalUserId,
-      _swm_show_id: wpShowId,
-      _swm_youtube_url: youtubeUrl,
+      _swm_portal_submission: true,
+      parent_show_id: wpShowId,
+      youtube_video_url: youtubeUrl,
       ...(episodeNumber !== undefined
-        ? { _swm_episode_number: episodeNumber }
+        ? { episode_number: episodeNumber }
         : {}),
       ...(seasonNumber !== undefined
-        ? { _swm_season_number: seasonNumber }
+        ? { season_number: seasonNumber }
         : {}),
       ...(durationMinutes !== undefined
-        ? { _swm_duration_minutes: durationMinutes }
+        ? { duration_minutes: durationMinutes }
         : {}),
     },
   };

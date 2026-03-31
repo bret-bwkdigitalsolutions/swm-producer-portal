@@ -79,9 +79,11 @@ export async function submitTrailer(
       ...(status === "future" && scheduledDate ? { date: scheduledDate } : {}),
       meta: {
         _swm_portal_user_id: session.user.id,
-        _swm_youtube_url: youtubeUrl.trim(),
-        _swm_show_id: parseInt(showId, 10),
-        ...(releaseDate ? { _swm_release_date: releaseDate } : {}),
+        _swm_portal_submission: true,
+        movie_title: movieTitle.trim(),
+        youtube_url: youtubeUrl.trim(),
+        parent_show_id: parseInt(showId, 10),
+        ...(releaseDate ? { release_date: releaseDate } : {}),
       },
     };
 
