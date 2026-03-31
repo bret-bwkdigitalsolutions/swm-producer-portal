@@ -134,8 +134,8 @@ export function ReviewForm({ shows }: ReviewFormProps) {
             <SelectValue placeholder="Select a category" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="movie_review">Movie Review</SelectItem>
-            <SelectItem value="stage_review">Stage Review</SelectItem>
+            <SelectItem value="Movie Review">Movie Review</SelectItem>
+            <SelectItem value="Stage Review">Stage Review</SelectItem>
           </SelectContent>
         </Select>
         <input type="hidden" name="category" value={category} />

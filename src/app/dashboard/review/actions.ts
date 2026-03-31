@@ -93,7 +93,7 @@ export async function submitReview(
     const resolvedReviewer =
       reviewerName === "other" ? reviewerCustom.trim() : reviewerName;
 
-    const ratingNum = rating ? parseInt(rating, 10) : undefined;
+    const ratingNum = rating ? parseInt(rating, 10) : 0;
 
     const payload = {
       title: movieTitle.trim(),
@@ -108,7 +108,7 @@ export async function submitReview(
         review_category: category,
         parent_show_id: parseInt(showId, 10),
         movie_title: movieTitle.trim(),
-        ...(ratingNum ? { rating: ratingNum } : {}),
+        rating: ratingNum,
         ...(posterImageUrl && !featuredMediaId
           ? { poster_image_url: posterImageUrl }
           : {}),
