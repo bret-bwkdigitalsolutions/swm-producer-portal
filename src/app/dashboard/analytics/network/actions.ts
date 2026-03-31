@@ -2,11 +2,15 @@
 
 import { auth } from "@/lib/auth";
 import { getNetworkBySlug } from "@/lib/analytics/networks";
-import { getShows } from "@/lib/wordpress/client";
 import {
   getTransistorShowAnalytics,
   getTransistorEpisodes,
+  getTransistorShows,
 } from "@/lib/analytics/transistor";
+import {
+  resolvePlatformId,
+  parseTransistorShowId,
+} from "@/lib/analytics/credentials";
 import {
   getYouTubeChannelStats,
   getYouTubeVideos,
@@ -114,11 +118,27 @@ export async function fetchNetworkShowBreakdown(
 ): Promise<NetworkShowBreakdown[]> {
   const network = await requireAdminForNetwork(slug);
 
-  // Get show names for display
-  const wpShows = await getShows().catch(() => []);
-  const showNameMap = new Map(
-    wpShows.map((s) => [s.id, s.title.rendered.replace(/&#(\d+);/g, (_: string, code: string) => String.fromCharCode(Number(code)))])
+  // Resolve show names from Transistor (reliable — WP API has been flaky here)
+  // 1. Map each wpShowId to its Transistor show ID
+  const transistorIdToWpId = new Map<string, number>();
+  await Promise.all(
+    network.wpShowIds.map(async (wpShowId) => {
+      const url = await resolvePlatformId(wpShowId, "transistor_show");
+      if (url) {
+        transistorIdToWpId.set(parseTransistorShowId(url), wpShowId);
+      }
+    })
   );
+
+  // 2. Fetch all shows from Transistor (one cached API call)
+  const transistorShows = await getTransistorShows(network.wpShowIds[0]).catch(() => []);
+  const showNameMap = new Map<number, string>();
+  for (const show of transistorShows) {
+    const wpShowId = transistorIdToWpId.get(show.id);
+    if (wpShowId !== undefined) {
+      showNameMap.set(wpShowId, show.attributes.title);
+    }
+  }
 
   const results = await throttledMap(network.wpShowIds, async (wpShowId) => {
     const [analyticsResult, episodesResult] = await Promise.allSettled([
