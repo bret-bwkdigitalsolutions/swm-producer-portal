@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { deleteFile } from "@/lib/gcs";
+import { processJob } from "@/lib/jobs/processor";
 
 interface FormState {
   success?: boolean;
@@ -147,16 +148,20 @@ export async function retryPlatform(
     select: { status: true },
   });
 
-  if (parentJob?.status === "failed") {
-    await db.distributionJob.update({
-      where: { id: platformJob.job.id },
-      data: { status: "processing" },
-    });
-  }
+  // Set parent job to pending so processJob can pick it up
+  await db.distributionJob.update({
+    where: { id: platformJob.job.id },
+    data: { status: "pending" },
+  });
+
+  // Trigger processing (non-blocking) — processor skips completed platforms
+  processJob(platformJob.job.id).catch((error) => {
+    console.error(`[retry] Processing failed for job ${platformJob.job.id}:`, error);
+  });
 
   revalidatePath(`/dashboard/distribute/${platformJob.job.id}`);
 
-  return { success: true, message: `${platformJob.platform} job requeued.` };
+  return { success: true, message: `Retrying ${platformJob.platform}...` };
 }
 
 /**

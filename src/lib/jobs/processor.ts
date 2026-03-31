@@ -56,10 +56,12 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
   const metadata = job.metadata as Record<string, unknown>;
   const platformResults: ProcessingResult["platformResults"] = [];
 
-  // Extract audio if needed (for Transistor)
+  // Extract audio if needed (for Transistor — skip if already completed)
   let gcsAudioPath: string | null = null;
-  const needsAudio = job.platforms.some((p) => p.platform === "transistor");
-  if (needsAudio && job.gcsPath) {
+  const transistorNeedsWork = job.platforms.some(
+    (p) => p.platform === "transistor" && p.status !== "completed"
+  );
+  if (transistorNeedsWork && job.gcsPath) {
     try {
       gcsAudioPath = await extractAudio(job.gcsPath);
     } catch (error) {
@@ -84,10 +86,12 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
     }
   }
 
-  // Download video to temp file (for YouTube upload)
+  // Download video to temp file (for YouTube upload — skip if already completed)
   let tempVideoPath: string | null = null;
-  const needsYouTube = job.platforms.some((p) => p.platform === "youtube");
-  if (needsYouTube && job.gcsPath) {
+  const youtubeNeedsWork = job.platforms.some(
+    (p) => p.platform === "youtube" && p.status !== "completed"
+  );
+  if (youtubeNeedsWork && job.gcsPath) {
     try {
       const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
       tempVideoPath = join(tempDir, "video.mp4");
@@ -109,7 +113,12 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
   let youtubeVideoId: string | null = null;
   const youtubePlatform = job.platforms.find((p) => p.platform === "youtube");
 
-  if (youtubePlatform) {
+  if (youtubePlatform && youtubePlatform.status === "completed") {
+    // Already completed — preserve the result for WordPress
+    youtubeUrl = youtubePlatform.externalUrl;
+    youtubeVideoId = youtubePlatform.externalId;
+    platformResults.push({ platform: "youtube", status: "completed" });
+  } else if (youtubePlatform) {
     await db.distributionJobPlatform.update({
       where: { id: youtubePlatform.id },
       data: { status: "uploading" },
@@ -186,8 +195,10 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
   const transistorPlatform = job.platforms.find(
     (p) => p.platform === "transistor"
   );
-  // Only process if not already failed from audio extraction
-  if (
+
+  if (transistorPlatform && transistorPlatform.status === "completed") {
+    platformResults.push({ platform: "transistor", status: "completed" });
+  } else if (
     transistorPlatform &&
     !platformResults.some(
       (r) => r.platform === "transistor" && r.status === "failed"
@@ -241,7 +252,9 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
 
   // --- Phase 3: WordPress (needs YouTube URL) ---
   const websitePlatform = job.platforms.find((p) => p.platform === "website");
-  if (websitePlatform) {
+  if (websitePlatform && websitePlatform.status === "completed") {
+    platformResults.push({ platform: "website", status: "completed" });
+  } else if (websitePlatform) {
     await db.distributionJobPlatform.update({
       where: { id: websitePlatform.id },
       data: { status: "uploading" },
