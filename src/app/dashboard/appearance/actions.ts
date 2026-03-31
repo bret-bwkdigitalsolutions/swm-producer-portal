@@ -95,6 +95,11 @@ export async function submitAppearance(
     // Build the title from venue + location
     const title = `${venue} - ${location}`;
 
+    // Split datetime-local values into separate date and time fields
+    // Input format: "2026-03-31T14:30"
+    const [dateStart, timeStart] = datetimeStart.split("T");
+    const [dateEnd, timeEnd] = datetimeEnd.split("T");
+
     // Create post in WordPress
     const wpPost = await createPost(ContentType.APPEARANCE, {
       title,
@@ -106,15 +111,17 @@ export async function submitAppearance(
         _swm_portal_user_id: session.user.id,
         _swm_portal_submission: true,
         _swm_appearance_show_id: Number(showId),
-        _swm_appearance_date_start: datetimeStart,
-        _swm_appearance_date_end: datetimeEnd,
+        _swm_appearance_date_start: dateStart,
+        _swm_appearance_time_start: timeStart,
+        _swm_appearance_date_end: dateEnd,
+        _swm_appearance_time_end: timeEnd,
         _swm_appearance_venue: venue,
         _swm_appearance_location: location,
         _swm_appearance_address: address,
         _swm_appearance_ticket_url: ticketUrl || "",
         _swm_appearance_event_url: eventUrl || "",
         _swm_appearance_status: status,
-        _swm_appearance_gallery: galleryIds,
+        _swm_appearance_gallery: galleryIds.join(","),
       },
     });
 
