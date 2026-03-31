@@ -46,6 +46,7 @@ const testNetwork = {
   name: "Sunset Lounge DFW",
   wpShowIds: [1, 2],
   credentialWpShowId: 0,
+  showNames: { 1: "Test Show A", 2: "Test Show B" },
 };
 
 describe("fetchNetworkPodcastAnalytics", () => {

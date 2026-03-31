@@ -5,7 +5,6 @@ import { getNetworkBySlug } from "@/lib/analytics/networks";
 import {
   getTransistorShowAnalytics,
   getTransistorEpisodes,
-  getTransistorShowTitle,
 } from "@/lib/analytics/transistor";
 import {
   getYouTubeChannelStats,
@@ -114,19 +113,6 @@ export async function fetchNetworkShowBreakdown(
 ): Promise<NetworkShowBreakdown[]> {
   const network = await requireAdminForNetwork(slug);
 
-  // Fetch show titles first (throttled) to avoid Transistor 429 rate limits.
-  // These are cached for 24h so subsequent page loads won't re-fetch.
-  const showNameMap = new Map<number, string>();
-  const titleResults = await throttledMap(network.wpShowIds, (wpShowId) =>
-    getTransistorShowTitle(wpShowId).then((title) => ({ wpShowId, title }))
-  );
-  for (const r of titleResults) {
-    if (r.status === "fulfilled" && r.value.title) {
-      showNameMap.set(r.value.wpShowId, r.value.title);
-    }
-  }
-
-  // Now fetch analytics (titles are done, no concurrent API pressure)
   const results = await throttledMap(network.wpShowIds, async (wpShowId) => {
     const [analyticsResult, episodesResult] = await Promise.allSettled([
       getTransistorShowAnalytics(wpShowId, dateRange),
@@ -139,7 +125,7 @@ export async function fetchNetworkShowBreakdown(
         : 0;
     const episodeCount =
       episodesResult.status === "fulfilled" ? episodesResult.value.length : 0;
-    const showName = showNameMap.get(wpShowId) ?? `Show #${wpShowId}`;
+    const showName = network.showNames[wpShowId] ?? `Show #${wpShowId}`;
 
     return { wpShowId, showName, totalDownloads, episodeCount };
   });
