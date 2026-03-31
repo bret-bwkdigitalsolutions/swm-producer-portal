@@ -58,6 +58,7 @@ export default async function UserEditPage({
                   year: "numeric",
                   hour: "numeric",
                   minute: "2-digit",
+                  timeZone: "America/Chicago",
                 })
               : "Never"}
           </p>
@@ -207,6 +208,7 @@ export default async function UserEditPage({
                 month: "short",
                 day: "numeric",
                 year: "numeric",
+                timeZone: "America/Chicago",
               })}
               .
             </p>
@@ -218,6 +220,7 @@ export default async function UserEditPage({
                   month: "short",
                   day: "numeric",
                   year: "numeric",
+                  timeZone: "America/Chicago",
                 })}
                 .
                 {user.inviteToken &&

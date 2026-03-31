@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { CONTENT_TYPE_LABELS } from "@/lib/constants";
 
 interface SidebarProps {
   visibleContentTypes: string[];
+  hasDistributionAccess: boolean;
+  isAdmin: boolean;
 }
 
-export function Sidebar({ visibleContentTypes }: SidebarProps) {
+export function Sidebar({ visibleContentTypes, hasDistributionAccess, isAdmin }: SidebarProps) {
   const pathname = usePathname();
-  const { data: session } = useSession();
 
   const navItems = [
     { label: "Dashboard", href: "/dashboard" },
@@ -24,13 +24,12 @@ export function Sidebar({ visibleContentTypes }: SidebarProps) {
         href: `/dashboard/${type.replace("_", "-")}`,
       })),
     { label: "Analytics", href: "/dashboard/analytics" },
-    ...(session?.user?.hasDistributionAccess
+    ...(hasDistributionAccess || isAdmin
       ? [{ label: "Episode Distribution", href: "/dashboard/distribute" }]
       : []),
     { label: "Settings", href: "/settings" },
   ];
 
-  const isAdmin = session?.user?.role === "admin";
   if (isAdmin) {
     navItems.push({ label: "Admin", href: "/admin" });
   }

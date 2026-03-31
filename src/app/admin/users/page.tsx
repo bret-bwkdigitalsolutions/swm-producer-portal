@@ -141,6 +141,7 @@ export default async function AdminUsersPage({
                           day: "numeric",
                           hour: "numeric",
                           minute: "2-digit",
+                          timeZone: "America/Chicago",
                         })}
                       </span>
                     ) : (
