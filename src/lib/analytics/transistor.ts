@@ -61,20 +61,28 @@ async function requireShowId(wpShowId: number): Promise<string> {
 export async function getTransistorShowTitle(
   wpShowId: number
 ): Promise<string | null> {
-  const apiKey = await requireApiKey(wpShowId);
-  const showId = await requireShowId(wpShowId);
+  try {
+    const apiKey = await requireApiKey(wpShowId);
+    const showId = await requireShowId(wpShowId);
+    console.log(`[ShowTitle] wpShowId=${wpShowId} transistorShowId=${showId}`);
 
-  return getCached(
-    `analytics:transistor:${wpShowId}:show-title`,
-    86400,
-    async () => {
-      const raw = await transistorFetch<{ data: TransistorShow }>(
-        `/shows/${showId}`,
-        apiKey
-      );
-      return raw.data?.attributes?.title ?? null;
-    }
-  );
+    return await getCached(
+      `analytics:transistor:${wpShowId}:show-title`,
+      86400,
+      async () => {
+        const raw = await transistorFetch<{ data: TransistorShow }>(
+          `/shows/${showId}`,
+          apiKey
+        );
+        const title = raw.data?.attributes?.title ?? null;
+        console.log(`[ShowTitle] wpShowId=${wpShowId} title=${title}`);
+        return title;
+      }
+    );
+  } catch (error) {
+    console.error(`[ShowTitle] FAILED wpShowId=${wpShowId}:`, error);
+    return null;
+  }
 }
 
 export async function getTransistorShows(
