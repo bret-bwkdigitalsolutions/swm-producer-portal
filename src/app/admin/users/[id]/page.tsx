@@ -2,11 +2,10 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { ContentType, CONTENT_TYPE_LABELS, type ContentTypeValue } from "@/lib/constants";
+import { getCachedShows } from "@/lib/wordpress/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { updateUserPermissions, deleteUser, sendInvite } from "../actions";
 import { ConfirmDeleteButton } from "@/components/admin/confirm-delete-button";
 
@@ -35,7 +34,8 @@ export default async function UserEditPage({
   if (!user) notFound();
 
   const allowedTypes = user.allowedContentTypes.map((ct) => ct.contentType);
-  const allowedShowIds = user.allowedShows.map((s) => s.wpShowId);
+  const allowedShowIds = new Set(user.allowedShows.map((s) => s.wpShowId));
+  const allShows = await getCachedShows().catch(() => []);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -144,31 +144,26 @@ export default async function UserEditPage({
             <div className="space-y-2">
               <Label className="text-sm font-medium">Allowed Shows</Label>
               <p className="text-xs text-muted-foreground">
-                Enter WordPress show IDs this user can access (one per line).
-                Show names will be resolved from WordPress in a future update.
+                Select which shows this user can access.
               </p>
               <div className="space-y-2">
-                {allowedShowIds.map((showId) => (
-                  <div key={showId} className="flex items-center gap-2">
+                {allShows.map((show) => (
+                  <label key={show.id} className="flex items-center space-x-2">
                     <input
-                      type="hidden"
+                      type="checkbox"
                       name="showIds"
-                      value={showId.toString()}
+                      value={show.id.toString()}
+                      defaultChecked={allowedShowIds.has(show.id)}
+                      className="rounded border-gray-300"
                     />
-                    <Badge variant="outline">Show #{showId}</Badge>
-                  </div>
+                    <span className="text-sm">{show.title.rendered}</span>
+                  </label>
                 ))}
-                <div className="flex items-center gap-2">
-                  <Input
-                    name="newShowId"
-                    type="number"
-                    placeholder="Add show ID..."
-                    className="w-40"
-                  />
+                {allShows.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Enter a new show ID and save to add it
+                    No shows found in WordPress.
                   </p>
-                </div>
+                )}
               </div>
             </div>
 

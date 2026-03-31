@@ -73,17 +73,10 @@ export async function updateUserPermissions(formData: FormData) {
   const role = formData.get("role") as string;
   const hasDistributionAccess = formData.get("hasDistributionAccess") === "on";
   const contentTypes = formData.getAll("contentTypes") as string[];
-  const existingShowIds = formData
+  const showIds = formData
     .getAll("showIds")
     .map((id) => parseInt(id as string, 10))
     .filter((id) => !isNaN(id));
-
-  // Handle new show ID added from the form
-  const newShowIdStr = formData.get("newShowId") as string;
-  const newShowId = newShowIdStr ? parseInt(newShowIdStr, 10) : NaN;
-  const showIds = isNaN(newShowId)
-    ? existingShowIds
-    : [...existingShowIds, newShowId];
 
   if (!userId || !role) {
     throw new Error("User ID and role are required");
