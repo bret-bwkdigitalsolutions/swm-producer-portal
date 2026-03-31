@@ -38,7 +38,6 @@ import {
   GlobeIcon,
   PenLineIcon,
   SparklesIcon,
-  BookOpenIcon,
 } from "lucide-react";
 
 interface Show {
@@ -431,7 +430,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
 
   const isDisabled = isPending || uploading || analyzing;
   const showModeChoice = !!videoFileName && title.trim().length > 0 && !descriptionMode;
-  const blogSuggestions = suggestions.filter((s) => s.type === "blog");
+
   const aiReady = descriptionMode === "ai" && suggestions.length > 0 && !analyzing;
 
   return (
@@ -703,28 +702,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
                 </div>
               )}
 
-              {/* Blog ideas (read-only) */}
-              {blogSuggestions.length > 0 && (
-                <div className="space-y-2">
-                  <Label>
-                    <BookOpenIcon className="mr-1 inline size-4" />
-                    Blog Ideas{" "}
-                    <span className="text-xs text-muted-foreground">
-                      (saved for later)
-                    </span>
-                  </Label>
-                  <div className="space-y-2">
-                    {blogSuggestions.map((blog) => (
-                      <div
-                        key={blog.id}
-                        className="rounded-lg border bg-muted/30 px-3 py-2 text-sm"
-                      >
-                        {blog.content}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Blog ideas are generated but only visible to admins in Admin > Blog Ideas */}
             </div>
           )}
 
