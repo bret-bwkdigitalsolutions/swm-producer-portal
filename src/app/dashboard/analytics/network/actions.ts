@@ -5,12 +5,8 @@ import { getNetworkBySlug } from "@/lib/analytics/networks";
 import {
   getTransistorShowAnalytics,
   getTransistorEpisodes,
-  getTransistorShows,
+  getTransistorShowTitle,
 } from "@/lib/analytics/transistor";
-import {
-  resolvePlatformId,
-  parseTransistorShowId,
-} from "@/lib/analytics/credentials";
 import {
   getYouTubeChannelStats,
   getYouTubeVideos,
@@ -118,33 +114,13 @@ export async function fetchNetworkShowBreakdown(
 ): Promise<NetworkShowBreakdown[]> {
   const network = await requireAdminForNetwork(slug);
 
-  // Resolve show names from Transistor (reliable — WP API has been flaky here)
-  // 1. Map each wpShowId to its Transistor show ID
-  const transistorIdToWpId = new Map<string, number>();
-  await Promise.all(
-    network.wpShowIds.map(async (wpShowId) => {
-      const url = await resolvePlatformId(wpShowId, "transistor_show");
-      if (url) {
-        transistorIdToWpId.set(parseTransistorShowId(url), wpShowId);
-      }
-    })
-  );
-
-  // 2. Fetch all shows from Transistor (one cached API call)
-  const transistorShows = await getTransistorShows(network.wpShowIds[0]).catch(() => []);
-  const showNameMap = new Map<number, string>();
-  for (const show of transistorShows) {
-    const wpShowId = transistorIdToWpId.get(show.id);
-    if (wpShowId !== undefined) {
-      showNameMap.set(wpShowId, show.attributes.title);
-    }
-  }
-
   const results = await throttledMap(network.wpShowIds, async (wpShowId) => {
-    const [analyticsResult, episodesResult] = await Promise.allSettled([
-      getTransistorShowAnalytics(wpShowId, dateRange),
-      getTransistorEpisodes(wpShowId),
-    ]);
+    const [analyticsResult, episodesResult, titleResult] =
+      await Promise.allSettled([
+        getTransistorShowAnalytics(wpShowId, dateRange),
+        getTransistorEpisodes(wpShowId),
+        getTransistorShowTitle(wpShowId),
+      ]);
 
     const totalDownloads =
       analyticsResult.status === "fulfilled"
@@ -152,8 +128,9 @@ export async function fetchNetworkShowBreakdown(
         : 0;
     const episodeCount =
       episodesResult.status === "fulfilled" ? episodesResult.value.length : 0;
-
-    const showName = showNameMap.get(wpShowId) ?? `Show #${wpShowId}`;
+    const showName =
+      (titleResult.status === "fulfilled" && titleResult.value) ||
+      `Show #${wpShowId}`;
 
     return { wpShowId, showName, totalDownloads, episodeCount };
   });

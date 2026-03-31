@@ -58,6 +58,25 @@ async function requireShowId(wpShowId: number): Promise<string> {
   return parseTransistorShowId(url);
 }
 
+export async function getTransistorShowTitle(
+  wpShowId: number
+): Promise<string | null> {
+  const apiKey = await requireApiKey(wpShowId);
+  const showId = await requireShowId(wpShowId);
+
+  return getCached(
+    `analytics:transistor:${wpShowId}:show-title`,
+    86400,
+    async () => {
+      const raw = await transistorFetch<{ data: TransistorShow }>(
+        `/shows/${showId}`,
+        apiKey
+      );
+      return raw.data?.attributes?.title ?? null;
+    }
+  );
+}
+
 export async function getTransistorShows(
   wpShowId: number
 ): Promise<TransistorShow[]> {
