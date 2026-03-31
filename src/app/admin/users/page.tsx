@@ -65,6 +65,7 @@ export default async function AdminUsersPage({
                 <TableHead>Shows</TableHead>
                 <TableHead>Distribution</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Last Login</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -132,6 +133,22 @@ export default async function AdminUsersPage({
                       </span>
                     )}
                   </TableCell>
+                  <TableCell>
+                    {user.lastLoginAt ? (
+                      <span className="text-sm">
+                        {user.lastLoginAt.toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Never
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm" render={<Link href={`/admin/users/${user.id}`} />}>
                       Edit
@@ -141,7 +158,7 @@ export default async function AdminUsersPage({
               ))}
               {users.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground">
                     No users found.
                   </TableCell>
                 </TableRow>

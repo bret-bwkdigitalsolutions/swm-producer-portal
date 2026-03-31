@@ -69,7 +69,7 @@ export async function sendStakeholderNotification({
 
   try {
     await resend.emails.send({
-      from: "SWM Producer Portal <notifications@stolenwatermedia.com>",
+      from: "SWM Producer Portal <info@stolenwatermedia.com>",
       to: stakeholderEmails,
       subject,
       html,
@@ -150,7 +150,7 @@ export async function sendDistributionErrorNotification({
 
   try {
     await resend.emails.send({
-      from: "SWM Producer Portal <notifications@stolenwatermedia.com>",
+      from: "SWM Producer Portal <info@stolenwatermedia.com>",
       to: ["bret@stolenwatermedia.com"],
       subject: `Distribution failed — ${jobTitle}`,
       html,

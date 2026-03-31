@@ -30,13 +30,14 @@ export async function createAndSendInvite({
     update: { token, expiresAt, usedAt: null },
   });
 
-  // Mark invite as sent on the user
+  // Send the email BEFORE marking invite as sent — if sending fails,
+  // the status won't incorrectly show as "Pending"
+  await sendInviteEmail({ userName, userEmail, token });
+
   await db.user.update({
     where: { id: userId },
     data: { inviteSentAt: new Date() },
   });
-
-  await sendInviteEmail({ userName, userEmail, token });
 }
 
 interface SendInviteEmailParams {
@@ -92,15 +93,17 @@ async function sendInviteEmail({
     </div>
   `;
 
-  try {
-    await resend.emails.send({
-      from: "SWM Producer Portal <notifications@stolenwatermedia.com>",
-      to: [userEmail],
-      subject: "You're invited to the SWM Producer Portal",
-      html,
-    });
-  } catch (error) {
-    console.error("[invite] Failed to send invite email:", error);
-    throw new Error("Failed to send invite email");
+  const { data, error } = await resend.emails.send({
+    from: "SWM Producer Portal <info@stolenwatermedia.com>",
+    to: [userEmail],
+    subject: "You're invited to the SWM Producer Portal",
+    html,
+  });
+
+  if (error) {
+    console.error("[invite] Resend API error:", error);
+    throw new Error(`Failed to send invite email: ${error.message}`);
   }
+
+  console.log(`[invite] Email sent to ${userEmail} (id: ${data?.id})`);
 }

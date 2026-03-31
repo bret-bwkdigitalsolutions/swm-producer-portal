@@ -49,6 +49,18 @@ export default async function UserEditPage({
           <p className="text-sm text-muted-foreground">
             {user.name ?? "Unnamed"} ({user.email})
           </p>
+          <p className="text-xs text-muted-foreground">
+            Last login:{" "}
+            {user.lastLoginAt
+              ? user.lastLoginAt.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+              : "Never"}
+          </p>
         </div>
         <Button variant="outline" render={<Link href="/admin/users" />}>
           Back to Users
