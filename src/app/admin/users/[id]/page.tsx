@@ -37,6 +37,10 @@ export default async function UserEditPage({
   const allowedShowIds = new Set(user.allowedShows.map((s) => s.wpShowId));
   const allShows = await getCachedShows().catch(() => []);
 
+  function decodeHtml(html: string): string {
+    return html.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
@@ -123,7 +127,7 @@ export default async function UserEditPage({
                 Select which content types this user can access.
               </p>
               <div className="space-y-2">
-                {ALL_CONTENT_TYPES.map((type) => (
+                {ALL_CONTENT_TYPES.filter((type) => type !== ContentType.EPISODE).map((type) => (
                   <label key={type} className="flex items-center space-x-2">
                     <input
                       type="checkbox"
@@ -156,7 +160,7 @@ export default async function UserEditPage({
                       defaultChecked={allowedShowIds.has(show.id)}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-sm">{show.title.rendered}</span>
+                    <span className="text-sm">{decodeHtml(show.title.rendered)}</span>
                   </label>
                 ))}
                 {allShows.length === 0 && (
