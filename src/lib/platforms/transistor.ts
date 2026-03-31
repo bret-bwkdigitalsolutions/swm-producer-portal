@@ -48,10 +48,16 @@ export async function uploadToTransistor(
   // 1. Get an authorized upload URL from Transistor
   console.log(`[transistor] Requesting upload URL for "${title}"`);
 
-  const authorizeRes = await fetch(`${BASE_URL}/episodes/authorize_upload`, {
-    method: "GET",
-    headers: { "x-api-key": apiKey },
-  });
+  // Transistor requires a filename to authorize the upload
+  const audioFilename = gcsAudioPath.split("/").pop() ?? "episode.mp3";
+
+  const authorizeRes = await fetch(
+    `${BASE_URL}/episodes/authorize_upload?filename=${encodeURIComponent(audioFilename)}`,
+    {
+      method: "GET",
+      headers: { "x-api-key": apiKey },
+    }
+  );
 
   if (!authorizeRes.ok) {
     const errorText = await authorizeRes.text();
