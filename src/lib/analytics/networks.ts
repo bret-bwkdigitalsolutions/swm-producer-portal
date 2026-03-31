@@ -19,7 +19,7 @@ export const NETWORKS: Network[] = [
       25: "Engel Angle",
       26: "Beer 30 Sports O'clock",
       27: "Signal 51 Chronicles",
-      28: "SWM Studios",
+      28: "Just Wondering... with Norm Hitzges",
     },
   },
   {
