@@ -115,6 +115,46 @@ export async function uploadToYouTube(
 }
 
 /**
+ * Set a custom thumbnail on a YouTube video.
+ */
+export async function setThumbnail(
+  wpShowId: number,
+  videoId: string,
+  thumbnailFilePath: string
+): Promise<void> {
+  const accessToken = await getYouTubeAccessToken(wpShowId);
+  if (!accessToken) return;
+
+  const { createReadStream, statSync } = await import("node:fs");
+  const fileSize = statSync(thumbnailFilePath).size;
+  const fileStream = createReadStream(thumbnailFilePath);
+  const { Readable } = await import("node:stream");
+
+  const response = await fetch(
+    `${YOUTUBE_UPLOAD_URL.replace("/videos", "/thumbnails/set")}?videoId=${videoId}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "image/jpeg",
+        "Content-Length": fileSize.toString(),
+      },
+      body: Readable.toWeb(fileStream) as any,
+      // @ts-expect-error -- Node fetch supports duplex
+      duplex: "half",
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[youtube] Failed to set thumbnail: ${errorText}`);
+    // Non-fatal — video is already uploaded
+  } else {
+    console.log(`[youtube] Thumbnail set for video ${videoId}`);
+  }
+}
+
+/**
  * Add a video to a YouTube playlist.
  */
 export async function addToPlaylist(

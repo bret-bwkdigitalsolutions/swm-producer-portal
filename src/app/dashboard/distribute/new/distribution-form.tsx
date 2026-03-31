@@ -91,6 +91,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
   const [thumbnailFileName, setThumbnailFileName] = useState<string | null>(
     null
   );
+  const thumbnailFileRef = useRef<File | null>(null);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -110,6 +111,43 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
 
   // Track whether upload was done for AI path (video uploaded before form submit)
   const [aiUploadedJobId, setAiUploadedJobId] = useState<string | null>(null);
+
+  /**
+   * Upload thumbnail to GCS via a simple PUT (images are small).
+   */
+  const uploadThumbnailToGCS = useCallback(async (jobId: string) => {
+    const file = thumbnailFileRef.current;
+    if (!file) return;
+
+    const signedUrlRes = await fetch("/api/upload/signed-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type,
+        jobId,
+        purpose: "thumbnail",
+      }),
+    });
+
+    if (!signedUrlRes.ok) {
+      const err = await signedUrlRes.json();
+      console.error("[thumbnail] Failed to get upload URL:", err.error);
+      return; // Non-fatal — proceed without thumbnail
+    }
+
+    const { uploadUrl } = await signedUrlRes.json();
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+
+    if (!uploadRes.ok) {
+      console.error("[thumbnail] Upload failed:", uploadRes.status);
+    }
+  }, []);
 
   /**
    * Upload video to GCS via resumable upload. Returns when upload is complete.
@@ -253,9 +291,12 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
       const jobId = result.jobId;
       setAiUploadedJobId(jobId);
 
-      // Upload video
+      // Upload video and thumbnail
       setAnalysisStep("Uploading video...");
-      await uploadVideoToGCS(jobId);
+      await Promise.all([
+        uploadVideoToGCS(jobId),
+        uploadThumbnailToGCS(jobId),
+      ]);
 
       // Mark upload complete (sets gcsPath on server)
       setAnalysisStep("Extracting audio...");
@@ -317,6 +358,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
     videoContentType,
     publishState.status,
     uploadVideoToGCS,
+    uploadThumbnailToGCS,
   ]);
 
   /**
@@ -325,7 +367,10 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
   const uploadAndConfirmManual = useCallback(
     async (jobId: string) => {
       try {
-        await uploadVideoToGCS(jobId);
+        await Promise.all([
+          uploadVideoToGCS(jobId),
+          uploadThumbnailToGCS(jobId),
+        ]);
 
         const confirmRes = await fetch("/api/upload/confirm", {
           method: "POST",
@@ -345,7 +390,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
         setUploading(false);
       }
     },
-    [uploadVideoToGCS, router]
+    [uploadVideoToGCS, uploadThumbnailToGCS, router]
   );
 
   /**
@@ -742,13 +787,13 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
                 )}
                 <input
                   id="thumbnail"
-                  name="thumbnail"
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   className="sr-only"
                   disabled={isDisabled}
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
+                    const file = e.target.files?.[0] ?? null;
+                    thumbnailFileRef.current = file;
                     setThumbnailFileName(file?.name ?? null);
                   }}
                 />

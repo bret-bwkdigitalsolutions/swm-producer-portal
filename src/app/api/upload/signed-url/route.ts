@@ -13,6 +13,12 @@ const ALLOWED_VIDEO_TYPES = [
   "video/x-ms-wmv",
 ];
 
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
 export async function POST(request: NextRequest) {
   const session = await auth();
 
@@ -28,7 +34,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { filename?: string; contentType?: string; jobId?: string };
+  let body: { filename?: string; contentType?: string; jobId?: string; purpose?: string };
   try {
     body = await request.json();
   } catch {
@@ -38,7 +44,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { filename, contentType, jobId } = body;
+  const { filename, contentType, jobId, purpose } = body;
 
   if (!filename || !contentType || !jobId) {
     return NextResponse.json(
@@ -47,11 +53,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Validate content type
-  if (!ALLOWED_VIDEO_TYPES.includes(contentType)) {
+  // Validate content type based on purpose
+  const isThumbnail = purpose === "thumbnail";
+  const allowedTypes = isThumbnail ? ALLOWED_IMAGE_TYPES : ALLOWED_VIDEO_TYPES;
+
+  if (!allowedTypes.includes(contentType)) {
     return NextResponse.json(
       {
-        error: `Unsupported file type: ${contentType}. Allowed types: ${ALLOWED_VIDEO_TYPES.join(", ")}`,
+        error: `Unsupported file type: ${contentType}. Allowed types: ${allowedTypes.join(", ")}`,
       },
       { status: 400 }
     );
@@ -83,11 +92,26 @@ export async function POST(request: NextRequest) {
       contentType
     );
 
-    // Update the distribution job with the GCS path
-    await db.distributionJob.update({
-      where: { id: jobId },
-      data: { gcsPath },
-    });
+    if (isThumbnail) {
+      // Store thumbnail path in job metadata
+      const job2 = await db.distributionJob.findUnique({
+        where: { id: jobId },
+        select: { metadata: true },
+      });
+      const existingMetadata = (job2?.metadata as Record<string, unknown>) ?? {};
+      await db.distributionJob.update({
+        where: { id: jobId },
+        data: {
+          metadata: { ...existingMetadata, thumbnailGcsPath: gcsPath },
+        },
+      });
+    } else {
+      // Update the distribution job with the video GCS path
+      await db.distributionJob.update({
+        where: { id: jobId },
+        data: { gcsPath },
+      });
+    }
 
     return NextResponse.json({ uploadUrl, gcsPath });
   } catch (error) {

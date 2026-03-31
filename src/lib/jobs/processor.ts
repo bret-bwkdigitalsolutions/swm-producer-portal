@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { generateAiSuggestions } from "./ai-processor";
 import { extractAudio } from "./audio-extractor";
-import { uploadToYouTube, addToPlaylist } from "@/lib/platforms/youtube";
+import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification } from "@/lib/notifications";
@@ -158,6 +158,25 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
           completedAt: new Date(),
         },
       });
+
+      // Set custom thumbnail if one was uploaded
+      const thumbnailGcsPath = metadata.thumbnailGcsPath as string | undefined;
+      if (thumbnailGcsPath && youtubeVideoId) {
+        try {
+          const thumbDir = await mkdtemp(join(tmpdir(), "swm-thumb-"));
+          const thumbPath = join(thumbDir, "thumbnail.jpg");
+          const thumbUrl = await generateSignedDownloadUrl(thumbnailGcsPath);
+          const thumbResponse = await fetch(thumbUrl);
+          if (thumbResponse.ok && thumbResponse.body) {
+            const thumbStream = createWriteStream(thumbPath);
+            await pipeline(Readable.fromWeb(thumbResponse.body as any), thumbStream);
+            await setThumbnail(job.wpShowId, youtubeVideoId, thumbPath);
+            await unlink(thumbPath).catch(() => {});
+          }
+        } catch (error) {
+          console.error("[processor] Thumbnail set failed (non-fatal):", error);
+        }
+      }
 
       // Add to show playlist if configured
       const playlistUrl = await resolvePlatformId(

@@ -102,9 +102,6 @@ export async function submitDistribution(
     scheduleMode: isDraft ? "now" : (scheduleMode ?? "now"),
     scheduledAt: scheduleMode === "schedule" && !isDraft ? scheduledAt : null,
     youtubePrivacy: isDraft ? "unlisted" : "public",
-    thumbnailUploaded: (formData.get("thumbnail") as File | null)?.size
-      ? true
-      : false,
     videoFileName,
     videoFileSize: videoFileSize ? parseInt(videoFileSize, 10) : 0,
     videoContentType,
