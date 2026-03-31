@@ -104,7 +104,7 @@ const SUGGESTION_ICONS: Record<string, React.ReactNode> = {
 
 const SUGGESTION_LABELS: Record<string, string> = {
   chapters: "Chapter Suggestions",
-  summary: "Episode Summary",
+  summary: "Description",
   blog: "Blog Recommendations",
 };
 

@@ -30,6 +30,7 @@ function buildChapterPrompt(ctx: AnalysisContext): string {
       "Based on the title and description, suggest a logical chapter structure.",
       "Format each chapter as: HH:MM:SS - Chapter Title",
       "Include a brief one-sentence description for each chapter.",
+      "Output ONLY the chapters. No preamble, no introduction, no explanation — just the chapter list.",
     ].join("\n");
   }
 
@@ -39,6 +40,7 @@ function buildChapterPrompt(ctx: AnalysisContext): string {
     "Format each chapter as: HH:MM:SS - Chapter Title",
     "Use the actual timestamps from the transcript. Aim for chapters every 5-15 minutes depending on topic changes.",
     "Include a brief one-sentence description for each chapter.",
+    "Output ONLY the chapters. No preamble, no introduction, no explanation — just the chapter list.",
     "",
     `Episode title: "${ctx.title}"`,
     "",
