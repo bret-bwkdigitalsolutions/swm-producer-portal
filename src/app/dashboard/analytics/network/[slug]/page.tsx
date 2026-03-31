@@ -11,7 +11,6 @@ import VideoTable from "@/components/analytics/video-table";
 import ShowBreakdownTable from "@/components/analytics/show-breakdown-table";
 import { formatNumber } from "@/lib/analytics/date-utils";
 import { getNetworkBySlug } from "@/lib/analytics/networks";
-import { fetchAccessibleShows } from "@/app/dashboard/analytics/actions";
 import {
   fetchNetworkPodcastAnalytics,
   fetchNetworkPodcastEpisodes,
@@ -22,7 +21,6 @@ import {
   refreshNetworkAnalyticsCache,
 } from "@/app/dashboard/analytics/network/actions";
 import type {
-  AccessibleShow,
   TransistorAnalyticsPoint,
   TransistorEpisode,
   YouTubeChannelStats,
@@ -37,7 +35,6 @@ export default function NetworkOverviewPage() {
   const network = getNetworkBySlug(slug);
   const { from, to } = useDateRange();
 
-  const [shows, setShows] = useState<AccessibleShow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   // Podcast state
@@ -54,10 +51,6 @@ export default function NetworkOverviewPage() {
   const [ytLoading, setYtLoading] = useState(false);
   const [ytError, setYtError] = useState(false);
 
-  // Load show titles for breakdown table
-  useEffect(() => {
-    fetchAccessibleShows().then(setShows);
-  }, []);
 
   const loadPodcastData = useCallback(async () => {
     setPodcastLoading(true);
@@ -244,7 +237,7 @@ export default function NetworkOverviewPage() {
             ))}
           </div>
         ) : (
-          <ShowBreakdownTable breakdown={showBreakdown} shows={shows} />
+          <ShowBreakdownTable breakdown={showBreakdown} />
         )}
       </div>
 

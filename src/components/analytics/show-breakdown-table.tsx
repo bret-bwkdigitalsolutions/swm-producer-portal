@@ -1,18 +1,14 @@
 import Link from "next/link";
 import { formatNumber } from "@/lib/analytics/date-utils";
 import type { NetworkShowBreakdown } from "@/app/dashboard/analytics/network/actions";
-import type { AccessibleShow } from "@/lib/analytics/types";
 
 interface ShowBreakdownTableProps {
   breakdown: NetworkShowBreakdown[];
-  shows: AccessibleShow[];
 }
 
 export default function ShowBreakdownTable({
   breakdown,
-  shows,
 }: ShowBreakdownTableProps) {
-  const showTitleMap = new Map(shows.map((s) => [s.wpShowId, s.title]));
 
   return (
     <div className="overflow-x-auto">
@@ -32,7 +28,7 @@ export default function ShowBreakdownTable({
                   href={`/dashboard/analytics?show=${row.wpShowId}`}
                   className="text-primary hover:underline"
                 >
-                  {showTitleMap.get(row.wpShowId) ?? `Show #${row.wpShowId}`}
+                  {row.showName}
                 </Link>
               </td>
               <td className="px-4 py-3">{formatNumber(row.totalDownloads)}</td>

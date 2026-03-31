@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { getNetworkBySlug } from "@/lib/analytics/networks";
+import { getAccessibleShows } from "@/lib/analytics/access";
 import {
   getTransistorShowAnalytics,
   getTransistorEpisodes,
@@ -44,6 +45,7 @@ async function throttledMap<T, R>(
 
 export interface NetworkShowBreakdown {
   wpShowId: number;
+  showName: string;
   totalDownloads: number;
   episodeCount: number;
 }
@@ -112,6 +114,13 @@ export async function fetchNetworkShowBreakdown(
 ): Promise<NetworkShowBreakdown[]> {
   const network = await requireAdminForNetwork(slug);
 
+  // Get show names for display
+  const session = await auth();
+  const shows = session?.user
+    ? await getAccessibleShows(session.user.id, session.user.role)
+    : [];
+  const showNameMap = new Map(shows.map((s) => [s.wpShowId, s.title]));
+
   const results = await throttledMap(network.wpShowIds, async (wpShowId) => {
     const [analyticsResult, episodesResult] = await Promise.allSettled([
       getTransistorShowAnalytics(wpShowId, dateRange),
@@ -125,7 +134,9 @@ export async function fetchNetworkShowBreakdown(
     const episodeCount =
       episodesResult.status === "fulfilled" ? episodesResult.value.length : 0;
 
-    return { wpShowId, totalDownloads, episodeCount };
+    const showName = showNameMap.get(wpShowId) ?? `Show #${wpShowId}`;
+
+    return { wpShowId, showName, totalDownloads, episodeCount };
   });
 
   return results
