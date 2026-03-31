@@ -21,7 +21,8 @@ interface GenerateResult {
  * Generate a full blog post from an AI suggestion and create it as a WP draft.
  */
 export async function generateBlogPost(
-  suggestionId: string
+  suggestionId: string,
+  customInstructions?: string
 ): Promise<GenerateResult> {
   await requireAdmin();
 
@@ -86,6 +87,9 @@ export async function generateBlogPost(
     "- Reference the episode at the end with a call-to-action to listen",
     "- Output the post body in HTML (no <html>/<head>/<body> tags, just the content)",
     "- First line should be the headline as plain text (no HTML), followed by a blank line, then the HTML body",
+    customInstructions
+      ? `\n## Additional Instructions from Editor\n${customInstructions}`
+      : "",
   ]
     .filter(Boolean)
     .join("\n");

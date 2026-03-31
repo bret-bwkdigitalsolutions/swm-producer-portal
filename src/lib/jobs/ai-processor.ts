@@ -92,6 +92,8 @@ function buildBlogPrompt(ctx: AnalysisContext): string {
     "3. 5-8 target SEO keywords",
     "4. How it connects to the episode (so we can cross-link)",
     "",
+    "Separate each suggestion with a line containing only '---'.",
+    "",
     "DO NOT suggest posts that simply summarize or recap the episode.",
     "DO suggest posts that a listener would want to read AFTER hearing the episode to learn more about something that caught their interest.",
     "",
@@ -146,12 +148,11 @@ export async function generateAiSuggestions(
   if (typesToGenerate.includes("summary")) {
     suggestionConfigs.push({ type: "summary", prompt: buildSummaryPrompt(ctx) });
   }
-  if (typesToGenerate.includes("blog")) {
-    suggestionConfigs.push({ type: "blog", prompt: buildBlogPrompt(ctx) });
-  }
+  // Generate chapters and summary as single suggestions
+  const singleConfigs = suggestionConfigs;
 
   const results = await Promise.allSettled(
-    suggestionConfigs.map(async ({ type, prompt }) => {
+    singleConfigs.map(async ({ type, prompt }) => {
       const response = await client.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 2048,
@@ -184,6 +185,44 @@ export async function generateAiSuggestions(
   for (const result of results) {
     if (result.status === "rejected") {
       console.error("[ai-processor] Failed:", result.reason);
+    }
+  }
+
+  // Generate blog ideas as separate records (one per idea)
+  if (typesToGenerate.includes("blog")) {
+    try {
+      const response = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2048,
+        messages: [{ role: "user", content: buildBlogPrompt(ctx) }],
+      });
+
+      const textBlock = response.content.find((b) => b.type === "text");
+      const fullContent = textBlock?.text ?? "";
+
+      // Split into individual ideas by '---' separator
+      const ideas = fullContent
+        .split(/\n---\n/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      // Remove existing blog suggestions for this job
+      await db.aiSuggestion.deleteMany({
+        where: { jobId, type: "blog" },
+      });
+
+      // Create one record per idea
+      for (const idea of ideas) {
+        await db.aiSuggestion.create({
+          data: { jobId, type: "blog", content: idea, accepted: false },
+        });
+      }
+
+      console.log(
+        `[ai-processor] Generated ${ideas.length} blog ideas for job ${jobId}`
+      );
+    } catch (error) {
+      console.error("[ai-processor] Blog ideas failed:", error);
     }
   }
 }

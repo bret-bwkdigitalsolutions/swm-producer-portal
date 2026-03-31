@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2Icon, PenLineIcon, ExternalLinkIcon } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Loader2Icon,
+  PenLineIcon,
+  ExternalLinkIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from "lucide-react";
 import { generateBlogPost } from "./actions";
 
 interface GenerateBlogButtonProps {
@@ -17,6 +25,8 @@ export function GenerateBlogButton({
   generated,
 }: GenerateBlogButtonProps) {
   const [generating, setGenerating] = useState(false);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [customInstructions, setCustomInstructions] = useState("");
   const [result, setResult] = useState<{
     success: boolean;
     message: string;
@@ -28,7 +38,10 @@ export function GenerateBlogButton({
     setResult(null);
 
     try {
-      const res = await generateBlogPost(suggestionId);
+      const res = await generateBlogPost(
+        suggestionId,
+        customInstructions.trim() || undefined
+      );
       setResult(res);
     } catch {
       setResult({ success: false, message: "Generation failed unexpectedly." });
@@ -37,9 +50,28 @@ export function GenerateBlogButton({
     }
   }
 
+  if (generated && !result) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Blog post already generated
+      </span>
+    );
+  }
+
+  if (result?.success && result.postUrl) {
+    return (
+      <a href={result.postUrl} target="_blank" rel="noopener noreferrer">
+        <Button variant="outline" size="sm">
+          <ExternalLinkIcon className="size-3.5" />
+          View Draft in WordPress
+        </Button>
+      </a>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-2">
-      {!generated && !result?.success && (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -53,25 +85,44 @@ export function GenerateBlogButton({
           )}
           {generating ? "Generating..." : "Generate Post"}
         </Button>
-      )}
 
-      {result?.success && result.postUrl && (
-        <a href={result.postUrl} target="_blank" rel="noopener noreferrer">
-          <Button variant="outline" size="sm">
-            <ExternalLinkIcon className="size-3.5" />
-            View Draft in WordPress
+        {!generating && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowPromptEditor(!showPromptEditor)}
+          >
+            {showPromptEditor ? (
+              <ChevronUpIcon className="size-3.5" />
+            ) : (
+              <ChevronDownIcon className="size-3.5" />
+            )}
+            Customize
           </Button>
-        </a>
+        )}
+      </div>
+
+      {showPromptEditor && !generating && (
+        <div className="space-y-1.5">
+          <Label
+            htmlFor={`instructions-${suggestionId}`}
+            className="text-xs text-muted-foreground"
+          >
+            Additional instructions for the AI writer (optional)
+          </Label>
+          <Textarea
+            id={`instructions-${suggestionId}`}
+            placeholder="e.g., Focus more on the legal aspects, make the tone more casual, include statistics about..."
+            rows={3}
+            value={customInstructions}
+            onChange={(e) => setCustomInstructions(e.target.value)}
+            className="text-sm"
+          />
+        </div>
       )}
 
       {result && !result.success && (
         <p className="text-sm text-destructive">{result.message}</p>
-      )}
-
-      {generated && !result && (
-        <span className="text-xs text-muted-foreground">
-          Blog post already generated
-        </span>
       )}
     </div>
   );
