@@ -65,6 +65,7 @@ export async function savePlatformMatches(
     redirect(`/admin/shows/sync?saved=${savedCount}`);
   } catch (error) {
     console.error("Failed to save platform matches:", error);
-    return { success: false, message: "Failed to save platform matches." };
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    return { success: false, message: `Failed to save platform matches: ${msg}` };
   }
 }
