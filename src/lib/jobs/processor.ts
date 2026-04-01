@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { generateAiSuggestions } from "./ai-processor";
 import { extractAudio } from "./audio-extractor";
+import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
@@ -91,6 +92,53 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
       }
     }
   }
+
+  // --- Transcription + AI Processing ---
+  let transcript: string | null = null;
+  if (gcsAudioPath) {
+    try {
+      console.log("[processor] Starting transcription...");
+      const transcriptionResult = await transcribeAudio(gcsAudioPath);
+      const formattedTranscript = formatTranscriptForAI(transcriptionResult.segments);
+      transcript = transcriptionResult.fullText;
+
+      // Store transcript in job metadata
+      const currentMetadata = job.metadata as Record<string, unknown>;
+      await db.distributionJob.update({
+        where: { id: jobId },
+        data: {
+          metadata: {
+            ...currentMetadata,
+            transcript: transcriptionResult.fullText,
+            transcriptTimestamped: formattedTranscript,
+            detectedLanguage: transcriptionResult.language,
+            audioDuration: transcriptionResult.duration,
+          },
+        },
+      });
+
+      // Generate AI suggestions from transcript
+      console.log("[processor] Generating AI suggestions...");
+      await generateAiSuggestions(jobId, formattedTranscript, transcriptionResult.language);
+      console.log("[processor] AI suggestions complete.");
+    } catch (error) {
+      console.error("[processor] Transcription/AI processing failed (non-fatal):", error);
+      // Non-fatal: continue with platform uploads even if transcription fails
+      // Try AI suggestions without transcript (uses title/description)
+      try {
+        await generateAiSuggestions(jobId);
+      } catch (aiErr) {
+        console.error("[processor] AI suggestions also failed:", aiErr);
+      }
+    }
+  }
+
+  // Refresh metadata after potential transcript update
+  const updatedJob = await db.distributionJob.findUnique({
+    where: { id: jobId },
+    select: { metadata: true },
+  });
+  const updatedMetadata = (updatedJob?.metadata as Record<string, unknown>) ?? metadata;
 
   // Download video to temp file (for YouTube upload — skip if already completed)
   let tempVideoPath: string | null = null;
@@ -242,17 +290,17 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
       const result = await uploadToTransistor({
         wpShowId: job.wpShowId,
         title: job.title,
-        description: (metadata.description as string) ?? "",
-        seasonNumber: (metadata.seasonNumber as number) ?? undefined,
-        episodeNumber: (metadata.episodeNumber as number) ?? undefined,
+        description: (updatedMetadata.description as string) ?? "",
+        seasonNumber: (updatedMetadata.seasonNumber as number) ?? undefined,
+        episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
         gcsAudioPath,
-        chapters: (metadata.chapters as string) ?? undefined,
-        tags: (metadata.tags as string[]) ?? undefined,
-        thumbnailGcsPath: (metadata.thumbnailGcsPath as string) ?? undefined,
+        chapters: (updatedMetadata.chapters as string) ?? undefined,
+        tags: (updatedMetadata.tags as string[]) ?? undefined,
+        thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
         author: showHosts,
-        transcript: (metadata.transcript as string) ?? undefined,
+        transcript: transcript ?? (updatedMetadata.transcript as string) ?? undefined,
         youtubeVideoUrl: youtubeUrl ?? undefined,
-        explicit: (metadata.explicit as boolean) ?? undefined,
+        explicit: (updatedMetadata.explicit as boolean) ?? undefined,
       });
 
       await db.distributionJobPlatform.update({
@@ -289,17 +337,17 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
             await uploadToTransistor({
               wpShowId: 0, // Use network credentials
               title: job.title,
-              description: (metadata.description as string) ?? "",
-              seasonNumber: (metadata.seasonNumber as number) ?? undefined,
-              episodeNumber: (metadata.episodeNumber as number) ?? undefined,
+              description: (updatedMetadata.description as string) ?? "",
+              seasonNumber: (updatedMetadata.seasonNumber as number) ?? undefined,
+              episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
               gcsAudioPath: gcsAudioPath!,
-              chapters: (metadata.chapters as string) ?? undefined,
-              tags: (metadata.tags as string[]) ?? undefined,
-              thumbnailGcsPath: (metadata.thumbnailGcsPath as string) ?? undefined,
+              chapters: (updatedMetadata.chapters as string) ?? undefined,
+              tags: (updatedMetadata.tags as string[]) ?? undefined,
+              thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
               author: showHosts,
-              transcript: (metadata.transcript as string) ?? undefined,
+              transcript: transcript ?? (updatedMetadata.transcript as string) ?? undefined,
               youtubeVideoUrl: youtubeUrl ?? undefined,
-              explicit: (metadata.explicit as boolean) ?? undefined,
+              explicit: (updatedMetadata.explicit as boolean) ?? undefined,
             });
             console.log("[processor] Network Transistor cross-post succeeded");
           }
@@ -341,11 +389,11 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
         );
       }
 
-      const description = (metadata.description as string) ?? "";
-      const chapters = (metadata.chapters as string) ?? "";
-      const isDraft = (metadata.isDraft as boolean) ?? false;
-      const scheduleMode = (metadata.scheduleMode as string) ?? "now";
-      const scheduledAt = (metadata.scheduledAt as string) ?? undefined;
+      const description = (updatedMetadata.description as string) ?? "";
+      const chapters = (updatedMetadata.chapters as string) ?? "";
+      const isDraft = (updatedMetadata.isDraft as boolean) ?? false;
+      const scheduleMode = (updatedMetadata.scheduleMode as string) ?? "now";
+      const scheduledAt = (updatedMetadata.scheduledAt as string) ?? undefined;
 
       const wpStatus: "publish" | "draft" | "future" = isDraft
         ? "draft"
