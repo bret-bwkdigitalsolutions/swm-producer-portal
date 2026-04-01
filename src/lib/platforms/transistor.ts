@@ -7,6 +7,50 @@ import { generateSignedDownloadUrl } from "@/lib/gcs";
 
 const BASE_URL = "https://api.transistor.fm/v1";
 
+/**
+ * Resolve a Transistor show's numeric ID. If the stored link is a dashboard URL
+ * (slug-based), query the Transistor API to find the matching numeric ID.
+ */
+async function resolveTransistorShowId(
+  apiKey: string,
+  showLinkValue: string
+): Promise<string> {
+  const parsed = parseTransistorShowId(showLinkValue);
+
+  // Already a numeric ID
+  if (/^\d+$/.test(parsed)) return parsed;
+
+  // It's a slug — look up all shows and match by slug
+  const res = await fetch(`${BASE_URL}/shows`, {
+    headers: { "x-api-key": apiKey },
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch Transistor shows (${res.status}): ${await res.text()}`
+    );
+  }
+
+  const data = await res.json();
+  const shows = data.data ?? [];
+
+  // Match by slug (last segment of the dashboard URL)
+  const match = shows.find(
+    (s: { attributes?: { slug?: string } }) =>
+      s.attributes?.slug === parsed
+  );
+
+  if (match) {
+    return String(match.id);
+  }
+
+  // If no slug match, the value might still work as-is
+  console.warn(
+    `[transistor] Could not resolve slug "${parsed}" to a numeric ID. Using as-is.`
+  );
+  return parsed;
+}
+
 export interface TransistorUploadParams {
   wpShowId: number;
   title: string;
@@ -43,7 +87,7 @@ export async function uploadToTransistor(
       `No Transistor show linked for WP show ${wpShowId}. Please configure it in Admin > Shows.`
     );
   }
-  const transistorShowId = parseTransistorShowId(showLink);
+  const transistorShowId = await resolveTransistorShowId(apiKey, showLink);
 
   // 1. Get an authorized upload URL from Transistor
   console.log(`[transistor] Requesting upload URL for "${title}"`);

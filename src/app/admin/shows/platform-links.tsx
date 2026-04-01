@@ -53,8 +53,8 @@ const SHOW_PLATFORMS = [
   {
     key: "transistor_show",
     label: "Transistor Show",
-    placeholder: "https://dashboard.transistor.fm/shows/your-show-name",
-    help: "The show's dashboard URL in Transistor",
+    placeholder: "12345 or https://dashboard.transistor.fm/shows/your-show",
+    help: "Transistor numeric show ID (preferred) or dashboard URL",
   },
   {
     key: "spotify_show",
