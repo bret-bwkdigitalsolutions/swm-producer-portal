@@ -134,7 +134,11 @@ export function PublishToggle({
       {/* Hidden inputs for server action form submission */}
       <input type="hidden" name="status" value={value.status} />
       {value.status === "future" && value.date && (
-        <input type="hidden" name="scheduled_date" value={value.date} />
+        <input
+          type="hidden"
+          name="scheduled_date"
+          value={value.date.length === 16 ? `${value.date}:00` : value.date}
+        />
       )}
     </div>
   );

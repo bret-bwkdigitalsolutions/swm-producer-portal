@@ -10,7 +10,7 @@ import EpisodeTable from "@/components/analytics/episode-table";
 import VideoTable from "@/components/analytics/video-table";
 import { useDateRange } from "@/components/analytics/date-range-provider";
 import { formatNumber } from "@/lib/analytics/date-utils";
-import { getNetworksForRole } from "@/lib/analytics/networks";
+import { getNetworksForRole, getShowName } from "@/lib/analytics/networks";
 import {
   fetchAccessibleShows,
   fetchCurrentUserRole,
@@ -60,8 +60,17 @@ export default function AnalyticsOverviewPage() {
         setShows(showsResult);
         setRole(userRole);
         const preselected = showParam ? parseInt(showParam, 10) : null;
-        if (preselected && showsResult.some((s) => s.wpShowId === preselected)) {
+        if (preselected && !isNaN(preselected)) {
+          // Trust the URL param — admin may navigate here from network view
+          // with a wpShowId that isn't in the WP shows list
           setSelectedShowId(preselected);
+          // Add to shows list if missing so the selector displays it
+          if (!showsResult.some((s) => s.wpShowId === preselected)) {
+            setShows([
+              ...showsResult,
+              { wpShowId: preselected, title: getShowName(preselected) },
+            ]);
+          }
         } else if (showsResult.length > 0) {
           setSelectedShowId(showsResult[0].wpShowId);
         }

@@ -134,10 +134,17 @@ export async function createPost(
     _swm_portal_submission: true,
   };
 
+  // WordPress REST API requires date in YYYY-MM-DDTHH:MM:SS format.
+  // datetime-local inputs only produce YYYY-MM-DDTHH:MM — append seconds if missing.
+  let { date } = payload;
+  if (date && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(date)) {
+    date = `${date}:00`;
+  }
+
   return wpFetch<WpPost>(`/${postType}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...payload, meta }),
+    body: JSON.stringify({ ...payload, meta, ...(date ? { date } : {}) }),
   });
 }
 

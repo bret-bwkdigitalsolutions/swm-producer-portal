@@ -62,11 +62,11 @@ interface AiSuggestion {
 type DescriptionMode = "manual" | "ai" | null;
 
 const PLATFORMS = [
-  { key: "youtube", label: "YouTube", icon: MonitorPlayIcon },
-  { key: "spotify", label: "Spotify", icon: RadioIcon },
-  { key: "apple", label: "Apple Podcasts", icon: HeadphonesIcon },
-  { key: "transistor", label: "Transistor", icon: CastIcon },
-  { key: "website", label: "Website", icon: GlobeIcon },
+  { key: "youtube", label: "YouTube", icon: MonitorPlayIcon, comingSoon: false, hint: "" },
+  { key: "transistor", label: "Transistor", icon: CastIcon, comingSoon: false, hint: "Distributes audio to Apple Podcasts, Spotify & 20+ platforms" },
+  { key: "website", label: "Website", icon: GlobeIcon, comingSoon: false, hint: "" },
+  { key: "spotify", label: "Spotify Video", icon: RadioIcon, comingSoon: true, hint: "" },
+  { key: "apple", label: "Apple Video", icon: HeadphonesIcon, comingSoon: true, hint: "" },
 ] as const;
 
 const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB
@@ -848,14 +848,26 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
                 Target Platforms <span className="text-destructive">*</span>
               </legend>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {PLATFORMS.map(({ key, label, icon: Icon }) => (
+                {PLATFORMS.map(({ key, label, icon: Icon, comingSoon, hint }) => (
                   <label
                     key={key}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors has-[:checked]:border-primary/50 has-[:checked]:bg-primary/5 hover:bg-muted/50"
+                    className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${
+                      comingSoon
+                        ? "cursor-not-allowed opacity-50"
+                        : "cursor-pointer has-[:checked]:border-primary/50 has-[:checked]:bg-primary/5 hover:bg-muted/50"
+                    }`}
                   >
-                    <Checkbox name={`platform_${key}`} />
+                    <Checkbox name={`platform_${key}`} disabled={comingSoon} />
                     <Icon className="size-4 text-muted-foreground" />
-                    <span className="text-sm">{label}</span>
+                    <div className="min-w-0">
+                      <span className="text-sm">{label}</span>
+                      {comingSoon && (
+                        <span className="ml-1.5 text-xs text-muted-foreground">(Coming soon)</span>
+                      )}
+                      {hint && (
+                        <p className="text-xs leading-tight text-muted-foreground">{hint}</p>
+                      )}
+                    </div>
                   </label>
                 ))}
               </div>
