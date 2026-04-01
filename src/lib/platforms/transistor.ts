@@ -111,11 +111,15 @@ export async function uploadToTransistor(
   }
 
   const authorizeData = await authorizeRes.json();
+  console.log("[transistor] authorize_upload response:", JSON.stringify(authorizeData).slice(0, 500));
+
   const uploadUrl = authorizeData.data?.attributes?.upload_url;
-  const audioUrl = authorizeData.data?.attributes?.content_url;
+  const audioUrl = authorizeData.data?.attributes?.content_url ?? authorizeData.data?.attributes?.audio_url;
 
   if (!uploadUrl || !audioUrl) {
-    throw new Error("Transistor did not return upload URL.");
+    throw new Error(
+      `Transistor did not return upload URL. Response keys: ${JSON.stringify(Object.keys(authorizeData.data?.attributes ?? {}))}`
+    );
   }
 
   // 2. Upload audio file to Transistor's S3
