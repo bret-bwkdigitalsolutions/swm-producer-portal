@@ -20,7 +20,9 @@ import {
   fetchYouTubeVideos,
   fetchYouTubeAnalytics,
   refreshAnalyticsCache,
+  fetchScrapedOverview,
 } from "./actions";
+import type { ScrapedOverviewData } from "./actions";
 import type {
   AccessibleShow,
   TransistorAnalyticsPoint,
@@ -45,6 +47,9 @@ export default function AnalyticsOverviewPage() {
   const [podcastEpisodes, setPodcastEpisodes] = useState<TransistorEpisode[]>([]);
   const [podcastLoading, setPodcastLoading] = useState(false);
   const [podcastError, setPodcastError] = useState(false);
+
+  // Scraped data state
+  const [scrapedOverview, setScrapedOverview] = useState<ScrapedOverviewData | null>(null);
 
   // YouTube state
   const [ytChannel, setYtChannel] = useState<YouTubeChannelStats | null>(null);
@@ -83,12 +88,14 @@ export default function AnalyticsOverviewPage() {
       setPodcastLoading(true);
       setPodcastError(false);
       try {
-        const [analytics, episodes] = await Promise.all([
+        const [analytics, episodes, overview] = await Promise.all([
           fetchPodcastAnalytics(wpShowId, { from, to }),
           fetchPodcastEpisodes(wpShowId),
+          fetchScrapedOverview(wpShowId),
         ]);
         setPodcastData(analytics);
         setPodcastEpisodes(episodes);
+        setScrapedOverview(overview);
       } catch {
         setPodcastError(true);
       } finally {
@@ -198,11 +205,17 @@ export default function AnalyticsOverviewPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <StatCard
           title="Total Downloads"
           value={loading ? "" : formatNumber(totalDownloads)}
           subtitle={`${from} – ${to}`}
+          loading={podcastLoading}
+        />
+        <StatCard
+          title="Est. Subscribers"
+          value={scrapedOverview?.estimatedSubscribers != null ? formatNumber(scrapedOverview.estimatedSubscribers) : "—"}
+          subtitle={scrapedOverview?.scrapedAt ? `Updated ${new Date(scrapedOverview.scrapedAt).toLocaleDateString()}` : "No data yet"}
           loading={podcastLoading}
         />
         <StatCard
@@ -213,9 +226,7 @@ export default function AnalyticsOverviewPage() {
         />
         <StatCard
           title="Watch Hours"
-          value={
-            loading ? "" : formatNumber(Math.round(watchHours / 60))
-          }
+          value={loading ? "" : formatNumber(Math.round(watchHours / 60))}
           subtitle={`${from} – ${to}`}
           loading={ytLoading}
         />
