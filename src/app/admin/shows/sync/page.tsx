@@ -188,11 +188,13 @@ export default async function SyncPage({
         ytPlaylists={ytPlaylists}
         trShows={trShows}
         wpShows={wpShows.map((s) => ({ id: s.id, title: decodeHtml(s.title.rendered) }))}
-        existingLinks={existingLinks.map((l) => ({
-          wpShowId: l.wpShowId,
-          platform: l.platform,
-          url: l.url,
-        }))}
+        existingLinks={existingLinks
+          .filter((l) => wpShows.some((s) => s.id === l.wpShowId))
+          .map((l) => ({
+            wpShowId: l.wpShowId,
+            platform: l.platform,
+            url: l.url,
+          }))}
       />
     </div>
   );
