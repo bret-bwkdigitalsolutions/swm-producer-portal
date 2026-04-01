@@ -56,6 +56,12 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
   const metadata = job.metadata as Record<string, unknown>;
   const platformResults: ProcessingResult["platformResults"] = [];
 
+  // Look up show hosts for Transistor author field
+  const showMeta = await db.showMetadata.findUnique({
+    where: { wpShowId: job.wpShowId },
+  });
+  const showHosts = showMeta?.hosts ?? undefined;
+
   // Extract audio if needed (for Transistor — skip if already completed)
   let gcsAudioPath: string | null = null;
   const transistorNeedsWork = job.platforms.some(
@@ -243,6 +249,7 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
         chapters: (metadata.chapters as string) ?? undefined,
         tags: (metadata.tags as string[]) ?? undefined,
         thumbnailGcsPath: (metadata.thumbnailGcsPath as string) ?? undefined,
+        author: showHosts,
       });
 
       await db.distributionJobPlatform.update({
@@ -286,6 +293,7 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
               chapters: (metadata.chapters as string) ?? undefined,
               tags: (metadata.tags as string[]) ?? undefined,
               thumbnailGcsPath: (metadata.thumbnailGcsPath as string) ?? undefined,
+              author: showHosts,
             });
             console.log("[processor] Network Transistor cross-post succeeded");
           }

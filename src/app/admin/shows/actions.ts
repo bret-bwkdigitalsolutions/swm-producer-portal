@@ -132,6 +132,37 @@ export async function updateShowPlatformLinks(
   }
 }
 
+export async function updateShowHosts(
+  _prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, message: "Unauthorized." };
+  }
+
+  const wpShowId = parseInt(formData.get("wp_show_id") as string, 10);
+  const hosts = (formData.get("hosts") as string)?.trim() ?? "";
+
+  if (isNaN(wpShowId) || wpShowId <= 0) {
+    return { success: false, message: "Invalid show." };
+  }
+
+  try {
+    await db.showMetadata.upsert({
+      where: { wpShowId },
+      create: { wpShowId, hosts },
+      update: { hosts },
+    });
+
+    revalidatePath("/admin/shows");
+    return { success: true, message: "Hosts saved." };
+  } catch (error) {
+    console.error("Failed to update show hosts:", error);
+    return { success: false, message: "Failed to save hosts." };
+  }
+}
+
 export async function refreshShowCache(): Promise<FormState> {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {

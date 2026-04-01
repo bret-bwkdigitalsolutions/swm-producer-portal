@@ -186,6 +186,14 @@ model ShowPlatformLink {
   @@map("show_platform_links")
 }
 
+model ShowMetadata {
+  id       String @id @default(cuid())
+  wpShowId Int    @unique
+  hosts    String // Comma-separated host names (e.g. "John Henry, Jake White")
+
+  @@map("show_metadata")
+}
+
 model ActivityLog {
   id          String   @id @default(cuid())
   userId      String

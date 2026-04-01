@@ -16,17 +16,24 @@ import { Badge } from "@/components/ui/badge";
 import { ShowStakeholderManager } from "./stakeholder-manager";
 import { ShowPlatformLinks } from "./platform-links";
 import { RefreshShowsButton } from "./refresh-shows-button";
+import { ShowHostsEditor } from "./show-hosts-editor";
 import Link from "next/link";
 import { ArrowRightLeftIcon } from "lucide-react";
 
 export default async function AdminShowsPage() {
-  const [shows, allStakeholders, allPlatformLinks] = await Promise.all([
+  const [shows, allStakeholders, allPlatformLinks, allShowMetadata] = await Promise.all([
     getCachedShows().catch(() => []),
     db.showStakeholder.findMany({
       orderBy: { name: "asc" },
     }),
     db.showPlatformLink.findMany(),
+    db.showMetadata.findMany(),
   ]);
+
+  // Map show metadata by show ID
+  const metadataByShow = new Map(
+    allShowMetadata.map((m) => [m.wpShowId, m])
+  );
 
   // Group stakeholders by show ID
   const stakeholdersByShow = new Map<
@@ -104,6 +111,7 @@ export default async function AdminShowsPage() {
           {shows.map((show) => {
             const stakeholders = stakeholdersByShow.get(show.id) ?? [];
             const platformLinks = platformLinksByShow.get(show.id) ?? [];
+            const showMeta = metadataByShow.get(show.id);
             return (
               <Card key={show.id}>
                 <CardHeader>
@@ -121,6 +129,11 @@ export default async function AdminShowsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  <ShowHostsEditor
+                    wpShowId={show.id}
+                    currentHosts={showMeta?.hosts ?? ""}
+                  />
+                  <div className="border-t pt-4" />
                   <ShowStakeholderManager
                     wpShowId={show.id}
                     showName={decodeHtml(show.title.rendered)}

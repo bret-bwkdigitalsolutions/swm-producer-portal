@@ -61,6 +61,7 @@ export interface TransistorUploadParams {
   chapters?: string; // Timestamped chapters text
   tags?: string[]; // Keywords
   thumbnailGcsPath?: string; // GCS path to episode artwork
+  author?: string; // Host name(s) for the author field
 }
 
 export interface TransistorUploadResult {
@@ -76,7 +77,7 @@ export async function uploadToTransistor(
 ): Promise<TransistorUploadResult> {
   const {
     wpShowId, title, description, seasonNumber, episodeNumber,
-    gcsAudioPath, chapters, tags, thumbnailGcsPath,
+    gcsAudioPath, chapters, tags, thumbnailGcsPath, author,
   } = params;
 
   const apiKey = await getTransistorApiKey(wpShowId);
@@ -163,6 +164,7 @@ export async function uploadToTransistor(
     description: showNotes, // "Episode Show Notes / Description" field
     audio_url: audioUrl,
     keywords: tags?.join(",") ?? "",
+    ...(author ? { author } : {}),
   };
 
   if (seasonNumber) episodeData.season = seasonNumber;
