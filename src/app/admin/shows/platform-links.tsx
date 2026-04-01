@@ -106,10 +106,19 @@ export function ShowPlatformLinks({
 
   const isNetworkDefaults = wpShowId === 0;
 
-  // Network defaults only show account-level fields
+  // Network defaults show account-level fields + network feed
   // Individual shows show both (account overrides + show-level)
   const accountFields = ACCOUNT_PLATFORMS;
-  const showFields = isNetworkDefaults ? [] : SHOW_PLATFORMS;
+  const showFields = isNetworkDefaults
+    ? [
+        {
+          key: "transistor_show" as const,
+          label: "Network Transistor Feed",
+          placeholder: "12345 (Transistor show ID for the network umbrella feed)",
+          help: "Episodes from all network shows are cross-posted here (except shows with their own Transistor account)",
+        },
+      ]
+    : SHOW_PLATFORMS;
 
   return (
     <div className="space-y-4">

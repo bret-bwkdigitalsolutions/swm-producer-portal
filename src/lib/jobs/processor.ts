@@ -253,6 +253,41 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
       });
 
       platformResults.push({ platform: "transistor", status: "completed" });
+
+      // Also publish to the network Transistor feed if this show is part of
+      // the Sunset Lounge network (any show that uses the network default
+      // Transistor credentials — i.e. doesn't have its own override)
+      try {
+        const showOverride = await db.platformCredential.findUnique({
+          where: { wpShowId_platform: { wpShowId: job.wpShowId, platform: "transistor" } },
+        });
+
+        // If no show-specific override exists, this show uses the network default
+        // and should also be cross-posted to the network feed
+        if (!showOverride) {
+          const networkTransistorShow = await db.showPlatformLink.findUnique({
+            where: { wpShowId_platform: { wpShowId: 0, platform: "transistor_show" } },
+          });
+
+          if (networkTransistorShow?.url) {
+            console.log(
+              `[processor] Cross-posting to network Transistor feed: ${networkTransistorShow.url}`
+            );
+            await uploadToTransistor({
+              wpShowId: 0, // Use network credentials
+              title: job.title,
+              description: (metadata.description as string) ?? "",
+              seasonNumber: (metadata.seasonNumber as number) ?? undefined,
+              episodeNumber: (metadata.episodeNumber as number) ?? undefined,
+              gcsAudioPath: gcsAudioPath!,
+            });
+            console.log("[processor] Network Transistor cross-post succeeded");
+          }
+        }
+      } catch (networkErr) {
+        // Non-fatal: log but don't fail the job
+        console.error("[processor] Network Transistor cross-post failed:", networkErr);
+      }
     } catch (error) {
       const errMsg =
         error instanceof Error ? error.message : "Transistor upload failed";
