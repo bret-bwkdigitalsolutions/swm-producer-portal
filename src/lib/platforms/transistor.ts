@@ -152,7 +152,6 @@ export async function uploadToTransistor(
       title,
       summary: description,
       audio_url: audioUrl,
-      status: "published",
     },
   };
 
