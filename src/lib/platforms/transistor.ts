@@ -58,6 +58,9 @@ export interface TransistorUploadParams {
   seasonNumber?: number;
   episodeNumber?: number;
   gcsAudioPath: string; // GCS path to the extracted mp3
+  chapters?: string; // Timestamped chapters text
+  tags?: string[]; // Keywords
+  thumbnailGcsPath?: string; // GCS path to episode artwork
 }
 
 export interface TransistorUploadResult {
@@ -71,8 +74,10 @@ export interface TransistorUploadResult {
 export async function uploadToTransistor(
   params: TransistorUploadParams
 ): Promise<TransistorUploadResult> {
-  const { wpShowId, title, description, seasonNumber, episodeNumber, gcsAudioPath } =
-    params;
+  const {
+    wpShowId, title, description, seasonNumber, episodeNumber,
+    gcsAudioPath, chapters, tags, thumbnailGcsPath,
+  } = params;
 
   const apiKey = await getTransistorApiKey(wpShowId);
   if (!apiKey) {
@@ -146,21 +151,34 @@ export async function uploadToTransistor(
   // 3. Create the episode with the uploaded audio URL
   console.log("[transistor] Creating episode...");
 
-  const episodePayload: Record<string, unknown> = {
-    episode: {
-      show_id: transistorShowId,
-      title,
-      summary: description,
-      audio_url: audioUrl,
-    },
+  // Build show notes: description + chapters
+  const showNotes = chapters
+    ? `${description}\n\n<h3>Chapters</h3>\n${chapters}`
+    : description;
+
+  const episodeData: Record<string, unknown> = {
+    show_id: transistorShowId,
+    title,
+    summary: description,
+    description: showNotes, // "Episode Show Notes / Description" field
+    audio_url: audioUrl,
+    keywords: tags?.join(",") ?? "",
   };
 
-  if (seasonNumber) {
-    (episodePayload.episode as Record<string, unknown>).season = seasonNumber;
+  if (seasonNumber) episodeData.season = seasonNumber;
+  if (episodeNumber) episodeData.number = episodeNumber;
+
+  // Upload episode artwork if provided
+  if (thumbnailGcsPath) {
+    try {
+      const thumbUrl = await generateSignedDownloadUrl(thumbnailGcsPath);
+      episodeData.image_url = thumbUrl;
+    } catch (e) {
+      console.warn("[transistor] Could not get thumbnail URL:", e);
+    }
   }
-  if (episodeNumber) {
-    (episodePayload.episode as Record<string, unknown>).number = episodeNumber;
-  }
+
+  const episodePayload = { episode: episodeData };
 
   const createRes = await fetch(`${BASE_URL}/episodes`, {
     method: "POST",
