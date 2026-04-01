@@ -64,6 +64,10 @@ export async function savePlatformMatches(
 
     redirect(`/admin/shows/sync?saved=${savedCount}`);
   } catch (error) {
+    // redirect() throws a NEXT_REDIRECT error — let it propagate
+    if (error instanceof Error && error.message === "NEXT_REDIRECT") {
+      throw error;
+    }
     console.error("Failed to save platform matches:", error);
     const msg = error instanceof Error ? error.message : "Unknown error";
     return { success: false, message: `Failed to save platform matches: ${msg}` };
