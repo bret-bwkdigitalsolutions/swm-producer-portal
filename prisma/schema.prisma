@@ -221,3 +221,72 @@ model InviteToken {
 
   @@map("invite_tokens")
 }
+
+model TransistorScrapedOverview {
+  id                   String   @id @default(cuid())
+  wpShowId             Int
+  scrapedAt            DateTime
+  estimatedSubscribers Int?
+  avgDownloads7d       Float?
+  avgDownloads30d      Float?
+  avgDownloads60d      Float?
+  avgDownloads90d      Float?
+  monthlyDownloads     Json?
+  yearlyDownloads      Json?
+
+  @@unique([wpShowId, scrapedAt])
+  @@map("transistor_scraped_overviews")
+}
+
+model TransistorScrapedGeo {
+  id         String   @id @default(cuid())
+  wpShowId   Int
+  scrapedAt  DateTime
+  country    String
+  region     String?
+  downloads  Int
+  percentage Float?
+
+  @@unique([wpShowId, scrapedAt, country, region])
+  @@index([wpShowId, scrapedAt])
+  @@map("transistor_scraped_geo")
+}
+
+model TransistorScrapedApps {
+  id         String   @id @default(cuid())
+  wpShowId   Int
+  scrapedAt  DateTime
+  appName    String
+  downloads  Int
+  percentage Float?
+
+  @@unique([wpShowId, scrapedAt, appName])
+  @@index([wpShowId, scrapedAt])
+  @@map("transistor_scraped_apps")
+}
+
+model TransistorScrapedDevices {
+  id         String   @id @default(cuid())
+  wpShowId   Int
+  scrapedAt  DateTime
+  deviceType String
+  deviceName String?
+  downloads  Int
+  percentage Float?
+
+  @@unique([wpShowId, scrapedAt, deviceType, deviceName])
+  @@index([wpShowId, scrapedAt])
+  @@map("transistor_scraped_devices")
+}
+
+model TransistorScrapeLog {
+  id          String    @id @default(cuid())
+  startedAt   DateTime
+  completedAt DateTime?
+  status      String
+  account     String
+  showCount   Int?
+  errors      Json?
+
+  @@map("transistor_scrape_logs")
+}
