@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 interface FormState {
   success?: boolean;
@@ -62,10 +63,7 @@ export async function savePlatformMatches(
     revalidatePath("/admin/shows");
     revalidatePath("/admin/shows/sync");
 
-    return {
-      success: true,
-      message: `Saved ${savedCount} platform match${savedCount !== 1 ? "es" : ""}.`,
-    };
+    redirect(`/admin/shows/sync?saved=${savedCount}`);
   } catch (error) {
     console.error("Failed to save platform matches:", error);
     return { success: false, message: "Failed to save platform matches." };

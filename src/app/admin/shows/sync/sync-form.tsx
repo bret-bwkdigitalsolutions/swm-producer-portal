@@ -111,6 +111,9 @@ export function SyncPlatformLinks({
 }: SyncPlatformLinksProps) {
   const [state, formAction, isPending] = useActionState(savePlatformMatches, {});
 
+  // Force re-mount of selects after successful save so defaultValues refresh
+  const formKey = state.success ? Date.now() : 0;
+
   // Build lookup: platform+url -> wpShowId for existing matches
   const existingYtMatches = useMemo(() => {
     const map = new Map<string, number>();
@@ -192,7 +195,7 @@ export function SyncPlatformLinks({
   }
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form key={formKey} action={formAction} className="space-y-6">
       {/* YouTube Playlists */}
       {ytPlaylists.length > 0 && (
         <Card>

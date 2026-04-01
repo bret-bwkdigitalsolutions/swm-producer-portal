@@ -15,8 +15,13 @@ interface CredentialError {
   message: string;
 }
 
-export default async function SyncPage() {
+export default async function SyncPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string }>;
+}) {
   await requireAdmin();
+  const { saved } = await searchParams;
 
   const errors: CredentialError[] = [];
 
@@ -137,6 +142,12 @@ export default async function SyncPage() {
           {ytPlaylists.length} playlists / {trShows.length} shows discovered
         </Badge>
       </div>
+
+      {saved && (
+        <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+          Saved {saved} platform match{saved !== "1" ? "es" : ""} successfully. Green checkmarks show matched items.
+        </div>
+      )}
 
       <p className="text-sm text-muted-foreground">
         Auto-discovered YouTube playlists and Transistor shows from your connected
