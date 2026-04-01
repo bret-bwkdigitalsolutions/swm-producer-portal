@@ -180,11 +180,35 @@ export async function uploadToTransistor(
 
   const createData = await createRes.json();
   const episodeId = createData.data?.id;
+
+  if (!episodeId) {
+    throw new Error("Transistor did not return an episode ID.");
+  }
+
+  // 4. Publish the episode (Transistor creates as draft by default)
+  console.log(`[transistor] Publishing episode ${episodeId}...`);
+  const publishRes = await fetch(`${BASE_URL}/episodes/${episodeId}/publish`, {
+    method: "PATCH",
+    headers: {
+      "x-api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      episode: { status: "published" },
+    }),
+  });
+
+  if (!publishRes.ok) {
+    console.warn(
+      `[transistor] Publish failed (${publishRes.status}), episode remains as draft`
+    );
+  }
+
   const shareUrl =
     createData.data?.attributes?.share_url ??
     `https://share.transistor.fm/s/${episodeId}`;
 
-  console.log(`[transistor] Episode created: ${shareUrl}`);
+  console.log(`[transistor] Episode published: ${shareUrl}`);
 
   return { episodeId: String(episodeId), episodeUrl: shareUrl };
 }
