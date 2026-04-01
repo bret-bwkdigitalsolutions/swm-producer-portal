@@ -113,9 +113,9 @@ export function ShowPlatformLinks({
     ? [
         {
           key: "transistor_show" as const,
-          label: "Network Transistor Feed",
-          placeholder: "12345 (Transistor show ID for the network umbrella feed)",
-          help: "Episodes from all network shows are cross-posted here (except shows with their own Transistor account)",
+          label: "Network Transistor Show ID",
+          placeholder: "75945",
+          help: "Numeric Transistor show ID for the network umbrella feed. Episodes from all network shows are cross-posted here.",
         },
       ]
     : SHOW_PLATFORMS;

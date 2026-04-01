@@ -43,14 +43,13 @@ export async function savePlatformMatches(
           update: { url },
         });
         savedCount++;
-      } else if (key.startsWith("tr_")) {
-        const showId = key.slice(3);
-        const url = `https://dashboard.transistor.fm/shows/${showId}`;
+      } else if (key.startsWith("tr_") && !key.startsWith("tr_url_")) {
+        const transistorShowId = key.slice(3); // numeric Transistor show ID
 
         await db.showPlatformLink.upsert({
           where: { wpShowId_platform: { wpShowId, platform: "transistor_show" } },
-          create: { wpShowId, platform: "transistor_show", url },
-          update: { url },
+          create: { wpShowId, platform: "transistor_show", url: transistorShowId },
+          update: { url: transistorShowId },
         });
         savedCount++;
       }
