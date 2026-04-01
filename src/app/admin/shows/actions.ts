@@ -97,10 +97,18 @@ export async function updateShowPlatformLinks(
       const url = (formData.get(`platform_${platform}`) as string)?.trim();
 
       if (url) {
-        if (!urlPattern.test(url)) {
+        // Allow plain numeric IDs for Transistor show fields, require URLs for everything else
+        const isNumericIdField = platform === "transistor_show";
+        const isValidValue = isNumericIdField
+          ? /^\d+$/.test(url) || urlPattern.test(url)
+          : urlPattern.test(url);
+
+        if (!isValidValue) {
           return {
             success: false,
-            message: `Invalid URL for ${platform}. URLs must start with http:// or https://.`,
+            message: isNumericIdField
+              ? `Invalid value for ${platform}. Enter a numeric Transistor show ID or a URL.`
+              : `Invalid URL for ${platform}. URLs must start with http:// or https://.`,
           };
         }
 

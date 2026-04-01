@@ -246,7 +246,7 @@ function PlatformField({
       <Input
         id={`${fieldKey}-${wpShowId}`}
         name={`platform_${fieldKey}`}
-        type="url"
+        type="text"
         placeholder={
           hasDefault && !hasOverride ? defaultUrl : placeholder
         }
