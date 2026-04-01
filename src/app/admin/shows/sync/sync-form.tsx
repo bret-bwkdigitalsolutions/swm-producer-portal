@@ -133,10 +133,21 @@ export function SyncPlatformLinks({
     const map = new Map<string, number>();
     for (const link of existingLinks) {
       if (link.platform === "transistor_show") {
-        // Try to extract show ID from URL, or just use the URL
-        const match = link.url.match(/shows\/(\d+)/);
-        if (match) {
-          map.set(match[1], link.wpShowId);
+        // Handle: plain numeric ID, URL with numeric ID, or URL with slug
+        if (/^\d+$/.test(link.url)) {
+          // Plain numeric ID like "75949"
+          map.set(link.url, link.wpShowId);
+        } else {
+          // URL like "https://dashboard.transistor.fm/shows/75949" or ".../shows/slug-name"
+          const numMatch = link.url.match(/shows\/(\d+)/);
+          if (numMatch) {
+            map.set(numMatch[1], link.wpShowId);
+          }
+          // Also try slug match for fuzzy matching later
+          const slugMatch = link.url.match(/shows\/([^/]+)/);
+          if (slugMatch) {
+            map.set(slugMatch[1], link.wpShowId);
+          }
         }
       }
     }

@@ -1,6 +1,17 @@
 import { requireAdmin } from "@/lib/auth-guard";
 import { db } from "@/lib/db";
 import { getCachedShows } from "@/lib/wordpress/cache";
+
+function decodeHtml(html: string): string {
+  return html
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
 import { getYouTubePlaylists, type YouTubePlaylist } from "@/lib/youtube-api";
 import { getTransistorShows, type TransistorShow } from "@/lib/transistor-api";
 import { refreshAccessToken } from "@/lib/youtube-oauth";
@@ -176,7 +187,7 @@ export default async function SyncPage({
       <SyncPlatformLinks
         ytPlaylists={ytPlaylists}
         trShows={trShows}
-        wpShows={wpShows.map((s) => ({ id: s.id, title: s.title.rendered }))}
+        wpShows={wpShows.map((s) => ({ id: s.id, title: decodeHtml(s.title.rendered) }))}
         existingLinks={existingLinks.map((l) => ({
           wpShowId: l.wpShowId,
           platform: l.platform,
