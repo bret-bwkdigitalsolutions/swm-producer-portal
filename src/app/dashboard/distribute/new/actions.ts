@@ -41,6 +41,9 @@ export async function submitDistribution(
   const videoFileName = formData.get("video_file_name") as string | null;
   const videoFileSize = formData.get("video_file_size") as string | null;
   const videoContentType = formData.get("video_content_type") as string | null;
+  const seasonNumber = formData.get("season_number") as string | null;
+  const episodeNumber = formData.get("episode_number") as string | null;
+  const explicit = formData.get("explicit") === "true";
 
   // Collect selected platforms
   const selectedPlatforms = VALID_PLATFORMS.filter(
@@ -105,6 +108,9 @@ export async function submitDistribution(
     videoFileName,
     videoFileSize: videoFileSize ? parseInt(videoFileSize, 10) : 0,
     videoContentType,
+    seasonNumber: seasonNumber ? parseInt(seasonNumber, 10) : undefined,
+    episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
+    explicit,
   };
 
   // Verify user has access to this show

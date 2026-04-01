@@ -250,6 +250,9 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
         tags: (metadata.tags as string[]) ?? undefined,
         thumbnailGcsPath: (metadata.thumbnailGcsPath as string) ?? undefined,
         author: showHosts,
+        transcript: (metadata.transcript as string) ?? undefined,
+        youtubeVideoUrl: youtubeUrl ?? undefined,
+        explicit: (metadata.explicit as boolean) ?? undefined,
       });
 
       await db.distributionJobPlatform.update({
@@ -294,6 +297,9 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
               tags: (metadata.tags as string[]) ?? undefined,
               thumbnailGcsPath: (metadata.thumbnailGcsPath as string) ?? undefined,
               author: showHosts,
+              transcript: (metadata.transcript as string) ?? undefined,
+              youtubeVideoUrl: youtubeUrl ?? undefined,
+              explicit: (metadata.explicit as boolean) ?? undefined,
             });
             console.log("[processor] Network Transistor cross-post succeeded");
           }

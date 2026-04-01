@@ -57,11 +57,14 @@ export interface TransistorUploadParams {
   description: string;
   seasonNumber?: number;
   episodeNumber?: number;
-  gcsAudioPath: string; // GCS path to the extracted mp3
-  chapters?: string; // Timestamped chapters text
-  tags?: string[]; // Keywords
-  thumbnailGcsPath?: string; // GCS path to episode artwork
-  author?: string; // Host name(s) for the author field
+  gcsAudioPath: string;
+  chapters?: string;
+  tags?: string[];
+  thumbnailGcsPath?: string;
+  author?: string;
+  transcript?: string;
+  youtubeVideoUrl?: string;
+  explicit?: boolean;
 }
 
 export interface TransistorUploadResult {
@@ -78,6 +81,7 @@ export async function uploadToTransistor(
   const {
     wpShowId, title, description, seasonNumber, episodeNumber,
     gcsAudioPath, chapters, tags, thumbnailGcsPath, author,
+    transcript, youtubeVideoUrl, explicit: isExplicit,
   } = params;
 
   const apiKey = await getTransistorApiKey(wpShowId);
@@ -160,25 +164,32 @@ export async function uploadToTransistor(
   const episodeData: Record<string, unknown> = {
     show_id: transistorShowId,
     title,
-    summary: description,
-    description: showNotes, // "Episode Show Notes / Description" field
+    summary: description.slice(0, 255), // Short summary for podcast players
+    description: showNotes, // Full show notes / description (HTML OK)
     audio_url: audioUrl,
-    keywords: tags?.join(",") ?? "",
-    ...(author ? { author } : {}),
   };
 
+  // Optional fields
+  if (author) episodeData.author = author;
+  if (tags?.length) episodeData.keywords = tags.join(",");
   if (seasonNumber) episodeData.season = seasonNumber;
   if (episodeNumber) episodeData.number = episodeNumber;
+  if (transcript) episodeData.transcript_text = transcript;
+  if (youtubeVideoUrl) episodeData.video_url = youtubeVideoUrl;
+  if (isExplicit !== undefined) episodeData.explicit = isExplicit;
 
-  // Upload episode artwork if provided
+  // Episode artwork
   if (thumbnailGcsPath) {
     try {
       const thumbUrl = await generateSignedDownloadUrl(thumbnailGcsPath);
       episodeData.image_url = thumbUrl;
+      console.log("[transistor] Setting episode artwork from GCS");
     } catch (e) {
       console.warn("[transistor] Could not get thumbnail URL:", e);
     }
   }
+
+  console.log("[transistor] Episode fields:", Object.keys(episodeData).join(", "));
 
   const episodePayload = { episode: episodeData };
 

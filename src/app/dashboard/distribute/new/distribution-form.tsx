@@ -652,6 +652,46 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
             />
           </div>
 
+          {/* Season & Episode numbers */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="season_number">Season Number</Label>
+              <Input
+                id="season_number"
+                name="season_number"
+                type="number"
+                min={1}
+                placeholder="Optional"
+                disabled={isDisabled}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="episode_number">Episode Number</Label>
+              <Input
+                id="episode_number"
+                name="episode_number"
+                type="number"
+                min={1}
+                placeholder="Optional"
+                disabled={isDisabled}
+              />
+            </div>
+          </div>
+
+          {/* Content warning */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="explicit"
+              name="explicit"
+              value="true"
+              className="rounded border-gray-300"
+            />
+            <Label htmlFor="explicit" className="cursor-pointer text-sm">
+              Contains explicit/mature content
+            </Label>
+          </div>
+
           {/* Two-path choice: appears after video + title are provided */}
           {showModeChoice && (
             <div className="space-y-3">
