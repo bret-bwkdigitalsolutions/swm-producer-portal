@@ -6,16 +6,27 @@ import ShowSelector from "@/components/analytics/show-selector";
 import StatCard from "@/components/analytics/stat-card";
 import TimeSeriesChart from "@/components/analytics/charts/time-series-chart";
 import EpisodeTable from "@/components/analytics/episode-table";
+import ListenersSection from "@/components/analytics/listeners-section";
 import {
   fetchAccessibleShows,
   fetchPodcastAnalytics,
   fetchPodcastEpisodes,
+  fetchScrapedOverview,
+  fetchScrapedGeo,
+  fetchScrapedApps,
+  fetchScrapedDevices,
 } from "@/app/dashboard/analytics/actions";
 import type {
   AccessibleShow,
   TransistorAnalyticsPoint,
   TransistorEpisode,
 } from "@/lib/analytics/types";
+import type {
+  ScrapedOverviewData,
+  ScrapedGeoEntry,
+  ScrapedAppEntry,
+  ScrapedDeviceEntry,
+} from "@/app/dashboard/analytics/actions";
 
 export default function PodcastAnalyticsPage() {
   const { from, to } = useDateRange();
@@ -27,6 +38,11 @@ export default function PodcastAnalyticsPage() {
   const [downloads, setDownloads] = useState<TransistorAnalyticsPoint[]>([]);
   const [episodes, setEpisodes] = useState<TransistorEpisode[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
+
+  const [scrapedOverview, setScrapedOverview] = useState<ScrapedOverviewData | null>(null);
+  const [scrapedGeo, setScrapedGeo] = useState<{ data: ScrapedGeoEntry[]; scrapedAt: Date | null }>({ data: [], scrapedAt: null });
+  const [scrapedApps, setScrapedApps] = useState<{ data: ScrapedAppEntry[]; scrapedAt: Date | null }>({ data: [], scrapedAt: null });
+  const [scrapedDevices, setScrapedDevices] = useState<{ data: ScrapedDeviceEntry[]; scrapedAt: Date | null }>({ data: [], scrapedAt: null });
 
   // Load accessible shows on mount
   useEffect(() => {
@@ -49,9 +65,17 @@ export default function PodcastAnalyticsPage() {
     Promise.all([
       fetchPodcastAnalytics(selectedShowId, dateRange),
       fetchPodcastEpisodes(selectedShowId),
-    ]).then(([analyticsData, episodesData]) => {
+      fetchScrapedOverview(selectedShowId),
+      fetchScrapedGeo(selectedShowId),
+      fetchScrapedApps(selectedShowId),
+      fetchScrapedDevices(selectedShowId),
+    ]).then(([analyticsData, episodesData, overview, geo, apps, devices]) => {
       setDownloads(analyticsData);
       setEpisodes(episodesData);
+      setScrapedOverview(overview);
+      setScrapedGeo(geo);
+      setScrapedApps(apps);
+      setScrapedDevices(devices);
       setDataLoading(false);
     });
   }, [selectedShowId, from, to]);
@@ -89,7 +113,7 @@ export default function PodcastAnalyticsPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <StatCard
           title="Total Downloads"
           value={totalDownloads.toLocaleString()}
@@ -103,6 +127,12 @@ export default function PodcastAnalyticsPage() {
         <StatCard
           title="Episodes Published"
           value={episodes.length.toLocaleString()}
+          loading={dataLoading}
+        />
+        <StatCard
+          title="Est. Subscribers"
+          value={scrapedOverview?.estimatedSubscribers?.toLocaleString() ?? "\u2014"}
+          subtitle={scrapedOverview?.scrapedAt ? `Updated ${new Date(scrapedOverview.scrapedAt).toLocaleDateString()}` : undefined}
           loading={dataLoading}
         />
       </div>
@@ -124,6 +154,14 @@ export default function PodcastAnalyticsPage() {
         <h2 className="mb-4 text-base font-semibold">Episodes</h2>
         <EpisodeTable episodes={episodes} />
       </div>
+
+      {/* Listeners (scraped data) */}
+      <ListenersSection
+        geo={scrapedGeo}
+        apps={scrapedApps}
+        devices={scrapedDevices}
+        loading={dataLoading}
+      />
     </div>
   );
 }
