@@ -33,6 +33,13 @@ interface ScrapedAppEntry {
   percentage: number | null;
 }
 
+interface ScrapedDeviceEntry {
+  deviceType: string;
+  deviceName: string | null;
+  downloads: number;
+  percentage: number | null;
+}
+
 export function aggregateAnalyticsPoints(
   allPoints: TransistorAnalyticsPoint[][]
 ): TransistorAnalyticsPoint[] {
@@ -127,6 +134,44 @@ export function aggregateApps(
     .sort(([, a], [, b]) => b - a)
     .map(([appName, downloads]) => ({
       appName,
+      downloads,
+      percentage: null,
+    }));
+
+  return { data, scrapedAt: latestScrapedAt };
+}
+
+export function aggregateDevices(
+  allDevices: { data: ScrapedDeviceEntry[]; scrapedAt: string | null }[]
+): { data: ScrapedDeviceEntry[]; scrapedAt: string | null } {
+  const deviceMap = new Map<string, { downloads: number; deviceName: string | null }>();
+  let latestScrapedAt: string | null = null;
+
+  for (const devices of allDevices) {
+    if (
+      devices.scrapedAt &&
+      (!latestScrapedAt || devices.scrapedAt > latestScrapedAt)
+    ) {
+      latestScrapedAt = devices.scrapedAt;
+    }
+    for (const entry of devices.data) {
+      const existing = deviceMap.get(entry.deviceType);
+      if (existing) {
+        existing.downloads += entry.downloads;
+      } else {
+        deviceMap.set(entry.deviceType, {
+          downloads: entry.downloads,
+          deviceName: entry.deviceName,
+        });
+      }
+    }
+  }
+
+  const data = Array.from(deviceMap.entries())
+    .sort(([, a], [, b]) => b.downloads - a.downloads)
+    .map(([deviceType, { downloads, deviceName }]) => ({
+      deviceType,
+      deviceName,
       downloads,
       percentage: null,
     }));

@@ -22,6 +22,7 @@ import {
   fetchAggregatedScrapedOverview,
   fetchAggregatedScrapedGeo,
   fetchAggregatedScrapedApps,
+  fetchAggregatedScrapedDevices,
 } from "@/app/dashboard/analytics/actions";
 import type {
   TransistorAnalyticsPoint,
@@ -125,8 +126,9 @@ export default function PodcastAnalyticsPage() {
       fetchAggregatedScrapedApps(showsInScope)
         .then(setScrapedApps)
         .catch(() => {});
-      // No aggregated devices action — reset
-      setScrapedDevices({ data: [], scrapedAt: null });
+      fetchAggregatedScrapedDevices(showsInScope)
+        .then(setScrapedDevices)
+        .catch(() => {});
     }
   }, [initialized, showsInScope, from, to]);
 

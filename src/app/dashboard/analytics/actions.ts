@@ -27,6 +27,7 @@ import {
   aggregateYouTubeGeo,
   aggregateGeo,
   aggregateApps,
+  aggregateDevices,
   aggregateScrapedOverviews,
   mergeEpisodes,
   mergeVideos,
@@ -444,6 +445,13 @@ export async function fetchAggregatedScrapedApps(
 ): Promise<{ data: ScrapedAppEntry[]; scrapedAt: string | null }> {
   const allApps = await throttledMap(wpShowIds, (id) => fetchScrapedApps(id));
   return aggregateApps(allApps);
+}
+
+export async function fetchAggregatedScrapedDevices(
+  wpShowIds: number[]
+): Promise<{ data: ScrapedDeviceEntry[]; scrapedAt: string | null }> {
+  const allDevices = await throttledMap(wpShowIds, (id) => fetchScrapedDevices(id));
+  return aggregateDevices(allDevices);
 }
 
 export async function refreshAggregatedCache(
