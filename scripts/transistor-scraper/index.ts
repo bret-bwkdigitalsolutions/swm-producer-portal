@@ -24,7 +24,7 @@ async function resolveTransistorShowId(
   });
   if (!link) return null;
 
-  // Extract numeric ID from URL or raw value
+  // The url field stores the numeric Transistor show ID
   const match = link.url.match(/(\d+)/);
   return match ? match[1] : null;
 }
@@ -60,27 +60,25 @@ async function scrapeAccount(accountName: string, wpShowIds: number[]): Promise<
       console.log(`[scraper] Collecting analytics for wpShowId=${wpShowId} (transistor=${transistorShowId})`);
       const data = await collectShowAnalytics(context, transistorShowId);
 
-      // Parse and store overview
-      if (data.overview) {
-        const overview = parseOverview(data.overview as Record<string, unknown>, wpShowId, scrapedAt);
-        await upsertOverview(overview);
-      }
+      // Parse and store overview (from daily_average + subscribers + overall)
+      const overview = parseOverview(data, wpShowId, scrapedAt);
+      await upsertOverview(overview);
 
-      // Parse and store geo
-      if (data.countries) {
-        const geo = parseGeo(data.countries as Record<string, unknown>[], wpShowId, scrapedAt);
+      // Parse and store geo (from countries_map)
+      const geo = parseGeo(data.countriesMap, wpShowId, scrapedAt);
+      if (geo.length > 0) {
         await upsertGeo(geo);
       }
 
       // Parse and store apps
-      if (data.applications) {
-        const apps = parseApps(data.applications as Record<string, unknown>[], wpShowId, scrapedAt);
+      const apps = parseApps(data.apps, wpShowId, scrapedAt);
+      if (apps.length > 0) {
         await upsertApps(apps);
       }
 
-      // Parse and store devices
-      if (data.devices) {
-        const devices = parseDevices(data.devices as Record<string, unknown>[], wpShowId, scrapedAt);
+      // Parse and store devices + platforms (from DOM)
+      const devices = parseDevices(data.devices, data.platforms, wpShowId, scrapedAt);
+      if (devices.length > 0) {
         await upsertDevices(devices);
       }
 

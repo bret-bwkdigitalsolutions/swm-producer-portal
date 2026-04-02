@@ -1,35 +1,52 @@
 import type { BrowserContext, Response } from "playwright";
 
-export interface ResponseCategory {
-  type: "overview" | "countries" | "applications" | "devices";
-  showId: string;
+export interface DonutChartData {
+  downloads: number[];
+  percentage: number[];
+  labels: string[];
 }
 
 export interface CollectedData {
-  overview: Record<string, unknown> | null;
-  countries: Record<string, unknown>[] | null;
-  applications: Record<string, unknown>[] | null;
-  devices: Record<string, unknown>[] | null;
+  dailyAverage: { seven: string; thirty: string; sixty: string; ninety: string } | null;
+  subscribers: { total: string; datasets: unknown[]; labels: string[] } | null;
+  overall: { data: { x: string; y: number }[]; total: string } | null;
+  apps: { data: { label: string; total: number }[] } | null;
+  countriesMap: Record<string, { downloads: number; formatted_downloads: string }> | null;
+  devices: DonutChartData | null;
+  platforms: DonutChartData | null;
 }
 
-const ANALYTICS_PATTERN = /\/analytics\/(\d+)(\/(\w+))?/;
+interface ResponseMatch {
+  type: keyof CollectedData;
+}
 
-export function categorizeResponse(
-  url: string,
-  _body: unknown
-): ResponseCategory | null {
-  const match = url.match(ANALYTICS_PATTERN);
+/**
+ * Categorize a dashboard API response by its URL path.
+ * Transistor's dashboard uses show slugs in URLs like:
+ *   /shows/{slug}/analytics/daily_average
+ *   /shows/{slug}/analytics/subscribers
+ *   /shows/{slug}/analytics/overall
+ *   /shows/{slug}/analytics/apps
+ *   /shows/{slug}/analytics/countries_map
+ */
+const ENDPOINT_MAP: Record<string, keyof CollectedData> = {
+  daily_average: "dailyAverage",
+  subscribers: "subscribers",
+  overall: "overall",
+  apps: "apps",
+  countries_map: "countriesMap",
+};
+
+export function categorizeResponse(url: string): ResponseMatch | null {
+  // Match /shows/{slug}/analytics/{endpoint}
+  const match = url.match(/\/shows\/[^/]+\/analytics\/(\w+)/);
   if (!match) return null;
 
-  const showId = match[1];
-  const subpath = match[3];
+  const endpoint = match[1];
+  const type = ENDPOINT_MAP[endpoint];
+  if (!type) return null;
 
-  if (subpath === "countries") return { type: "countries", showId };
-  if (subpath === "applications") return { type: "applications", showId };
-  if (subpath === "devices") return { type: "devices", showId };
-  if (!subpath) return { type: "overview", showId };
-
-  return null;
+  return { type };
 }
 
 export async function collectShowAnalytics(
@@ -37,10 +54,13 @@ export async function collectShowAnalytics(
   transistorShowId: string
 ): Promise<CollectedData> {
   const collected: CollectedData = {
-    overview: null,
-    countries: null,
-    applications: null,
+    dailyAverage: null,
+    subscribers: null,
+    overall: null,
+    apps: null,
+    countriesMap: null,
     devices: null,
+    platforms: null,
   };
 
   const page = await context.newPage();
@@ -51,23 +71,29 @@ export async function collectShowAnalytics(
     if (!url.includes("/analytics/")) return;
     if (response.status() !== 200) return;
 
+    const contentType = response.headers()["content-type"] || "";
+    if (!contentType.includes("json")) return;
+
     try {
       const body = await response.json();
-      const category = categorizeResponse(url, body);
-      if (!category || category.showId !== transistorShowId) return;
+      const match = categorizeResponse(url);
+      if (!match) return;
 
-      switch (category.type) {
-        case "overview":
-          collected.overview = body?.data?.attributes ?? null;
+      switch (match.type) {
+        case "dailyAverage":
+          collected.dailyAverage = body?.data ?? null;
           break;
-        case "countries":
-          collected.countries = body?.data?.attributes?.countries ?? null;
+        case "subscribers":
+          collected.subscribers = body ?? null;
           break;
-        case "applications":
-          collected.applications = body?.data?.attributes?.applications ?? null;
+        case "overall":
+          collected.overall = body ?? null;
           break;
-        case "devices":
-          collected.devices = body?.data?.attributes?.devices ?? null;
+        case "apps":
+          collected.apps = body ?? null;
+          break;
+        case "countriesMap":
+          collected.countriesMap = body?.data ?? null;
           break;
       }
     } catch {
@@ -75,18 +101,23 @@ export async function collectShowAnalytics(
     }
   });
 
-  // Navigate to the show's analytics pages to trigger the API calls
+  // Navigate to the show's analytics page — this triggers all the API calls
   const baseUrl = `https://dashboard.transistor.fm/shows/${transistorShowId}/analytics`;
 
-  console.log(`[collector] Navigating to overview: ${baseUrl}`);
+  console.log(`[collector] Navigating to: ${baseUrl}`);
   await page.goto(baseUrl, { waitUntil: "networkidle" });
 
-  // Navigate to sub-pages to trigger additional API calls
-  for (const subpage of ["countries", "applications", "devices"]) {
-    const url = `${baseUrl}/${subpage}`;
-    console.log(`[collector] Navigating to ${subpage}: ${url}`);
-    await page.goto(url, { waitUntil: "networkidle" });
-  }
+  // Extract device and platform data from DOM (rendered server-side as data attributes)
+  const devicesRaw = await page.getAttribute("#devices-donut", "data-chart-data");
+  const platformsRaw = await page.getAttribute("#platforms-donut", "data-chart-data");
+
+  const domData = {
+    devices: devicesRaw ? JSON.parse(devicesRaw) : null,
+    platforms: platformsRaw ? JSON.parse(platformsRaw) : null,
+  };
+
+  collected.devices = domData.devices;
+  collected.platforms = domData.platforms;
 
   await page.close();
   return collected;

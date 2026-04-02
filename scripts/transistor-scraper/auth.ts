@@ -53,7 +53,7 @@ export async function getAuthenticatedContext(
     await page.goto("https://dashboard.transistor.fm");
 
     // If we land on the dashboard (not redirected to login), session is valid
-    if (!page.url().includes("/login") && !page.url().includes("/sign_in")) {
+    if (!page.url().includes("/signin") && !page.url().includes("/login") && !page.url().includes("/sign_in")) {
       console.log(`[auth] Reusing saved session for ${config.name}`);
       await page.close();
       return context;
@@ -66,16 +66,13 @@ export async function getAuthenticatedContext(
   const context = await browser.newContext();
   const page = await context.newPage();
 
-  await page.goto("https://dashboard.transistor.fm/login");
-  await page.fill('input[type="email"], input[name="email"]', config.email);
-  await page.fill(
-    'input[type="password"], input[name="password"]',
-    config.password
-  );
-  await page.click('button[type="submit"], input[type="submit"]');
+  await page.goto("https://dashboard.transistor.fm/signin");
+  await page.fill('#session_email', config.email);
+  await page.fill('#session_password', config.password);
+  await page.click('button[type="submit"]');
 
   // Wait for navigation to dashboard
-  await page.waitForURL(/dashboard\.transistor\.fm(?!.*login)/, {
+  await page.waitForURL(/dashboard\.transistor\.fm(?!.*sign)/, {
     timeout: 15000,
   });
 
