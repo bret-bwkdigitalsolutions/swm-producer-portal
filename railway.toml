@@ -1,6 +1,3 @@
-[build]
-dockerfilePath = "Dockerfile"
-
 [deploy]
 healthcheckPath = "/api/auth/session"
 healthcheckTimeout = 120
