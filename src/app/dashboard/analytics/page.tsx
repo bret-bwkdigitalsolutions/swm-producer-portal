@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import ShowSelector from "@/components/analytics/show-selector";
 import NetworkPicker from "@/components/analytics/network-picker";
 import StatCard from "@/components/analytics/stat-card";
@@ -35,12 +35,23 @@ import type {
 export default function AnalyticsOverviewPage() {
   const { from, to } = useDateRange();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const showParam = searchParams.get("show");
 
   const [shows, setShows] = useState<AccessibleShow[]>([]);
   const [selectedShowId, setSelectedShowId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [role, setRole] = useState<string | null>(null);
+
+  const handleShowChange = useCallback(
+    (wpShowId: number) => {
+      setSelectedShowId(wpShowId);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("show", String(wpShowId));
+      router.replace(`?${params.toString()}`);
+    },
+    [searchParams, router]
+  );
 
   // Podcast state
   const [podcastData, setPodcastData] = useState<TransistorAnalyticsPoint[]>([]);
@@ -192,7 +203,7 @@ export default function AnalyticsOverviewPage() {
           <ShowSelector
             shows={shows}
             selectedShowId={selectedShowId}
-            onChange={setSelectedShowId}
+            onChange={handleShowChange}
           />
           <button
             onClick={handleRefresh}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useDateRange } from "@/components/analytics/date-range-provider";
 import ShowSelector from "@/components/analytics/show-selector";
 import StatCard from "@/components/analytics/stat-card";
@@ -30,6 +31,9 @@ import type {
 
 export default function PodcastAnalyticsPage() {
   const { from, to } = useDateRange();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const showParam = searchParams.get("show");
 
   const [shows, setShows] = useState<AccessibleShow[]>([]);
   const [selectedShowId, setSelectedShowId] = useState<number | null>(null);
@@ -44,16 +48,29 @@ export default function PodcastAnalyticsPage() {
   const [scrapedApps, setScrapedApps] = useState<{ data: ScrapedAppEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
   const [scrapedDevices, setScrapedDevices] = useState<{ data: ScrapedDeviceEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
 
+  const handleShowChange = useCallback(
+    (wpShowId: number) => {
+      setSelectedShowId(wpShowId);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("show", String(wpShowId));
+      router.replace(`?${params.toString()}`);
+    },
+    [searchParams, router]
+  );
+
   // Load accessible shows on mount
   useEffect(() => {
     fetchAccessibleShows().then((result) => {
       setShows(result);
-      if (result.length > 0) {
+      const preselected = showParam ? parseInt(showParam, 10) : null;
+      if (preselected && !isNaN(preselected) && result.some((s) => s.wpShowId === preselected)) {
+        setSelectedShowId(preselected);
+      } else if (result.length > 0) {
         setSelectedShowId(result[0].wpShowId);
       }
       setLoading(false);
     });
-  }, []);
+  }, [showParam]);
 
   // Fetch all data when show or date range changes
   useEffect(() => {
@@ -107,7 +124,7 @@ export default function PodcastAnalyticsPage() {
         <ShowSelector
           shows={shows}
           selectedShowId={selectedShowId}
-          onChange={setSelectedShowId}
+          onChange={handleShowChange}
         />
       </div>
 

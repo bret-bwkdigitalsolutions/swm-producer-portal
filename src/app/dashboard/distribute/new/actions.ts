@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { toISOWithTimezone } from "@/lib/timezone";
 
 interface FormState {
   success?: boolean;
@@ -37,7 +38,12 @@ export async function submitDistribution(
   const description = formData.get("description") as string | null;
   const tags = formData.get("tags") as string | null;
   const scheduleMode = formData.get("schedule_mode") as string | null;
-  const scheduledAt = formData.get("scheduled_at") as string | null;
+  const scheduledAtRaw = formData.get("scheduled_at") as string | null;
+  const timezone = formData.get("timezone") as string | null;
+  const scheduledAt =
+    scheduledAtRaw && scheduleMode === "schedule"
+      ? toISOWithTimezone(scheduledAtRaw, timezone)
+      : scheduledAtRaw;
   const videoFileName = formData.get("video_file_name") as string | null;
   const videoFileSize = formData.get("video_file_size") as string | null;
   const videoContentType = formData.get("video_content_type") as string | null;
@@ -187,6 +193,7 @@ export async function updateDistribution(
     isDraft?: boolean;
     scheduleMode?: string;
     scheduledAt?: string | null;
+    timezone?: string | null;
   }
 ): Promise<FormState> {
   const session = await auth();
@@ -221,7 +228,10 @@ export async function updateDistribution(
           ...(data.tags ? { tags: data.tags } : {}),
           isDraft: data.isDraft ?? false,
           scheduleMode: data.scheduleMode ?? "now",
-          scheduledAt: data.scheduledAt ?? null,
+          scheduledAt:
+            data.scheduledAt && data.scheduleMode === "schedule"
+              ? toISOWithTimezone(data.scheduledAt, data.timezone)
+              : (data.scheduledAt ?? null),
         },
       },
     });

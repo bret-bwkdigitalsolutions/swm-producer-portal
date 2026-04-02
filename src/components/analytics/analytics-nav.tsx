@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const tabs = [
@@ -13,6 +13,8 @@ const tabs = [
 
 export default function AnalyticsNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const showParam = searchParams.get("show");
 
   if (pathname.startsWith("/dashboard/analytics/network")) return null;
 
@@ -24,10 +26,12 @@ export default function AnalyticsNav() {
             ? pathname === tab.href
             : pathname.startsWith(tab.href);
 
+        const href = showParam ? `${tab.href}?show=${showParam}` : tab.href;
+
         return (
           <Link
             key={tab.href}
-            href={tab.href}
+            href={href}
             className={cn(
               "border-b-2 px-4 py-2 text-sm font-medium transition-colors",
               isActive

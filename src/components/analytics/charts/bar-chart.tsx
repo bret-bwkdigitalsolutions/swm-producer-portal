@@ -38,7 +38,7 @@ export default function BarChart({
     <ResponsiveContainer width="100%" height={height}>
       <RechartsBarChart
         data={data}
-        layout={isHorizontal ? "horizontal" : "vertical"}
+        layout={isHorizontal ? "vertical" : "horizontal"}
       >
         <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
         {isHorizontal ? (

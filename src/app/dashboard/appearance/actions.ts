@@ -6,6 +6,7 @@ import { createPost, uploadMedia } from "@/lib/wordpress/client";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
 import { verifyShowAccess, verifyContentTypeAccess } from "@/lib/auth-guard";
+import { toISOWithTimezone } from "@/lib/timezone";
 
 interface FormState {
   success?: boolean;
@@ -52,7 +53,11 @@ export async function submitAppearance(
   const eventUrl = formData.get("event_url") as string;
   const status = formData.get("appearance_status") as string;
   const publishStatus = formData.get("status") as "publish" | "future" | "draft";
-  const scheduledDate = formData.get("scheduled_date") as string | null;
+  const scheduledDateRaw = formData.get("scheduled_date") as string | null;
+  const timezone = formData.get("timezone") as string | null;
+  const scheduledDate = scheduledDateRaw
+    ? toISOWithTimezone(scheduledDateRaw, timezone)
+    : null;
 
   // Validation
   const errors: Record<string, string[]> = {};

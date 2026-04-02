@@ -429,6 +429,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
         isDraft: publishState.status === "draft",
         scheduleMode: publishState.status === "future" ? "schedule" : "now",
         scheduledAt: publishState.status === "future" ? publishState.date ?? null : null,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
 
       if (!updateResult.success) {
