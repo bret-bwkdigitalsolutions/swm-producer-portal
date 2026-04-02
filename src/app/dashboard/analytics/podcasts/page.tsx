@@ -62,22 +62,21 @@ export default function PodcastAnalyticsPage() {
     setDataLoading(true);
     const dateRange = { from, to };
 
+    // Fetch core analytics
     Promise.all([
       fetchPodcastAnalytics(selectedShowId, dateRange),
       fetchPodcastEpisodes(selectedShowId),
-      fetchScrapedOverview(selectedShowId),
-      fetchScrapedGeo(selectedShowId),
-      fetchScrapedApps(selectedShowId),
-      fetchScrapedDevices(selectedShowId),
-    ]).then(([analyticsData, episodesData, overview, geo, apps, devices]) => {
+    ]).then(([analyticsData, episodesData]) => {
       setDownloads(analyticsData);
       setEpisodes(episodesData);
-      setScrapedOverview(overview);
-      setScrapedGeo(geo);
-      setScrapedApps(apps);
-      setScrapedDevices(devices);
       setDataLoading(false);
-    });
+    }).catch(() => setDataLoading(false));
+
+    // Fetch scraped data independently (don't block core analytics)
+    fetchScrapedOverview(selectedShowId).then(setScrapedOverview).catch(() => {});
+    fetchScrapedGeo(selectedShowId).then(setScrapedGeo).catch(() => {});
+    fetchScrapedApps(selectedShowId).then(setScrapedApps).catch(() => {});
+    fetchScrapedDevices(selectedShowId).then(setScrapedDevices).catch(() => {});
   }, [selectedShowId, from, to]);
 
   const totalDownloads = downloads.reduce((sum, d) => sum + d.downloads, 0);
