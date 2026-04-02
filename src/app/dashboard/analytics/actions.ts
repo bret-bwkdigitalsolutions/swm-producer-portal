@@ -156,7 +156,7 @@ export interface ScrapedOverviewData {
   avgDownloads90d: number | null;
   monthlyDownloads: Record<string, number> | null;
   yearlyDownloads: Record<string, number> | null;
-  scrapedAt: Date | null;
+  scrapedAt: string | null;
 }
 
 export interface ScrapedGeoEntry {
@@ -210,13 +210,13 @@ export async function fetchScrapedOverview(
     avgDownloads90d: latest.avgDownloads90d,
     monthlyDownloads: latest.monthlyDownloads as Record<string, number> | null,
     yearlyDownloads: latest.yearlyDownloads as Record<string, number> | null,
-    scrapedAt: latest.scrapedAt,
+    scrapedAt: latest.scrapedAt.toISOString(),
   };
 }
 
 export async function fetchScrapedGeo(
   wpShowId: number
-): Promise<{ data: ScrapedGeoEntry[]; scrapedAt: Date | null }> {
+): Promise<{ data: ScrapedGeoEntry[]; scrapedAt: string | null }> {
   await requireShowAccess(wpShowId);
 
   const latest = await db.transistorScrapedGeo.findFirst({
@@ -239,13 +239,13 @@ export async function fetchScrapedGeo(
       downloads: r.downloads,
       percentage: r.percentage,
     })),
-    scrapedAt: latest.scrapedAt,
+    scrapedAt: latest.scrapedAt.toISOString(),
   };
 }
 
 export async function fetchScrapedApps(
   wpShowId: number
-): Promise<{ data: ScrapedAppEntry[]; scrapedAt: Date | null }> {
+): Promise<{ data: ScrapedAppEntry[]; scrapedAt: string | null }> {
   await requireShowAccess(wpShowId);
 
   const latest = await db.transistorScrapedApps.findFirst({
@@ -267,13 +267,13 @@ export async function fetchScrapedApps(
       downloads: r.downloads,
       percentage: r.percentage,
     })),
-    scrapedAt: latest.scrapedAt,
+    scrapedAt: latest.scrapedAt.toISOString(),
   };
 }
 
 export async function fetchScrapedDevices(
   wpShowId: number
-): Promise<{ data: ScrapedDeviceEntry[]; scrapedAt: Date | null }> {
+): Promise<{ data: ScrapedDeviceEntry[]; scrapedAt: string | null }> {
   await requireShowAccess(wpShowId);
 
   const latest = await db.transistorScrapedDevices.findFirst({
@@ -296,7 +296,7 @@ export async function fetchScrapedDevices(
       downloads: r.downloads,
       percentage: r.percentage,
     })),
-    scrapedAt: latest.scrapedAt,
+    scrapedAt: latest.scrapedAt.toISOString(),
   };
 }
 

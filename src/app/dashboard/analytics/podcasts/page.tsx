@@ -40,9 +40,9 @@ export default function PodcastAnalyticsPage() {
   const [dataLoading, setDataLoading] = useState(false);
 
   const [scrapedOverview, setScrapedOverview] = useState<ScrapedOverviewData | null>(null);
-  const [scrapedGeo, setScrapedGeo] = useState<{ data: ScrapedGeoEntry[]; scrapedAt: Date | null }>({ data: [], scrapedAt: null });
-  const [scrapedApps, setScrapedApps] = useState<{ data: ScrapedAppEntry[]; scrapedAt: Date | null }>({ data: [], scrapedAt: null });
-  const [scrapedDevices, setScrapedDevices] = useState<{ data: ScrapedDeviceEntry[]; scrapedAt: Date | null }>({ data: [], scrapedAt: null });
+  const [scrapedGeo, setScrapedGeo] = useState<{ data: ScrapedGeoEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
+  const [scrapedApps, setScrapedApps] = useState<{ data: ScrapedAppEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
+  const [scrapedDevices, setScrapedDevices] = useState<{ data: ScrapedDeviceEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
 
   // Load accessible shows on mount
   useEffect(() => {

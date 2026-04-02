@@ -1,7 +1,7 @@
 import { formatDistanceToNow } from "date-fns";
 
 interface ScrapedDataBadgeProps {
-  scrapedAt: Date | null;
+  scrapedAt: string | null;
   warnAfterDays?: number;
 }
 

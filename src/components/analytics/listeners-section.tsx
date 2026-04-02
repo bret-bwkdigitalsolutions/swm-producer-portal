@@ -13,9 +13,9 @@ import type {
 type Tab = "geography" | "apps" | "devices";
 
 interface ListenersSectionProps {
-  geo: { data: ScrapedGeoEntry[]; scrapedAt: Date | null };
-  apps: { data: ScrapedAppEntry[]; scrapedAt: Date | null };
-  devices: { data: ScrapedDeviceEntry[]; scrapedAt: Date | null };
+  geo: { data: ScrapedGeoEntry[]; scrapedAt: string | null };
+  apps: { data: ScrapedAppEntry[]; scrapedAt: string | null };
+  devices: { data: ScrapedDeviceEntry[]; scrapedAt: string | null };
   loading?: boolean;
 }
 
