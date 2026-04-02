@@ -8,6 +8,9 @@ import StatCard from "@/components/analytics/stat-card";
 import TimeSeriesChart from "@/components/analytics/charts/time-series-chart";
 import EpisodeTable from "@/components/analytics/episode-table";
 import VideoTable from "@/components/analytics/video-table";
+import OverviewGeoSection from "@/components/analytics/overview-geo-section";
+import OverviewPlatformsSection from "@/components/analytics/overview-platforms-section";
+import OverviewAudienceSection from "@/components/analytics/overview-audience-section";
 import { useDateRange } from "@/components/analytics/date-range-provider";
 import { formatNumber } from "@/lib/analytics/date-utils";
 import { getNetworksForRole, getShowName } from "@/lib/analytics/networks";
@@ -21,8 +24,11 @@ import {
   fetchYouTubeAnalytics,
   refreshAnalyticsCache,
   fetchScrapedOverview,
+  fetchScrapedGeo,
+  fetchScrapedApps,
+  fetchYouTubeGeo,
 } from "./actions";
-import type { ScrapedOverviewData } from "./actions";
+import type { ScrapedOverviewData, ScrapedGeoEntry, ScrapedAppEntry } from "./actions";
 import type {
   AccessibleShow,
   TransistorAnalyticsPoint,
@@ -30,6 +36,7 @@ import type {
   YouTubeChannelStats,
   YouTubeVideo,
   YouTubeAnalyticsPoint,
+  YouTubeCountryData,
 } from "@/lib/analytics/types";
 
 export default function AnalyticsOverviewPage() {
@@ -61,8 +68,11 @@ export default function AnalyticsOverviewPage() {
 
   // Scraped data state
   const [scrapedOverview, setScrapedOverview] = useState<ScrapedOverviewData | null>(null);
+  const [scrapedGeo, setScrapedGeo] = useState<{ data: ScrapedGeoEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
+  const [scrapedApps, setScrapedApps] = useState<{ data: ScrapedAppEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
 
   // YouTube state
+  const [ytGeo, setYtGeo] = useState<YouTubeCountryData[]>([]);
   const [ytChannel, setYtChannel] = useState<YouTubeChannelStats | null>(null);
   const [ytVideos, setYtVideos] = useState<YouTubeVideo[]>([]);
   const [ytAnalytics, setYtAnalytics] = useState<YouTubeAnalyticsPoint[]>([]);
@@ -112,6 +122,10 @@ export default function AnalyticsOverviewPage() {
       } finally {
         setPodcastLoading(false);
       }
+
+      // Fetch scraped geo/apps independently (don't block core analytics)
+      fetchScrapedGeo(wpShowId).then(setScrapedGeo).catch(() => {});
+      fetchScrapedApps(wpShowId).then(setScrapedApps).catch(() => {});
     },
     [from, to]
   );
@@ -121,14 +135,16 @@ export default function AnalyticsOverviewPage() {
       setYtLoading(true);
       setYtError(false);
       try {
-        const [channel, videos, analytics] = await Promise.all([
+        const [channel, videos, analytics, geo] = await Promise.all([
           fetchYouTubeChannel(wpShowId),
           fetchYouTubeVideos(wpShowId),
           fetchYouTubeAnalytics(wpShowId, { from, to }),
+          fetchYouTubeGeo(wpShowId, { from, to }),
         ]);
         setYtChannel(channel);
         setYtVideos(videos);
         setYtAnalytics(analytics);
+        setYtGeo(geo);
       } catch {
         setYtError(true);
       } finally {
@@ -332,6 +348,30 @@ export default function AnalyticsOverviewPage() {
           )}
         </div>
       </div>
+
+      {/* Audience Summary */}
+      <OverviewAudienceSection
+        scrapedOverview={scrapedOverview}
+        ytChannel={ytChannel}
+        podcastLoading={podcastLoading}
+        youtubeLoading={ytLoading}
+      />
+
+      {/* Cross-Platform Geography */}
+      <OverviewGeoSection
+        podcastGeo={scrapedGeo}
+        youtubeGeo={ytGeo}
+        podcastLoading={podcastLoading}
+        youtubeLoading={ytLoading}
+      />
+
+      {/* Where People Experience the Show */}
+      <OverviewPlatformsSection
+        podcastApps={scrapedApps}
+        youtubeTotalViews={ytTotalViews}
+        podcastLoading={podcastLoading}
+        youtubeLoading={ytLoading}
+      />
     </div>
   );
 }
