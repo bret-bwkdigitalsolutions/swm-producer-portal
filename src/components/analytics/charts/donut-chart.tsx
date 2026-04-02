@@ -43,6 +43,7 @@ export default function DonutChart({
           innerRadius={60}
           outerRadius={100}
           paddingAngle={2}
+          minAngle={8}
         >
           {data.map((_, index) => (
             <Cell
