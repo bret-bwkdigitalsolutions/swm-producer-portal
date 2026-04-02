@@ -73,10 +73,10 @@ export default function PodcastAnalyticsPage() {
     }).catch(() => setDataLoading(false));
 
     // Fetch scraped data independently (don't block core analytics)
-    fetchScrapedOverview(selectedShowId).then((d) => { console.log("[scraped] overview:", d); setScrapedOverview(d); }).catch((e) => console.error("[scraped] overview error:", e));
-    fetchScrapedGeo(selectedShowId).then((d) => { console.log("[scraped] geo:", d); setScrapedGeo(d); }).catch((e) => console.error("[scraped] geo error:", e));
-    fetchScrapedApps(selectedShowId).then((d) => { console.log("[scraped] apps:", d); setScrapedApps(d); }).catch((e) => console.error("[scraped] apps error:", e));
-    fetchScrapedDevices(selectedShowId).then((d) => { console.log("[scraped] devices:", d); setScrapedDevices(d); }).catch((e) => console.error("[scraped] devices error:", e));
+    fetchScrapedOverview(selectedShowId).then(setScrapedOverview).catch(() => {});
+    fetchScrapedGeo(selectedShowId).then(setScrapedGeo).catch(() => {});
+    fetchScrapedApps(selectedShowId).then(setScrapedApps).catch(() => {});
+    fetchScrapedDevices(selectedShowId).then(setScrapedDevices).catch(() => {});
   }, [selectedShowId, from, to]);
 
   const totalDownloads = downloads.reduce((sum, d) => sum + d.downloads, 0);
