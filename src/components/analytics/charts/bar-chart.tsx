@@ -23,6 +23,7 @@ interface BarChartProps {
   series: Series[];
   layout?: "horizontal" | "vertical";
   height?: number;
+  stacked?: boolean;
 }
 
 export default function BarChart({
@@ -31,6 +32,7 @@ export default function BarChart({
   series,
   layout = "vertical",
   height = 300,
+  stacked = false,
 }: BarChartProps) {
   const isHorizontal = layout === "horizontal";
 
@@ -76,13 +78,14 @@ export default function BarChart({
             borderRadius: 8,
           }}
         />
-        {series.length > 1 && <Legend />}
+        {(series.length > 1 || stacked) && <Legend />}
         {series.map((s) => (
           <Bar
             key={s.dataKey}
             dataKey={s.dataKey}
             name={s.name}
             fill={s.color}
+            {...(stacked ? { stackId: "stack" } : {})}
           />
         ))}
       </RechartsBarChart>
