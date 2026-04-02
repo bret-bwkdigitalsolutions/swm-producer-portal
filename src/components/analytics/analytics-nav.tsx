@@ -14,9 +14,19 @@ const tabs = [
 export default function AnalyticsNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const showParam = searchParams.get("show");
 
-  if (pathname.startsWith("/dashboard/analytics/network")) return null;
+  // Build query string preserving selection params
+  const preservedParams = new URLSearchParams();
+  const level = searchParams.get("level");
+  const network = searchParams.get("network");
+  const show = searchParams.get("show");
+  if (show) {
+    preservedParams.set("show", show);
+  } else if (level) {
+    preservedParams.set("level", level);
+    if (network) preservedParams.set("network", network);
+  }
+  const queryString = preservedParams.toString();
 
   return (
     <nav className="flex gap-1 border-b">
@@ -26,7 +36,7 @@ export default function AnalyticsNav() {
             ? pathname === tab.href
             : pathname.startsWith(tab.href);
 
-        const href = showParam ? `${tab.href}?show=${showParam}` : tab.href;
+        const href = queryString ? `${tab.href}?${queryString}` : tab.href;
 
         return (
           <Link

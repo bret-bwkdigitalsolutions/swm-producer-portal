@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import ShowSelector from "@/components/analytics/show-selector";
-import NetworkPicker from "@/components/analytics/network-picker";
+import HierarchicalShowSelector from "@/components/analytics/hierarchical-show-selector";
 import StatCard from "@/components/analytics/stat-card";
 import TimeSeriesChart from "@/components/analytics/charts/time-series-chart";
 import EpisodeTable from "@/components/analytics/episode-table";
@@ -12,8 +10,8 @@ import OverviewGeoSection from "@/components/analytics/overview-geo-section";
 import OverviewPlatformsSection from "@/components/analytics/overview-platforms-section";
 import OverviewAudienceSection from "@/components/analytics/overview-audience-section";
 import { useDateRange } from "@/components/analytics/date-range-provider";
+import { useAnalyticsSelection } from "@/components/analytics/analytics-selection-provider";
 import { formatNumber } from "@/lib/analytics/date-utils";
-import { getNetworksForRole, getShowName } from "@/lib/analytics/networks";
 import {
   fetchAccessibleShows,
   fetchCurrentUserRole,
@@ -22,15 +20,28 @@ import {
   fetchYouTubeChannel,
   fetchYouTubeVideos,
   fetchYouTubeAnalytics,
-  refreshAnalyticsCache,
+  fetchYouTubeGeo,
   fetchScrapedOverview,
   fetchScrapedGeo,
   fetchScrapedApps,
-  fetchYouTubeGeo,
+  refreshAnalyticsCache,
+  fetchAggregatedPodcastAnalytics,
+  fetchAggregatedPodcastEpisodes,
+  fetchAggregatedYouTubeChannel,
+  fetchAggregatedYouTubeVideos,
+  fetchAggregatedYouTubeAnalytics,
+  fetchAggregatedYouTubeGeo,
+  fetchAggregatedScrapedOverview,
+  fetchAggregatedScrapedGeo,
+  fetchAggregatedScrapedApps,
+  refreshAggregatedCache,
 } from "./actions";
-import type { ScrapedOverviewData, ScrapedGeoEntry, ScrapedAppEntry } from "./actions";
 import type {
-  AccessibleShow,
+  ScrapedOverviewData,
+  ScrapedGeoEntry,
+  ScrapedAppEntry,
+} from "./actions";
+import type {
   TransistorAnalyticsPoint,
   TransistorEpisode,
   YouTubeChannelStats,
@@ -41,35 +52,39 @@ import type {
 
 export default function AnalyticsOverviewPage() {
   const { from, to } = useDateRange();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const showParam = searchParams.get("show");
+  const {
+    selection,
+    showsInScope,
+    accessibleShows,
+    setAccessibleShows,
+    role,
+    setRole,
+  } = useAnalyticsSelection();
 
-  const [shows, setShows] = useState<AccessibleShow[]>([]);
-  const [selectedShowId, setSelectedShowId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [role, setRole] = useState<string | null>(null);
-
-  const handleShowChange = useCallback(
-    (wpShowId: number) => {
-      setSelectedShowId(wpShowId);
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("show", String(wpShowId));
-      router.replace(`?${params.toString()}`);
-    },
-    [searchParams, router]
-  );
+  const [initialized, setInitialized] = useState(false);
 
   // Podcast state
-  const [podcastData, setPodcastData] = useState<TransistorAnalyticsPoint[]>([]);
-  const [podcastEpisodes, setPodcastEpisodes] = useState<TransistorEpisode[]>([]);
+  const [podcastData, setPodcastData] = useState<TransistorAnalyticsPoint[]>(
+    []
+  );
+  const [podcastEpisodes, setPodcastEpisodes] = useState<TransistorEpisode[]>(
+    []
+  );
   const [podcastLoading, setPodcastLoading] = useState(false);
   const [podcastError, setPodcastError] = useState(false);
 
   // Scraped data state
-  const [scrapedOverview, setScrapedOverview] = useState<ScrapedOverviewData | null>(null);
-  const [scrapedGeo, setScrapedGeo] = useState<{ data: ScrapedGeoEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
-  const [scrapedApps, setScrapedApps] = useState<{ data: ScrapedAppEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
+  const [scrapedOverview, setScrapedOverview] =
+    useState<ScrapedOverviewData | null>(null);
+  const [scrapedGeo, setScrapedGeo] = useState<{
+    data: ScrapedGeoEntry[];
+    scrapedAt: string | null;
+  }>({ data: [], scrapedAt: null });
+  const [scrapedApps, setScrapedApps] = useState<{
+    data: ScrapedAppEntry[];
+    scrapedAt: string | null;
+  }>({ data: [], scrapedAt: null });
 
   // YouTube state
   const [ytGeo, setYtGeo] = useState<YouTubeCountryData[]>([]);
@@ -79,72 +94,87 @@ export default function AnalyticsOverviewPage() {
   const [ytLoading, setYtLoading] = useState(false);
   const [ytError, setYtError] = useState(false);
 
-  // Load shows and role on mount
+  // Initialize shows and role
   useEffect(() => {
     Promise.all([fetchAccessibleShows(), fetchCurrentUserRole()]).then(
-      ([showsResult, userRole]) => {
-        setShows(showsResult);
+      ([shows, userRole]) => {
+        setAccessibleShows(shows);
         setRole(userRole);
-        const preselected = showParam ? parseInt(showParam, 10) : null;
-        if (preselected && !isNaN(preselected)) {
-          // Trust the URL param — admin may navigate here from network view
-          // with a wpShowId that isn't in the WP shows list
-          setSelectedShowId(preselected);
-          // Add to shows list if missing so the selector displays it
-          if (!showsResult.some((s) => s.wpShowId === preselected)) {
-            setShows([
-              ...showsResult,
-              { wpShowId: preselected, title: getShowName(preselected) },
-            ]);
-          }
-        } else if (showsResult.length > 0) {
-          setSelectedShowId(showsResult[0].wpShowId);
-        }
+        setInitialized(true);
       }
     );
-  }, [showParam]);
+  }, [setAccessibleShows, setRole]);
 
   const loadPodcastData = useCallback(
-    async (wpShowId: number) => {
+    async (wpShowIds: number[]) => {
       setPodcastLoading(true);
       setPodcastError(false);
       try {
-        const [analytics, episodes, overview] = await Promise.all([
-          fetchPodcastAnalytics(wpShowId, { from, to }),
-          fetchPodcastEpisodes(wpShowId),
-          fetchScrapedOverview(wpShowId),
-        ]);
-        setPodcastData(analytics);
-        setPodcastEpisodes(episodes);
-        setScrapedOverview(overview);
+        if (wpShowIds.length === 1) {
+          const [analytics, episodes, overview] = await Promise.all([
+            fetchPodcastAnalytics(wpShowIds[0], { from, to }),
+            fetchPodcastEpisodes(wpShowIds[0]),
+            fetchScrapedOverview(wpShowIds[0]),
+          ]);
+          setPodcastData(analytics);
+          setPodcastEpisodes(episodes);
+          setScrapedOverview(overview);
+        } else {
+          const [analytics, episodes, overview] = await Promise.all([
+            fetchAggregatedPodcastAnalytics(wpShowIds, { from, to }),
+            fetchAggregatedPodcastEpisodes(wpShowIds),
+            fetchAggregatedScrapedOverview(wpShowIds),
+          ]);
+          setPodcastData(analytics);
+          setPodcastEpisodes(episodes);
+          setScrapedOverview(overview);
+        }
       } catch {
         setPodcastError(true);
       } finally {
         setPodcastLoading(false);
       }
 
-      // Fetch scraped geo/apps independently (don't block core analytics)
-      fetchScrapedGeo(wpShowId).then(setScrapedGeo).catch(() => {});
-      fetchScrapedApps(wpShowId).then(setScrapedApps).catch(() => {});
+      // Fetch scraped geo/apps independently
+      if (wpShowIds.length === 1) {
+        fetchScrapedGeo(wpShowIds[0]).then(setScrapedGeo).catch(() => {});
+        fetchScrapedApps(wpShowIds[0]).then(setScrapedApps).catch(() => {});
+      } else {
+        fetchAggregatedScrapedGeo(wpShowIds).then(setScrapedGeo).catch(() => {});
+        fetchAggregatedScrapedApps(wpShowIds).then(setScrapedApps).catch(() => {});
+      }
     },
     [from, to]
   );
 
   const loadYouTubeData = useCallback(
-    async (wpShowId: number) => {
+    async (wpShowIds: number[]) => {
       setYtLoading(true);
       setYtError(false);
       try {
-        const [channel, videos, analytics, geo] = await Promise.all([
-          fetchYouTubeChannel(wpShowId),
-          fetchYouTubeVideos(wpShowId),
-          fetchYouTubeAnalytics(wpShowId, { from, to }),
-          fetchYouTubeGeo(wpShowId, { from, to }),
-        ]);
-        setYtChannel(channel);
-        setYtVideos(videos);
-        setYtAnalytics(analytics);
-        setYtGeo(geo);
+        if (wpShowIds.length === 1) {
+          const [channel, videos, analytics, geo] = await Promise.all([
+            fetchYouTubeChannel(wpShowIds[0]),
+            fetchYouTubeVideos(wpShowIds[0]),
+            fetchYouTubeAnalytics(wpShowIds[0], { from, to }),
+            fetchYouTubeGeo(wpShowIds[0], { from, to }),
+          ]);
+          setYtChannel(channel);
+          setYtVideos(videos);
+          setYtAnalytics(analytics);
+          setYtGeo(geo);
+        } else {
+          const [channel, videos, analytics, geo] = await Promise.all([
+            fetchAggregatedYouTubeChannel(wpShowIds),
+            fetchAggregatedYouTubeVideos(wpShowIds),
+            fetchAggregatedYouTubeAnalytics(wpShowIds, { from, to }),
+            fetchAggregatedYouTubeGeo(wpShowIds, { from, to }),
+          ]);
+          setYtChannel(channel);
+          setYtVideos(videos);
+          setYtAnalytics(analytics);
+          setYtGeo(geo);
+        }
       } catch {
         setYtError(true);
       } finally {
@@ -154,45 +184,33 @@ export default function AnalyticsOverviewPage() {
     [from, to]
   );
 
+  // Fetch data when selection or date range changes
   useEffect(() => {
-    if (selectedShowId === null) return;
-    loadPodcastData(selectedShowId);
-    loadYouTubeData(selectedShowId);
-  }, [selectedShowId, from, to, loadPodcastData, loadYouTubeData]);
+    if (!initialized || showsInScope.length === 0) return;
+    loadPodcastData(showsInScope);
+    loadYouTubeData(showsInScope);
+  }, [initialized, showsInScope, from, to, loadPodcastData, loadYouTubeData]);
 
   async function handleRefresh() {
-    if (selectedShowId === null) return;
+    if (showsInScope.length === 0) return;
     setRefreshing(true);
     try {
-      await refreshAnalyticsCache(selectedShowId);
+      if (showsInScope.length === 1) {
+        await refreshAnalyticsCache(showsInScope[0]);
+      } else {
+        await refreshAggregatedCache(showsInScope);
+      }
       await Promise.all([
-        loadPodcastData(selectedShowId),
-        loadYouTubeData(selectedShowId),
+        loadPodcastData(showsInScope),
+        loadYouTubeData(showsInScope),
       ]);
     } finally {
       setRefreshing(false);
     }
   }
 
-  // Loading state
-  if (role === null) {
+  if (!initialized) {
     return <p className="text-muted-foreground">Loading...</p>;
-  }
-
-  // Admin network picker (skip if a specific show is selected via URL)
-  const networks = getNetworksForRole(role);
-  if (networks.length > 0 && !showParam) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Analytics</h1>
-          <p className="text-sm text-muted-foreground">
-            Select a network to view analytics
-          </p>
-        </div>
-        <NetworkPicker networks={networks} />
-      </div>
-    );
   }
 
   // Derived stats
@@ -202,8 +220,15 @@ export default function AnalyticsOverviewPage() {
     (sum, p) => sum + p.estimatedMinutesWatched,
     0
   );
-
   const loading = podcastLoading || ytLoading;
+
+  // Selection label for subtitle
+  const subtitle =
+    selection.level === "all"
+      ? "All networks combined"
+      : selection.level === "network"
+        ? selection.network.name
+        : "Performance across podcast and YouTube";
 
   return (
     <div className="space-y-6">
@@ -211,22 +236,16 @@ export default function AnalyticsOverviewPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Analytics Overview</h1>
-          <p className="text-sm text-muted-foreground">
-            Performance across podcast and YouTube
-          </p>
+          <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
         <div className="flex items-center gap-3">
-          <ShowSelector
-            shows={shows}
-            selectedShowId={selectedShowId}
-            onChange={handleShowChange}
-          />
+          <HierarchicalShowSelector />
           <button
             onClick={handleRefresh}
-            disabled={refreshing || selectedShowId === null}
+            disabled={refreshing || showsInScope.length === 0}
             className="rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
           >
-            {refreshing ? "Refreshing…" : "Refresh Data"}
+            {refreshing ? "Refreshing\u2026" : "Refresh Data"}
           </button>
         </div>
       </div>
@@ -236,32 +255,39 @@ export default function AnalyticsOverviewPage() {
         <StatCard
           title="Total Downloads"
           value={loading ? "" : formatNumber(totalDownloads)}
-          subtitle={`${from} – ${to}`}
+          subtitle={`${from} \u2013 ${to}`}
           loading={podcastLoading}
         />
         <StatCard
           title="Est. Subscribers"
-          value={scrapedOverview?.estimatedSubscribers != null ? formatNumber(scrapedOverview.estimatedSubscribers) : "—"}
-          subtitle={scrapedOverview?.scrapedAt ? `Updated ${new Date(scrapedOverview.scrapedAt).toLocaleDateString()}` : "No data yet"}
+          value={
+            scrapedOverview?.estimatedSubscribers != null
+              ? formatNumber(scrapedOverview.estimatedSubscribers)
+              : "\u2014"
+          }
+          subtitle={
+            scrapedOverview?.scrapedAt
+              ? `Updated ${new Date(scrapedOverview.scrapedAt).toLocaleDateString()}`
+              : "No data yet"
+          }
           loading={podcastLoading}
         />
         <StatCard
           title="YouTube Views"
           value={loading ? "" : formatNumber(ytTotalViews)}
-          subtitle={`${from} – ${to}`}
+          subtitle={`${from} \u2013 ${to}`}
           loading={ytLoading}
         />
         <StatCard
           title="Watch Hours"
           value={loading ? "" : formatNumber(Math.round(watchHours / 60))}
-          subtitle={`${from} – ${to}`}
+          subtitle={`${from} \u2013 ${to}`}
           loading={ytLoading}
         />
       </div>
 
       {/* Time Series Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Podcast Downloads Chart */}
         <div className="rounded-lg border bg-card p-4">
           <h2 className="mb-4 text-base font-semibold">Podcast Downloads</h2>
           {podcastError ? (
@@ -282,7 +308,6 @@ export default function AnalyticsOverviewPage() {
           )}
         </div>
 
-        {/* YouTube Views Chart */}
         <div className="rounded-lg border bg-card p-4">
           <h2 className="mb-4 text-base font-semibold">YouTube Views</h2>
           {ytError ? (
@@ -306,7 +331,6 @@ export default function AnalyticsOverviewPage() {
 
       {/* Tables */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Top Episodes */}
         <div className="rounded-lg border bg-card p-4">
           <h2 className="mb-4 text-base font-semibold">Top Episodes</h2>
           {podcastError ? (
@@ -327,7 +351,6 @@ export default function AnalyticsOverviewPage() {
           )}
         </div>
 
-        {/* Top Videos */}
         <div className="rounded-lg border bg-card p-4">
           <h2 className="mb-4 text-base font-semibold">Top Videos</h2>
           {ytError ? (

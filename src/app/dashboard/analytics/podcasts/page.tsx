@@ -1,24 +1,29 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useDateRange } from "@/components/analytics/date-range-provider";
-import ShowSelector from "@/components/analytics/show-selector";
+import { useAnalyticsSelection } from "@/components/analytics/analytics-selection-provider";
+import HierarchicalShowSelector from "@/components/analytics/hierarchical-show-selector";
 import StatCard from "@/components/analytics/stat-card";
 import TimeSeriesChart from "@/components/analytics/charts/time-series-chart";
 import EpisodeTable from "@/components/analytics/episode-table";
 import ListenersSection from "@/components/analytics/listeners-section";
 import {
   fetchAccessibleShows,
+  fetchCurrentUserRole,
   fetchPodcastAnalytics,
   fetchPodcastEpisodes,
   fetchScrapedOverview,
   fetchScrapedGeo,
   fetchScrapedApps,
   fetchScrapedDevices,
+  fetchAggregatedPodcastAnalytics,
+  fetchAggregatedPodcastEpisodes,
+  fetchAggregatedScrapedOverview,
+  fetchAggregatedScrapedGeo,
+  fetchAggregatedScrapedApps,
 } from "@/app/dashboard/analytics/actions";
 import type {
-  AccessibleShow,
   TransistorAnalyticsPoint,
   TransistorEpisode,
 } from "@/lib/analytics/types";
@@ -31,104 +36,119 @@ import type {
 
 export default function PodcastAnalyticsPage() {
   const { from, to } = useDateRange();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const showParam = searchParams.get("show");
+  const {
+    showsInScope,
+    accessibleShows,
+    setAccessibleShows,
+    setRole,
+  } = useAnalyticsSelection();
 
-  const [shows, setShows] = useState<AccessibleShow[]>([]);
-  const [selectedShowId, setSelectedShowId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-
+  const [initialized, setInitialized] = useState(false);
   const [downloads, setDownloads] = useState<TransistorAnalyticsPoint[]>([]);
   const [episodes, setEpisodes] = useState<TransistorEpisode[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
+  const [scrapedOverview, setScrapedOverview] =
+    useState<ScrapedOverviewData | null>(null);
+  const [scrapedGeo, setScrapedGeo] = useState<{
+    data: ScrapedGeoEntry[];
+    scrapedAt: string | null;
+  }>({ data: [], scrapedAt: null });
+  const [scrapedApps, setScrapedApps] = useState<{
+    data: ScrapedAppEntry[];
+    scrapedAt: string | null;
+  }>({ data: [], scrapedAt: null });
+  const [scrapedDevices, setScrapedDevices] = useState<{
+    data: ScrapedDeviceEntry[];
+    scrapedAt: string | null;
+  }>({ data: [], scrapedAt: null });
 
-  const [scrapedOverview, setScrapedOverview] = useState<ScrapedOverviewData | null>(null);
-  const [scrapedGeo, setScrapedGeo] = useState<{ data: ScrapedGeoEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
-  const [scrapedApps, setScrapedApps] = useState<{ data: ScrapedAppEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
-  const [scrapedDevices, setScrapedDevices] = useState<{ data: ScrapedDeviceEntry[]; scrapedAt: string | null }>({ data: [], scrapedAt: null });
-
-  const handleShowChange = useCallback(
-    (wpShowId: number) => {
-      setSelectedShowId(wpShowId);
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("show", String(wpShowId));
-      router.replace(`?${params.toString()}`);
-    },
-    [searchParams, router]
-  );
-
-  // Load accessible shows on mount
+  // Initialize shows and role
   useEffect(() => {
-    fetchAccessibleShows().then((result) => {
-      setShows(result);
-      const preselected = showParam ? parseInt(showParam, 10) : null;
-      if (preselected && !isNaN(preselected) && result.some((s) => s.wpShowId === preselected)) {
-        setSelectedShowId(preselected);
-      } else if (result.length > 0) {
-        setSelectedShowId(result[0].wpShowId);
+    if (accessibleShows.length > 0) {
+      setInitialized(true);
+      return;
+    }
+    Promise.all([fetchAccessibleShows(), fetchCurrentUserRole()]).then(
+      ([shows, userRole]) => {
+        setAccessibleShows(shows);
+        setRole(userRole);
+        setInitialized(true);
       }
-      setLoading(false);
-    });
-  }, [showParam]);
+    );
+  }, [accessibleShows, setAccessibleShows, setRole]);
 
-  // Fetch all data when show or date range changes
+  // Fetch data when selection or date range changes
   useEffect(() => {
-    if (selectedShowId === null) return;
+    if (!initialized || showsInScope.length === 0) return;
 
     setDataLoading(true);
     const dateRange = { from, to };
+    const isSingle = showsInScope.length === 1;
 
-    // Fetch core analytics
+    // Core analytics
     Promise.all([
-      fetchPodcastAnalytics(selectedShowId, dateRange),
-      fetchPodcastEpisodes(selectedShowId),
-    ]).then(([analyticsData, episodesData]) => {
-      setDownloads(analyticsData);
-      setEpisodes(episodesData);
-      setDataLoading(false);
-    }).catch(() => setDataLoading(false));
+      isSingle
+        ? fetchPodcastAnalytics(showsInScope[0], dateRange)
+        : fetchAggregatedPodcastAnalytics(showsInScope, dateRange),
+      isSingle
+        ? fetchPodcastEpisodes(showsInScope[0])
+        : fetchAggregatedPodcastEpisodes(showsInScope),
+    ])
+      .then(([analyticsData, episodesData]) => {
+        setDownloads(analyticsData);
+        setEpisodes(episodesData);
+        setDataLoading(false);
+      })
+      .catch(() => setDataLoading(false));
 
-    // Fetch scraped data independently (don't block core analytics)
-    fetchScrapedOverview(selectedShowId).then(setScrapedOverview).catch(() => {});
-    fetchScrapedGeo(selectedShowId).then(setScrapedGeo).catch(() => {});
-    fetchScrapedApps(selectedShowId).then(setScrapedApps).catch(() => {});
-    fetchScrapedDevices(selectedShowId).then(setScrapedDevices).catch(() => {});
-  }, [selectedShowId, from, to]);
+    // Scraped data
+    if (isSingle) {
+      fetchScrapedOverview(showsInScope[0])
+        .then(setScrapedOverview)
+        .catch(() => {});
+      fetchScrapedGeo(showsInScope[0])
+        .then(setScrapedGeo)
+        .catch(() => {});
+      fetchScrapedApps(showsInScope[0])
+        .then(setScrapedApps)
+        .catch(() => {});
+      fetchScrapedDevices(showsInScope[0])
+        .then(setScrapedDevices)
+        .catch(() => {});
+    } else {
+      fetchAggregatedScrapedOverview(showsInScope)
+        .then(setScrapedOverview)
+        .catch(() => {});
+      fetchAggregatedScrapedGeo(showsInScope)
+        .then(setScrapedGeo)
+        .catch(() => {});
+      fetchAggregatedScrapedApps(showsInScope)
+        .then(setScrapedApps)
+        .catch(() => {});
+      // No aggregated devices action — reset
+      setScrapedDevices({ data: [], scrapedAt: null });
+    }
+  }, [initialized, showsInScope, from, to]);
 
   const totalDownloads = downloads.reduce((sum, d) => sum + d.downloads, 0);
   const avgPerEpisode =
     episodes.length > 0 ? Math.round(totalDownloads / episodes.length) : 0;
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <p className="text-muted-foreground">Loading shows...</p>
-      </div>
-    );
+  if (!initialized) {
+    return <p className="text-muted-foreground">Loading shows...</p>;
   }
 
-  if (shows.length === 0) {
-    return (
-      <div className="space-y-6">
-        <p className="text-muted-foreground">No shows available.</p>
-      </div>
-    );
+  if (accessibleShows.length === 0) {
+    return <p className="text-muted-foreground">No shows available.</p>;
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Podcast Analytics</h2>
-        <ShowSelector
-          shows={shows}
-          selectedShowId={selectedShowId}
-          onChange={handleShowChange}
-        />
+        <HierarchicalShowSelector />
       </div>
 
-      {/* Stat Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <StatCard
           title="Total Downloads"
@@ -147,13 +167,18 @@ export default function PodcastAnalyticsPage() {
         />
         <StatCard
           title="Est. Subscribers"
-          value={scrapedOverview?.estimatedSubscribers?.toLocaleString() ?? "\u2014"}
-          subtitle={scrapedOverview?.scrapedAt ? `Updated ${new Date(scrapedOverview.scrapedAt).toLocaleDateString()}` : undefined}
+          value={
+            scrapedOverview?.estimatedSubscribers?.toLocaleString() ?? "\u2014"
+          }
+          subtitle={
+            scrapedOverview?.scrapedAt
+              ? `Updated ${new Date(scrapedOverview.scrapedAt).toLocaleDateString()}`
+              : undefined
+          }
           loading={dataLoading}
         />
       </div>
 
-      {/* Downloads Over Time */}
       <div className="rounded-lg border bg-card p-4">
         <h2 className="mb-4 text-base font-semibold">Downloads Over Time</h2>
         <TimeSeriesChart
@@ -165,13 +190,11 @@ export default function PodcastAnalyticsPage() {
         />
       </div>
 
-      {/* Episode Table */}
       <div className="rounded-lg border bg-card p-4">
         <h2 className="mb-4 text-base font-semibold">Episodes</h2>
         <EpisodeTable episodes={episodes} />
       </div>
 
-      {/* Listeners (scraped data) */}
       <ListenersSection
         geo={scrapedGeo}
         apps={scrapedApps}

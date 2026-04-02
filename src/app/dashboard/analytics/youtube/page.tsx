@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useDateRange } from "@/components/analytics/date-range-provider";
-import ShowSelector from "@/components/analytics/show-selector";
+import { useAnalyticsSelection } from "@/components/analytics/analytics-selection-provider";
+import HierarchicalShowSelector from "@/components/analytics/hierarchical-show-selector";
 import StatCard from "@/components/analytics/stat-card";
 import TimeSeriesChart from "@/components/analytics/charts/time-series-chart";
 import BarChart from "@/components/analytics/charts/bar-chart";
@@ -12,14 +12,18 @@ import AreaChart from "@/components/analytics/charts/area-chart";
 import VideoTable from "@/components/analytics/video-table";
 import {
   fetchAccessibleShows,
+  fetchCurrentUserRole,
   fetchYouTubeChannel,
   fetchYouTubeVideos,
   fetchYouTubeAnalytics,
   fetchYouTubeTraffic,
   fetchYouTubeGeo,
+  fetchAggregatedYouTubeChannel,
+  fetchAggregatedYouTubeVideos,
+  fetchAggregatedYouTubeAnalytics,
+  fetchAggregatedYouTubeGeo,
 } from "@/app/dashboard/analytics/actions";
 import type {
-  AccessibleShow,
   YouTubeChannelStats,
   YouTubeVideo,
   YouTubeAnalyticsPoint,
@@ -29,128 +33,132 @@ import type {
 
 export default function YouTubeAnalyticsPage() {
   const { from, to } = useDateRange();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const showParam = searchParams.get("show");
+  const {
+    showsInScope,
+    accessibleShows,
+    setAccessibleShows,
+    setRole,
+  } = useAnalyticsSelection();
 
-  const [shows, setShows] = useState<AccessibleShow[]>([]);
-  const [selectedShowId, setSelectedShowId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-
+  const [initialized, setInitialized] = useState(false);
   const [channel, setChannel] = useState<YouTubeChannelStats | null>(null);
   const [videos, setVideos] = useState<YouTubeVideo[]>([]);
   const [analytics, setAnalytics] = useState<YouTubeAnalyticsPoint[]>([]);
-  const [trafficSources, setTrafficSources] = useState<YouTubeTrafficSource[]>([]);
+  const [trafficSources, setTrafficSources] = useState<YouTubeTrafficSource[]>(
+    []
+  );
   const [countries, setCountries] = useState<YouTubeCountryData[]>([]);
   const [staticLoading, setStaticLoading] = useState(false);
   const [dateLoading, setDateLoading] = useState(false);
 
-  const handleShowChange = useCallback(
-    (wpShowId: number) => {
-      setSelectedShowId(wpShowId);
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("show", String(wpShowId));
-      router.replace(`?${params.toString()}`);
-    },
-    [searchParams, router]
-  );
-
-  // Load accessible shows on mount, auto-select first
+  // Initialize
   useEffect(() => {
-    fetchAccessibleShows().then((result) => {
-      setShows(result);
-      const preselected = showParam ? parseInt(showParam, 10) : null;
-      if (preselected && !isNaN(preselected) && result.some((s) => s.wpShowId === preselected)) {
-        setSelectedShowId(preselected);
-      } else if (result.length > 0) {
-        setSelectedShowId(result[0].wpShowId);
+    if (accessibleShows.length > 0) {
+      setInitialized(true);
+      return;
+    }
+    Promise.all([fetchAccessibleShows(), fetchCurrentUserRole()]).then(
+      ([shows, userRole]) => {
+        setAccessibleShows(shows);
+        setRole(userRole);
+        setInitialized(true);
       }
-      setLoading(false);
-    });
-  }, [showParam]);
+    );
+  }, [accessibleShows, setAccessibleShows, setRole]);
 
-  // Fetch channel stats + videos when show changes (non-date-dependent)
+  // Fetch channel + videos when selection changes
   useEffect(() => {
-    if (selectedShowId === null) return;
+    if (!initialized || showsInScope.length === 0) return;
 
     setStaticLoading(true);
+    const isSingle = showsInScope.length === 1;
+
     Promise.all([
-      fetchYouTubeChannel(selectedShowId),
-      fetchYouTubeVideos(selectedShowId),
+      isSingle
+        ? fetchYouTubeChannel(showsInScope[0])
+        : fetchAggregatedYouTubeChannel(showsInScope),
+      isSingle
+        ? fetchYouTubeVideos(showsInScope[0])
+        : fetchAggregatedYouTubeVideos(showsInScope),
     ]).then(([channelData, videosData]) => {
       setChannel(channelData);
       setVideos(videosData);
       setStaticLoading(false);
     });
-  }, [selectedShowId]);
+  }, [initialized, showsInScope]);
 
-  // Fetch analytics + traffic + geo when show or date range changes
+  // Fetch date-dependent data
   useEffect(() => {
-    if (selectedShowId === null) return;
+    if (!initialized || showsInScope.length === 0) return;
 
     setDateLoading(true);
     const dateRange = { from, to };
+    const isSingle = showsInScope.length === 1;
 
-    Promise.all([
-      fetchYouTubeAnalytics(selectedShowId, dateRange),
-      fetchYouTubeTraffic(selectedShowId, dateRange),
-      fetchYouTubeGeo(selectedShowId, dateRange),
-    ]).then(([analyticsData, trafficData, geoData]) => {
+    const fetches: [
+      Promise<YouTubeAnalyticsPoint[]>,
+      Promise<YouTubeTrafficSource[]>,
+      Promise<YouTubeCountryData[]>,
+    ] = [
+      isSingle
+        ? fetchYouTubeAnalytics(showsInScope[0], dateRange)
+        : fetchAggregatedYouTubeAnalytics(showsInScope, dateRange),
+      // Traffic sources only available at show level
+      isSingle
+        ? fetchYouTubeTraffic(showsInScope[0], dateRange)
+        : Promise.resolve([]),
+      isSingle
+        ? fetchYouTubeGeo(showsInScope[0], dateRange)
+        : fetchAggregatedYouTubeGeo(showsInScope, dateRange),
+    ];
+
+    Promise.all(fetches).then(([analyticsData, trafficData, geoData]) => {
       setAnalytics(analyticsData);
       setTrafficSources(trafficData);
       setCountries(geoData);
       setDateLoading(false);
     });
-  }, [selectedShowId, from, to]);
+  }, [initialized, showsInScope, from, to]);
 
-  // Computed values
   const totalViews = analytics.reduce((sum, d) => sum + d.views, 0);
-  const totalMinutes = analytics.reduce((sum, d) => sum + d.estimatedMinutesWatched, 0);
+  const totalMinutes = analytics.reduce(
+    (sum, d) => sum + d.estimatedMinutesWatched,
+    0
+  );
   const watchHours = Math.round(totalMinutes / 60);
-  const subsGained = analytics.reduce((sum, d) => sum + d.subscribersGained, 0);
+  const subsGained = analytics.reduce(
+    (sum, d) => sum + d.subscribersGained,
+    0
+  );
   const subsLost = analytics.reduce((sum, d) => sum + d.subscribersLost, 0);
-  const avgViewDuration = totalViews > 0 ? Math.round(totalMinutes / totalViews) : 0;
-
+  const avgViewDuration =
+    totalViews > 0 ? Math.round(totalMinutes / totalViews) : 0;
   const dataLoading = staticLoading || dateLoading;
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <p className="text-muted-foreground">Loading shows...</p>
-      </div>
-    );
+  if (!initialized) {
+    return <p className="text-muted-foreground">Loading shows...</p>;
   }
 
-  if (shows.length === 0) {
-    return (
-      <div className="space-y-6">
-        <p className="text-muted-foreground">No shows available.</p>
-      </div>
-    );
+  if (accessibleShows.length === 0) {
+    return <p className="text-muted-foreground">No shows available.</p>;
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">YouTube Analytics</h2>
           <p className="text-sm text-muted-foreground">
-            Data may be 48–72 hours delayed
+            Data may be 48\u201372 hours delayed
           </p>
         </div>
-        <ShowSelector
-          shows={shows}
-          selectedShowId={selectedShowId}
-          onChange={handleShowChange}
-        />
+        <HierarchicalShowSelector />
       </div>
 
-      {/* Stat Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           title="Subscribers"
-          value={channel ? channel.subscriberCount.toLocaleString() : "—"}
+          value={channel ? channel.subscriberCount.toLocaleString() : "\u2014"}
           loading={staticLoading}
         />
         <StatCard
@@ -180,7 +188,6 @@ export default function YouTubeAnalyticsPage() {
         />
       </div>
 
-      {/* Views Over Time */}
       <div className="rounded-lg border bg-card p-4">
         <h2 className="mb-4 text-base font-semibold">Views Over Time</h2>
         <TimeSeriesChart
@@ -190,7 +197,6 @@ export default function YouTubeAnalyticsPage() {
         />
       </div>
 
-      {/* Watch Time Over Time */}
       <div className="rounded-lg border bg-card p-4">
         <h2 className="mb-4 text-base font-semibold">Watch Time Over Time</h2>
         <TimeSeriesChart
@@ -206,17 +212,18 @@ export default function YouTubeAnalyticsPage() {
         />
       </div>
 
-      {/* Traffic Sources + Top Countries */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border bg-card p-4">
-          <h2 className="mb-4 text-base font-semibold">Traffic Sources</h2>
-          <DonutChart
-            data={trafficSources.map((t) => ({
-              name: t.source,
-              value: t.views,
-            }))}
-          />
-        </div>
+        {trafficSources.length > 0 && (
+          <div className="rounded-lg border bg-card p-4">
+            <h2 className="mb-4 text-base font-semibold">Traffic Sources</h2>
+            <DonutChart
+              data={trafficSources.map((t) => ({
+                name: t.source,
+                value: t.views,
+              }))}
+            />
+          </div>
+        )}
         <div className="rounded-lg border bg-card p-4">
           <h2 className="mb-4 text-base font-semibold">Top Countries</h2>
           <BarChart
@@ -226,16 +233,13 @@ export default function YouTubeAnalyticsPage() {
                 .slice(0, 10) as unknown as Record<string, unknown>[]
             }
             xKey="country"
-            series={[
-              { dataKey: "views", name: "Views", color: "#8b5cf6" },
-            ]}
+            series={[{ dataKey: "views", name: "Views", color: "#8b5cf6" }]}
             layout="horizontal"
             height={350}
           />
         </div>
       </div>
 
-      {/* Subscribers Gained vs Lost */}
       <div className="rounded-lg border bg-card p-4">
         <h2 className="mb-4 text-base font-semibold">
           Subscribers Gained vs Lost
@@ -249,16 +253,11 @@ export default function YouTubeAnalyticsPage() {
               name: "Gained",
               color: "#22c55e",
             },
-            {
-              dataKey: "subscribersLost",
-              name: "Lost",
-              color: "#ef4444",
-            },
+            { dataKey: "subscribersLost", name: "Lost", color: "#ef4444" },
           ]}
         />
       </div>
 
-      {/* Recent Videos */}
       <div className="rounded-lg border bg-card p-4">
         <h2 className="mb-4 text-base font-semibold">Recent Videos</h2>
         {dataLoading ? (
