@@ -2,42 +2,51 @@ import { describe, it, expect } from "vitest";
 import { categorizeResponse } from "./collector.js";
 
 describe("categorizeResponse", () => {
-  it("identifies a downloads overview response", () => {
+  it("identifies a daily_average response", () => {
     const result = categorizeResponse(
-      "https://dashboard.transistor.fm/api/v1/analytics/12345",
-      { data: { attributes: { downloads: [{ date: "2026-03", downloads: 100 }] } } }
+      "https://dashboard.transistor.fm/shows/al-maximo/analytics/daily_average"
     );
-    expect(result).toEqual({ type: "overview", showId: "12345" });
+    expect(result).toEqual({ type: "dailyAverage" });
   });
 
-  it("identifies a countries response", () => {
+  it("identifies a subscribers response", () => {
     const result = categorizeResponse(
-      "https://dashboard.transistor.fm/api/v1/analytics/12345/countries",
-      { data: { attributes: { countries: [] } } }
+      "https://dashboard.transistor.fm/shows/al-maximo/analytics/subscribers"
     );
-    expect(result).toEqual({ type: "countries", showId: "12345" });
+    expect(result).toEqual({ type: "subscribers" });
   });
 
-  it("identifies an applications response", () => {
+  it("identifies an overall response", () => {
     const result = categorizeResponse(
-      "https://dashboard.transistor.fm/api/v1/analytics/12345/applications",
-      { data: { attributes: { applications: [] } } }
+      "https://dashboard.transistor.fm/shows/al-maximo/analytics/overall"
     );
-    expect(result).toEqual({ type: "applications", showId: "12345" });
+    expect(result).toEqual({ type: "overall" });
   });
 
-  it("identifies a devices response", () => {
+  it("identifies an apps response", () => {
     const result = categorizeResponse(
-      "https://dashboard.transistor.fm/api/v1/analytics/12345/devices",
-      { data: { attributes: { devices: [] } } }
+      "https://dashboard.transistor.fm/shows/al-maximo/analytics/apps"
     );
-    expect(result).toEqual({ type: "devices", showId: "12345" });
+    expect(result).toEqual({ type: "apps" });
   });
 
-  it("returns null for unrecognized URLs", () => {
+  it("identifies a countries_map response", () => {
     const result = categorizeResponse(
-      "https://dashboard.transistor.fm/api/v1/shows",
-      { data: [] }
+      "https://dashboard.transistor.fm/shows/al-maximo/analytics/countries_map"
+    );
+    expect(result).toEqual({ type: "countriesMap" });
+  });
+
+  it("returns null for HTML-only endpoints like episodes", () => {
+    const result = categorizeResponse(
+      "https://dashboard.transistor.fm/shows/al-maximo/analytics/episodes?analytics%5Btimeframe%5D=first_thirty"
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns null for non-analytics URLs", () => {
+    const result = categorizeResponse(
+      "https://dashboard.transistor.fm/shows/al-maximo/settings"
     );
     expect(result).toBeNull();
   });
