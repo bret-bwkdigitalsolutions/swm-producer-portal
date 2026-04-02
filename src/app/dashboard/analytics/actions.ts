@@ -20,6 +20,17 @@ import {
 } from "@/lib/analytics/youtube";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { bustCachePrefix } from "@/lib/analytics/cache";
+import {
+  aggregateAnalyticsPoints,
+  aggregateYouTubeAnalytics,
+  aggregateYouTubeChannels,
+  aggregateYouTubeGeo,
+  aggregateGeo,
+  aggregateApps,
+  aggregateScrapedOverviews,
+  mergeEpisodes,
+  mergeVideos,
+} from "@/lib/analytics/aggregation";
 import type {
   AccessibleShow,
   DateRange,
@@ -331,4 +342,115 @@ export async function refreshAnalyticsCache(
   await requireShowAccess(wpShowId);
   await bustCachePrefix(`analytics:transistor:${wpShowId}`);
   await bustCachePrefix(`analytics:youtube:${wpShowId}`);
+}
+
+// --- Aggregated multi-show actions ---
+
+const THROTTLE_MS = 200;
+
+async function throttledMap<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i++) {
+    try {
+      results.push(await fn(items[i]));
+    } catch {
+      // Skip failed shows, don't break the aggregate
+    }
+    if (i < items.length - 1) {
+      await new Promise((r) => setTimeout(r, THROTTLE_MS));
+    }
+  }
+  return results;
+}
+
+export async function fetchAggregatedPodcastAnalytics(
+  wpShowIds: number[],
+  dateRange: DateRange
+): Promise<TransistorAnalyticsPoint[]> {
+  const allData = await throttledMap(wpShowIds, (id) =>
+    getTransistorShowAnalytics(id, dateRange)
+  );
+  return aggregateAnalyticsPoints(allData);
+}
+
+export async function fetchAggregatedPodcastEpisodes(
+  wpShowIds: number[]
+): Promise<TransistorEpisode[]> {
+  const allEpisodes = await throttledMap(wpShowIds, (id) =>
+    getTransistorEpisodes(id)
+  );
+  return mergeEpisodes(allEpisodes);
+}
+
+export async function fetchAggregatedYouTubeChannel(
+  wpShowIds: number[]
+): Promise<YouTubeChannelStats> {
+  const allChannels = await throttledMap(wpShowIds, (id) =>
+    getYouTubeChannelStats(id)
+  );
+  return aggregateYouTubeChannels(allChannels);
+}
+
+export async function fetchAggregatedYouTubeVideos(
+  wpShowIds: number[]
+): Promise<YouTubeVideo[]> {
+  const allVideos = await throttledMap(wpShowIds, (id) =>
+    getYouTubeVideos(id)
+  );
+  return mergeVideos(allVideos);
+}
+
+export async function fetchAggregatedYouTubeAnalytics(
+  wpShowIds: number[],
+  dateRange: DateRange
+): Promise<YouTubeAnalyticsPoint[]> {
+  const allData = await throttledMap(wpShowIds, (id) =>
+    getYouTubeChannelAnalytics(id, dateRange)
+  );
+  return aggregateYouTubeAnalytics(allData);
+}
+
+export async function fetchAggregatedYouTubeGeo(
+  wpShowIds: number[],
+  dateRange: DateRange
+): Promise<YouTubeCountryData[]> {
+  const allGeo = await throttledMap(wpShowIds, (id) =>
+    getYouTubeGeoAnalytics(id, dateRange)
+  );
+  return aggregateYouTubeGeo(allGeo);
+}
+
+export async function fetchAggregatedScrapedOverview(
+  wpShowIds: number[]
+): Promise<ScrapedOverviewData> {
+  const allOverviews = await throttledMap(wpShowIds, (id) =>
+    fetchScrapedOverview(id)
+  );
+  return aggregateScrapedOverviews(allOverviews);
+}
+
+export async function fetchAggregatedScrapedGeo(
+  wpShowIds: number[]
+): Promise<{ data: ScrapedGeoEntry[]; scrapedAt: string | null }> {
+  const allGeo = await throttledMap(wpShowIds, (id) => fetchScrapedGeo(id));
+  return aggregateGeo(allGeo);
+}
+
+export async function fetchAggregatedScrapedApps(
+  wpShowIds: number[]
+): Promise<{ data: ScrapedAppEntry[]; scrapedAt: string | null }> {
+  const allApps = await throttledMap(wpShowIds, (id) => fetchScrapedApps(id));
+  return aggregateApps(allApps);
+}
+
+export async function refreshAggregatedCache(
+  wpShowIds: number[]
+): Promise<void> {
+  for (const id of wpShowIds) {
+    await bustCachePrefix(`analytics:transistor:${id}`);
+    await bustCachePrefix(`analytics:youtube:${id}`);
+  }
 }
