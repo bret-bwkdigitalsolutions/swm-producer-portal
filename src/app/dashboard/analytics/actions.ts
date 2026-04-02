@@ -184,10 +184,16 @@ export async function fetchScrapedOverview(
 ): Promise<ScrapedOverviewData> {
   await requireShowAccess(wpShowId);
 
+  console.log("[server] fetchScrapedOverview wpShowId:", wpShowId);
+  const count = await db.transistorScrapedOverview.count({ where: { wpShowId } });
+  console.log("[server] transistorScrapedOverview count for wpShowId", wpShowId, ":", count);
+
   const latest = await db.transistorScrapedOverview.findFirst({
     where: { wpShowId },
     orderBy: { scrapedAt: "desc" },
   });
+
+  console.log("[server] latest:", latest);
 
   if (!latest) {
     return {
