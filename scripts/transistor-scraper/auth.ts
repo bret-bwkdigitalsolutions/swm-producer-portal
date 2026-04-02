@@ -42,7 +42,10 @@ export function getAccountConfig(account: string): AccountConfig {
 export async function getAuthenticatedContext(
   config: AccountConfig
 ): Promise<BrowserContext> {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
 
   // Try existing session
   if (existsSync(config.storageStatePath)) {
