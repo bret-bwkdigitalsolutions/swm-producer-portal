@@ -6,7 +6,7 @@
   "scripts": {
     "start": "tsx index.ts",
     "test": "vitest run",
-    "postinstall": "cp -f ../../prisma/schema.prisma ./schema.prisma && cp -f ../../prisma.config.ts ./prisma.config.ts 2>/dev/null; npx prisma generate --schema=./schema.prisma || true"
+    "postinstall": "npx prisma generate --schema=./schema.prisma || true"
   },
   "dependencies": {
     "playwright": "^1.52.0",

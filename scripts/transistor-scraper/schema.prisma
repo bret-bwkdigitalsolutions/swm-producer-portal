@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                    String    @id @default(cuid())
+  name                  String?
+  email                 String    @unique
+  emailVerified         DateTime?
+  hashedPassword        String?
+  image                 String?
+  role                  String    @default("producer") // "admin" | "producer"
+  hasDistributionAccess Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  accounts              Account[]
+  sessions              Session[]
+  allowedShows          UserShowAccess[]
+  allowedContentTypes   UserContentTypeAccess[]
+  preferences           UserPreference?
+  activityLogs          ActivityLog[]
+  lastLoginAt           DateTime?
+  inviteSentAt          DateTime?
+  inviteToken           InviteToken?
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model UserShowAccess {
+  id       String @id @default(cuid())
+  userId   String
+  wpShowId Int    // WordPress show post ID
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, wpShowId])
+  @@map("user_show_access")
+}
+
+model UserContentTypeAccess {
+  id          String @id @default(cuid())
+  userId      String
+  contentType String // matches ContentType values
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contentType])
+  @@map("user_content_type_access")
+}
+
+model UserPreference {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  visibleContentTypes String[] // subset of allowed content types
+  visibleShowIds      Int[]    // subset of allowed show IDs
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model ShowStakeholder {
+  id       String @id @default(cuid())
+  wpShowId Int
+  email    String
+  name     String
+
+  @@unique([wpShowId, email])
+  @@map("show_stakeholders")
+}
+
+model PlatformCredential {
+  id             String   @id @default(cuid())
+  wpShowId       Int
+  platform       String   // "youtube" | "spotify" | "apple" | "transistor"
+  credentialType String   // "oauth" | "api_key"
+  accessToken    String?  @db.Text
+  refreshToken   String?  @db.Text
+  apiKey         String?  @db.Text
+  tokenExpiresAt DateTime?
+  status         String   @default("valid") // "valid" | "expiring_soon" | "expired"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([wpShowId, platform])
+  @@map("platform_credentials")
+}
+
+model DistributionJob {
+  id        String   @id @default(cuid())
+  userId    String
+  wpShowId  Int
+  title     String
+  metadata  Json     // episode metadata (description, chapters, tags, etc.)
+  status    String   @default("pending") // "pending" | "processing" | "awaiting_review" | "completed" | "failed"
+  gcsPath   String?  // Google Cloud Storage path for uploaded file
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  platforms    DistributionJobPlatform[]
+  aiSuggestions AiSuggestion[]
+
+  @@map("distribution_jobs")
+}
+
+model DistributionJobPlatform {
+  id          String    @id @default(cuid())
+  jobId       String
+  platform    String
+  status      String    @default("queued") // "queued" | "uploading" | "processing" | "completed" | "failed"
+  error       String?   @db.Text
+  externalId  String?   // ID on the external platform (e.g., YouTube video ID)
+  externalUrl String?   // URL on the external platform
+  completedAt DateTime?
+
+  job DistributionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("distribution_job_platforms")
+}
+
+model AiSuggestion {
+  id       String  @id @default(cuid())
+  jobId    String
+  type     String  // "chapters" | "summary" | "blog"
+  content  String  @db.Text
+  accepted Boolean @default(false)
+
+  job DistributionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("ai_suggestions")
+}
+
+model ShowPlatformLink {
+  id       String @id @default(cuid())
+  wpShowId Int
+  platform String // Account: youtube_channel, transistor_account, spotify_account, apple_account, website
+                   // Show: youtube_playlist, transistor_show, spotify_show, apple_show
+  url      String // URL for this platform link (wpShowId=0 for network defaults)
+
+  @@unique([wpShowId, platform])
+  @@map("show_platform_links")
+}
+
+model ShowMetadata {
+  id       String @id @default(cuid())
+  wpShowId Int    @unique
+  hosts    String // Comma-separated host names (e.g. "John Henry, Jake White")
+
+  @@map("show_metadata")
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String
+  action      String   // "create" | "update" | "distribute"
+  contentType String?
+  wpPostId    Int?
+  wpShowId    Int?
+  details     String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+model InviteToken {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("invite_tokens")
+}
+
+model TransistorScrapedOverview {
+  id                   String   @id @default(cuid())
+  wpShowId             Int
+  scrapedAt            DateTime
+  estimatedSubscribers Int?
+  avgDownloads7d       Float?
+  avgDownloads30d      Float?
+  avgDownloads60d      Float?
+  avgDownloads90d      Float?
+  monthlyDownloads     Json?
+  yearlyDownloads      Json?
+
+  @@unique([wpShowId, scrapedAt])
+  @@map("transistor_scraped_overviews")
+}
+
+model TransistorScrapedGeo {
+  id         String   @id @default(cuid())
+  wpShowId   Int
+  scrapedAt  DateTime
+  country    String
+  region     String?
+  downloads  Int
+  percentage Float?
+
+  @@unique([wpShowId, scrapedAt, country, region])
+  @@index([wpShowId, scrapedAt])
+  @@map("transistor_scraped_geo")
+}
+
+model TransistorScrapedApps {
+  id         String   @id @default(cuid())
+  wpShowId   Int
+  scrapedAt  DateTime
+  appName    String
+  downloads  Int
+  percentage Float?
+
+  @@unique([wpShowId, scrapedAt, appName])
+  @@index([wpShowId, scrapedAt])
+  @@map("transistor_scraped_apps")
+}
+
+model TransistorScrapedDevices {
+  id         String   @id @default(cuid())
+  wpShowId   Int
+  scrapedAt  DateTime
+  deviceType String
+  deviceName String?
+  downloads  Int
+  percentage Float?
+
+  @@unique([wpShowId, scrapedAt, deviceType, deviceName])
+  @@index([wpShowId, scrapedAt])
+  @@map("transistor_scraped_devices")
+}
+
+model TransistorScrapeLog {
+  id          String    @id @default(cuid())
+  startedAt   DateTime
+  completedAt DateTime?
+  status      String
+  account     String
+  showCount   Int?
+  errors      Json?
+
+  @@map("transistor_scrape_logs")
+}
