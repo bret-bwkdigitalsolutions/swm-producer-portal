@@ -12,13 +12,17 @@ interface OverviewGeoSectionProps {
   youtubeLoading: boolean;
 }
 
-function countryCodeToName(code: string): string {
-  try {
-    const displayNames = new Intl.DisplayNames(["en"], { type: "region" });
-    return displayNames.of(code) ?? code;
-  } catch {
-    return code;
+function normalizeCountry(value: string): string {
+  // If it looks like a 2-letter ISO code, convert to full name
+  if (/^[A-Z]{2}$/.test(value)) {
+    try {
+      const displayNames = new Intl.DisplayNames(["en"], { type: "region" });
+      return displayNames.of(value) ?? value;
+    } catch {
+      return value;
+    }
   }
+  return value;
 }
 
 interface MergedGeoRow {
@@ -35,17 +39,17 @@ function mergeGeoData(
   const map = new Map<string, MergedGeoRow>();
 
   for (const entry of podcast) {
-    const key = entry.country;
-    const existing = map.get(key);
+    const name = normalizeCountry(entry.country);
+    const existing = map.get(name);
     if (existing) {
       existing.downloads += entry.downloads;
     } else {
-      map.set(key, { country: key, downloads: entry.downloads, views: 0, total: 0 });
+      map.set(name, { country: name, downloads: entry.downloads, views: 0, total: 0 });
     }
   }
 
   for (const entry of youtube) {
-    const name = countryCodeToName(entry.country);
+    const name = normalizeCountry(entry.country);
     const existing = map.get(name);
     if (existing) {
       existing.views += entry.views;

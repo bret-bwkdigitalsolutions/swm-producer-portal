@@ -85,6 +85,18 @@ export default function ListenersSection({
   );
 }
 
+function normalizeCountry(value: string): string {
+  if (/^[A-Z]{2}$/.test(value)) {
+    try {
+      const displayNames = new Intl.DisplayNames(["en"], { type: "region" });
+      return displayNames.of(value) ?? value;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
 function GeoView({ data }: { data: ScrapedGeoEntry[] }) {
   if (data.length === 0) {
     return (
@@ -96,7 +108,7 @@ function GeoView({ data }: { data: ScrapedGeoEntry[] }) {
 
   const top10 = data.slice(0, 10);
   const chartData = top10.map((d) => ({
-    name: d.country,
+    name: normalizeCountry(d.country),
     downloads: d.downloads,
   }));
 
@@ -122,7 +134,7 @@ function GeoView({ data }: { data: ScrapedGeoEntry[] }) {
             {data.map((row, i) => (
               <tr key={i} className="border-b last:border-0">
                 <td className="py-1.5">
-                  {row.country}
+                  {normalizeCountry(row.country)}
                   {row.region ? `, ${row.region}` : ""}
                 </td>
                 <td className="py-1.5 text-right">
