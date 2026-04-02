@@ -1,54 +1,56 @@
 # swm-producer-portal — Living State
 
 ## What This Is
-A Next.js web application for producers to manage content creation workflows, featuring AI-powered transcription and content generation capabilities. The platform integrates speech-to-text processing via Deepgram, AI content creation through Anthropic's Claude, and rich text editing for content producers who need streamlined multimedia content workflows.
+A web portal for content producers to streamline multimedia workflows, combining AI-powered transcription, content generation, and rich text editing into a unified platform. Producers upload audio content, receive automated transcriptions via speech-to-text processing, and leverage AI assistance to transform raw content into polished output, reducing the manual overhead of content creation pipelines.
 
 ## Current Architecture
-Built on Next.js 16 with App Router using React 19 and TypeScript. Data persistence through Prisma ORM with PostgreSQL adapter, authentication via NextAuth with Prisma adapter. External integrations include Deepgram SDK for speech processing, Anthropic SDK for AI content generation, Google Cloud Storage for file management, and Upstash Redis for caching. UI components leverage Base UI primitives with Tailwind CSS styling and Tiptap for rich text editing. The modular architecture suggests content flows from audio input through transcription to AI-enhanced text output.
+Next.js 16 application with App Router and React 19, configured for standalone deployment. Prisma ORM manages PostgreSQL data with dedicated adapter, while NextAuth handles authentication using Prisma for session storage. External services include Deepgram for speech-to-text, Anthropic Claude for AI content generation, Google Cloud Storage for file persistence, and Upstash Redis for caching layers. Resend provides email delivery. Frontend uses Base UI components with Tailwind CSS and Tiptap rich text editor. The standalone output configuration suggests containerized deployment strategy.
 
 ## What Works Today
-- User authentication and session management
-- Rich text editing with link support and placeholders
-- AI-powered content generation via Claude integration
-- Speech-to-text transcription processing
-- File upload and cloud storage management
-- Data visualization components for analytics
-- Email notifications through Resend
-- Database operations with seeding capability
-- Responsive UI with modern component library
+- User registration and authenticated sessions
+- Rich text editing with link embedding and content placeholders
+- Audio transcription processing through Deepgram integration
+- AI-powered content enhancement via Claude API
+- File upload and cloud storage operations
+- Chart and analytics visualization components
+- Email notification delivery
+- Database schema management with seeding scripts
+- Responsive UI components with modern styling
 
 ## Known Gaps & Limitations
-- No clear indication of producer-specific features or role-based access
-- Missing error boundaries and comprehensive error handling patterns
-- Unclear data relationships and business logic from current codebase structure
-- No apparent real-time collaboration features despite multi-user implications
-- Testing coverage appears minimal with basic setup only
-- Production deployment configuration and environment management unclear
+- Producer-specific workflows and role differentiation remain undefined in codebase
+- No visible content project management or organizational structure
+- Missing comprehensive error handling for external service failures
+- Audio processing pipeline and file size limitations unclear
+- Real-time features absent despite collaborative implications of "producer portal"
+- Test coverage extremely limited with only basic framework setup
+- Production environment configuration and secrets management patterns unclear
 
 ## Next Meaningful Capabilities
-- Multi-user collaboration on content projects with real-time editing
-- Automated content workflows from audio upload to published output
-- Producer dashboard with project management and analytics insights
-- Content version control and approval workflows
-- Batch processing capabilities for multiple audio files
-- Integration with content distribution platforms
+- Project-based content organization with producer workspace management
+- Automated transcription-to-publication workflows with customizable templates
+- Real-time collaboration for multi-producer content creation
+- Content analytics dashboard showing engagement and performance metrics
+- Batch audio processing for podcast or series production workflows
+- Integration hooks for content management systems and distribution platforms
 
 ## Open Technical Questions
-- How producer roles and permissions are structured and enforced
-- Whether the Redis cache handles session state or content processing queues
-- File storage strategy for handling large audio/video files at scale
-- AI content generation prompt engineering and customization approach
-- Real-time feature implementation strategy given current stack limitations
-- Data retention and content lifecycle management policies
+- How producer permissions and content ownership are modeled and enforced
+- Whether Redis serves as session cache, job queue, or both for processing workflows
+- File storage architecture for handling large media files and retention policies
+- AI prompt engineering strategy for consistent content generation quality
+- Real-time synchronization approach given current stack without WebSocket infrastructure
+- Content versioning and revision control implementation for collaborative editing
 
 ## Key Files & Entry Points
-- `app/page.tsx` — Main application landing page and primary user entry point
-- `prisma/seed.ts` — Database initialization and sample data population
-- `scripts/smoke-test.ts` — Basic application health verification
-- `tailwind.config.js` — UI styling configuration and design system setup
-- `next.config.js` — Application build and runtime configuration
-- `src/` — Primary source code directory structure
-- `.env.example` — Environment variable template for service integrations
+- `app/page.tsx` — Primary application interface and user dashboard entry
+- `prisma/schema.prisma` — Data model definitions and relationships (location inferred)
+- `prisma/seed.ts` — Database initialization and development data setup
+- `src/lib/auth.ts` — Authentication configuration and session handling (location inferred)
+- `src/components/` — Reusable UI component library (location inferred)
+- `scripts/smoke-test.ts` — Application health verification for deployment pipelines
+- `next.config.ts` — Build configuration with standalone deployment setup
+- `.env.example` — Required environment variables for external service integration
 
 ---
 _Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-02_
