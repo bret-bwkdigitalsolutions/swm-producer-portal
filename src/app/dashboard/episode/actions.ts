@@ -6,6 +6,7 @@ import { createPost } from "@/lib/wordpress/client";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
 import { verifyShowAccess, verifyContentTypeAccess } from "@/lib/auth-guard";
+import { toISOWithTimezone } from "@/lib/timezone";
 
 interface FormState {
   success?: boolean;
@@ -53,7 +54,11 @@ export async function submitEpisode(
   const premiumOnly = formData.get("premium_only") as string;
   const contentWarning = formData.get("content_warning") as string | null;
   const status = formData.get("status") as "publish" | "future" | "draft";
-  const scheduledDate = formData.get("scheduled_date") as string | null;
+  const scheduledDateRaw = formData.get("scheduled_date") as string | null;
+  const timezone = formData.get("timezone") as string | null;
+  const scheduledDate = scheduledDateRaw
+    ? toISOWithTimezone(scheduledDateRaw, timezone)
+    : null;
 
   // Validate required fields
   const errors: Record<string, string[]> = {};

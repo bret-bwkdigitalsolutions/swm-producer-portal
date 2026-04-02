@@ -1,10 +1,31 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CalendarIcon, RocketIcon, FileEditIcon } from "lucide-react";
+
+function getBrowserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "America/Chicago";
+  }
+}
+
+function getTimezoneAbbr(tz: string): string {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      timeZoneName: "short",
+    });
+    const parts = formatter.formatToParts(new Date());
+    return parts.find((p) => p.type === "timeZoneName")?.value ?? tz;
+  } catch {
+    return tz;
+  }
+}
 
 export interface PublishState {
   status: "publish" | "future" | "draft";
@@ -54,6 +75,12 @@ export function PublishToggle({
   onChange,
   className,
 }: PublishToggleProps) {
+  const browserTimezone = useMemo(() => getBrowserTimezone(), []);
+  const timezoneAbbr = useMemo(
+    () => getTimezoneAbbr(browserTimezone),
+    [browserTimezone]
+  );
+
   const handleSelect = useCallback(
     (status: "publish" | "future" | "draft") => {
       if (status === "future") {
@@ -109,7 +136,7 @@ export function PublishToggle({
             htmlFor="publish-date"
             className="text-xs text-muted-foreground"
           >
-            Scheduled date and time
+            Scheduled date and time ({timezoneAbbr})
           </Label>
           <Input
             id="publish-date"
@@ -133,6 +160,7 @@ export function PublishToggle({
 
       {/* Hidden inputs for server action form submission */}
       <input type="hidden" name="status" value={value.status} />
+      <input type="hidden" name="timezone" value={browserTimezone} />
       {value.status === "future" && value.date && (
         <input
           type="hidden"

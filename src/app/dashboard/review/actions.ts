@@ -8,6 +8,7 @@ import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType, CONTENT_TYPE_LABELS } from "@/lib/constants";
 import { verifyShowAccess, verifyContentTypeAccess } from "@/lib/auth-guard";
 import { sendStakeholderNotification } from "@/lib/notifications";
+import { toISOWithTimezone } from "@/lib/timezone";
 
 interface FormState {
   success?: boolean;
@@ -52,7 +53,11 @@ export async function submitReview(
   const rating = formData.get("rating") as string;
   const reviewBody = formData.get("review_body") as string;
   const status = formData.get("status") as "publish" | "future" | "draft";
-  const scheduledDate = formData.get("scheduled_date") as string | null;
+  const scheduledDateRaw = formData.get("scheduled_date") as string | null;
+  const timezone = formData.get("timezone") as string | null;
+  const scheduledDate = scheduledDateRaw
+    ? toISOWithTimezone(scheduledDateRaw, timezone)
+    : null;
 
   // Poster image — can be file or URL
   const posterFile = formData.get("poster_image_file") as File | null;

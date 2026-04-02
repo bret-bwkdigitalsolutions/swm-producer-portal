@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { createPost } from "@/lib/wordpress/client";
 import { ContentType } from "@/lib/constants";
 import { revalidateTag } from "next/cache";
+import { toISOWithTimezone } from "@/lib/timezone";
 
 interface FormState {
   success?: boolean;
@@ -31,7 +32,11 @@ export async function submitShow(
   const websiteUrl = (formData.get("website_url") as string)?.trim();
   const accentColor = (formData.get("accent_color") as string)?.trim();
   const publishStatus = formData.get("status") as "publish" | "future" | "draft";
-  const scheduledDate = formData.get("scheduled_date") as string | null;
+  const scheduledDateRaw = formData.get("scheduled_date") as string | null;
+  const timezone = formData.get("timezone") as string | null;
+  const scheduledDate = scheduledDateRaw
+    ? toISOWithTimezone(scheduledDateRaw, timezone)
+    : null;
 
   // Validation
   const errors: Record<string, string[]> = {};
