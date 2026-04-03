@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,7 @@ export function GenerateBlogButton({
   episodeTitle,
   generated,
 }: GenerateBlogButtonProps) {
+  const router = useRouter();
   const [generating, setGenerating] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [customInstructions, setCustomInstructions] = useState("");
@@ -76,9 +78,14 @@ export function GenerateBlogButton({
             Open Google Doc
           </Button>
         </a>
-        <p className="text-xs text-muted-foreground">
-          Reload the page to see full controls.
-        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.refresh()}
+          className="text-xs"
+        >
+          Show full controls
+        </Button>
       </div>
     );
   }
