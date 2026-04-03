@@ -24,16 +24,12 @@ function getDriveClient() {
 // Pure conversion: HTML -> DocSection[]
 // ---------------------------------------------------------------------------
 
-const BLOCK_RE = /<(h2|h3|p)(?:\s[^>]*)?>(.+?)<\/\1>/gis;
-
 export function parseHtmlToSections(html: string): DocSection[] {
   if (!html) return [];
 
+  const BLOCK_RE = /<(h2|h3|p)(?:\s[^>]*)?>(.+?)<\/\1>/gis;
   const sections: DocSection[] = [];
   let match: RegExpExecArray | null;
-
-  // Reset lastIndex
-  BLOCK_RE.lastIndex = 0;
 
   while ((match = BLOCK_RE.exec(html)) !== null) {
     const tag = match[1].toLowerCase();

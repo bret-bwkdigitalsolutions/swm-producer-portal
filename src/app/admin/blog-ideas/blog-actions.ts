@@ -1,6 +1,14 @@
 "use server";
 
 import { requireAdmin } from "@/lib/auth-guard";
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 import { db } from "@/lib/db";
 import { readGoogleDocAsHtml } from "@/lib/google/docs";
 import { revalidateTag } from "next/cache";
@@ -81,21 +89,21 @@ export async function sendToHost(
         Blog Draft Ready for Review
       </h2>
       <p style="color: #333; line-height: 1.6;">
-        A blog draft has been created based on your recent episode of <strong>${showName}</strong>.
+        A blog draft has been created based on your recent episode of <strong>${escapeHtml(showName)}</strong>.
         Please review and edit directly in the Google Doc.
       </p>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
         <tr>
           <td style="padding: 8px 0; color: #666; width: 100px;">Title</td>
-          <td style="padding: 8px 0; color: #111; font-weight: 600;">${blogPost.title}</td>
+          <td style="padding: 8px 0; color: #111; font-weight: 600;">${escapeHtml(blogPost.title)}</td>
         </tr>
         <tr>
           <td style="padding: 8px 0; color: #666;">Episode</td>
-          <td style="padding: 8px 0; color: #111;">${blogPost.job.title}</td>
+          <td style="padding: 8px 0; color: #111;">${escapeHtml(blogPost.job.title)}</td>
         </tr>
         <tr>
           <td style="padding: 8px 0; color: #666;">Show</td>
-          <td style="padding: 8px 0; color: #111;">${showName}</td>
+          <td style="padding: 8px 0; color: #111;">${escapeHtml(showName)}</td>
         </tr>
       </table>
       <a href="${blogPost.googleDocUrl}" style="display: inline-block; background: #111; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">
@@ -138,6 +146,10 @@ export async function publishToWordPress(
   wpStatus: "publish" | "draft" = "publish"
 ): Promise<ActionResult> {
   await requireAdmin();
+
+  if (wpStatus !== "publish" && wpStatus !== "draft") {
+    return { success: false, message: "Invalid publish status." };
+  }
 
   const blogPost = await db.blogPost.findUnique({
     where: { id: blogPostId },
