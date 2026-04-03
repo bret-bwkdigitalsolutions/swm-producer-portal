@@ -1,5 +1,4 @@
 import "server-only";
-import * as crypto from "crypto";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/documents",
@@ -38,7 +37,9 @@ function createJwt(credentials: ServiceAccountCredentials): string {
   const payloadB64 = base64url(JSON.stringify(payload));
   const signInput = `${headerB64}.${payloadB64}`;
 
-  const sign = crypto.createSign("RSA-SHA256");
+  // Lazy require to avoid edge runtime bundling
+  const { createSign } = require("crypto") as typeof import("crypto");
+  const sign = createSign("RSA-SHA256");
   sign.update(signInput);
   const signature = sign.sign(credentials.private_key);
 
