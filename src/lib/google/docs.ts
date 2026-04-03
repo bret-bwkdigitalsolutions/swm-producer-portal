@@ -187,21 +187,6 @@ export async function readGoogleDocAsHtml(docId: string): Promise<{ title: strin
 // ---------------------------------------------------------------------------
 
 function buildDocumentStyleRequests(): Record<string, unknown>[] {
-  const namedStyle = (
-    type: string,
-    textStyle: Record<string, unknown>,
-    paragraphStyle: Record<string, unknown>,
-    textFields: string,
-    paraFields: string
-  ) => ({
-    updateNamedStyle: {
-      namedStyleType: type,
-      textStyle,
-      paragraphStyle,
-      fields: `textStyle(${textFields}),paragraphStyle(${paraFields})`,
-    },
-  });
-
   return [
     {
       updateDocumentStyle: {
@@ -214,58 +199,6 @@ function buildDocumentStyleRequests(): Record<string, unknown>[] {
         fields: "marginTop,marginBottom,marginLeft,marginRight",
       },
     },
-    namedStyle(
-      "NORMAL_TEXT",
-      {
-        fontSize: { magnitude: 11, unit: "PT" },
-        fontFamily: "Georgia",
-        foregroundColor: {
-          color: { rgbColor: { red: 0.2, green: 0.2, blue: 0.2 } },
-        },
-      },
-      {
-        lineSpacing: 150,
-        spaceBelow: { magnitude: 8, unit: "PT" },
-      },
-      "fontSize,fontFamily,foregroundColor",
-      "lineSpacing,spaceBelow"
-    ),
-    namedStyle(
-      "HEADING_2",
-      {
-        fontSize: { magnitude: 18, unit: "PT" },
-        fontFamily: "Georgia",
-        bold: true,
-        foregroundColor: {
-          color: { rgbColor: { red: 0.1, green: 0.1, blue: 0.1 } },
-        },
-      },
-      {
-        lineSpacing: 130,
-        spaceBefore: { magnitude: 24, unit: "PT" },
-        spaceBelow: { magnitude: 8, unit: "PT" },
-      },
-      "fontSize,fontFamily,bold,foregroundColor",
-      "lineSpacing,spaceBefore,spaceBelow"
-    ),
-    namedStyle(
-      "HEADING_3",
-      {
-        fontSize: { magnitude: 14, unit: "PT" },
-        fontFamily: "Georgia",
-        bold: true,
-        foregroundColor: {
-          color: { rgbColor: { red: 0.15, green: 0.15, blue: 0.15 } },
-        },
-      },
-      {
-        lineSpacing: 130,
-        spaceBefore: { magnitude: 18, unit: "PT" },
-        spaceBelow: { magnitude: 6, unit: "PT" },
-      },
-      "fontSize,fontFamily,bold,foregroundColor",
-      "lineSpacing,spaceBefore,spaceBelow"
-    ),
   ];
 }
 
@@ -291,6 +224,57 @@ interface BatchRequest {
     fields: string;
   };
 }
+
+// Base text style applied to all body text
+const BODY_TEXT_STYLE = {
+  fontSize: { magnitude: 11, unit: "PT" },
+  fontFamily: "Georgia",
+  foregroundColor: {
+    color: { rgbColor: { red: 0.2, green: 0.2, blue: 0.2 } },
+  },
+};
+const BODY_TEXT_FIELDS = "fontSize,fontFamily,foregroundColor";
+
+const BODY_PARAGRAPH_STYLE = {
+  lineSpacing: 150,
+  spaceBelow: { magnitude: 8, unit: "PT" },
+};
+const BODY_PARA_FIELDS = "lineSpacing,spaceBelow";
+
+// Heading text styles (applied on top of named heading style)
+const H2_TEXT_STYLE = {
+  fontSize: { magnitude: 18, unit: "PT" },
+  fontFamily: "Georgia",
+  bold: true,
+  foregroundColor: {
+    color: { rgbColor: { red: 0.1, green: 0.1, blue: 0.1 } },
+  },
+};
+const H2_TEXT_FIELDS = "fontSize,fontFamily,bold,foregroundColor";
+
+const H2_PARAGRAPH_STYLE = {
+  spaceBefore: { magnitude: 24, unit: "PT" },
+  spaceBelow: { magnitude: 8, unit: "PT" },
+  lineSpacing: 130,
+};
+const H2_PARA_FIELDS = "spaceBefore,spaceBelow,lineSpacing";
+
+const H3_TEXT_STYLE = {
+  fontSize: { magnitude: 14, unit: "PT" },
+  fontFamily: "Georgia",
+  bold: true,
+  foregroundColor: {
+    color: { rgbColor: { red: 0.15, green: 0.15, blue: 0.15 } },
+  },
+};
+const H3_TEXT_FIELDS = "fontSize,fontFamily,bold,foregroundColor";
+
+const H3_PARAGRAPH_STYLE = {
+  spaceBefore: { magnitude: 18, unit: "PT" },
+  spaceBelow: { magnitude: 6, unit: "PT" },
+  lineSpacing: 130,
+};
+const H3_PARA_FIELDS = "spaceBefore,spaceBelow,lineSpacing";
 
 function buildInsertRequests(sections: DocSection[]): BatchRequest[] {
   const textInserts: BatchRequest[] = [];
@@ -342,6 +326,7 @@ function buildInsertRequests(sections: DocSection[]): BatchRequest[] {
       }
     }
 
+    // Newline after section
     textInserts.push({
       insertText: {
         location: { index: idx },
@@ -351,17 +336,49 @@ function buildInsertRequests(sections: DocSection[]): BatchRequest[] {
     const sectionEndIdx = idx;
     idx += 1;
 
+    const range = { startIndex: sectionStartIdx, endIndex: sectionEndIdx + 1 };
+
     if (section.type === "heading") {
+      // Apply named heading style (for doc outline) + custom text/paragraph styling
       const namedStyle =
         section.level === 3 ? "HEADING_3" : "HEADING_2";
       styleRequests.push({
         updateParagraphStyle: {
-          range: {
-            startIndex: sectionStartIdx,
-            endIndex: sectionEndIdx + 1,
-          },
+          range,
           paragraphStyle: { namedStyleType: namedStyle },
           fields: "namedStyleType",
+        },
+      });
+
+      const isH2 = section.level !== 3;
+      styleRequests.push({
+        updateTextStyle: {
+          range: { startIndex: sectionStartIdx, endIndex: sectionEndIdx },
+          textStyle: isH2 ? H2_TEXT_STYLE : H3_TEXT_STYLE,
+          fields: isH2 ? H2_TEXT_FIELDS : H3_TEXT_FIELDS,
+        },
+      });
+      styleRequests.push({
+        updateParagraphStyle: {
+          range,
+          paragraphStyle: isH2 ? H2_PARAGRAPH_STYLE : H3_PARAGRAPH_STYLE,
+          fields: isH2 ? H2_PARA_FIELDS : H3_PARA_FIELDS,
+        },
+      });
+    } else {
+      // Body text: apply font, size, color, spacing
+      styleRequests.push({
+        updateTextStyle: {
+          range: { startIndex: sectionStartIdx, endIndex: sectionEndIdx },
+          textStyle: BODY_TEXT_STYLE,
+          fields: BODY_TEXT_FIELDS,
+        },
+      });
+      styleRequests.push({
+        updateParagraphStyle: {
+          range,
+          paragraphStyle: BODY_PARAGRAPH_STYLE,
+          fields: BODY_PARA_FIELDS,
         },
       });
     }
