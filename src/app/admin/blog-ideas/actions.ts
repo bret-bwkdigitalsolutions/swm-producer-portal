@@ -3,22 +3,17 @@
 import { requireAdmin } from "@/lib/auth-guard";
 import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
-
-const WP_API_URL = () => process.env.WP_API_URL!;
-const WP_AUTH = () =>
-  "Basic " +
-  Buffer.from(
-    `${process.env.WP_APP_USER}:${process.env.WP_APP_PASSWORD}`
-  ).toString("base64");
+import { createGoogleDoc } from "@/lib/google/docs";
 
 interface GenerateResult {
   success: boolean;
   message: string;
-  postUrl?: string;
+  blogPostId?: string;
+  googleDocUrl?: string;
 }
 
 /**
- * Generate a full blog post from an AI suggestion and create it as a WP draft.
+ * Generate a full blog post from an AI suggestion and create it as a Google Doc.
  */
 export async function generateBlogPost(
   suggestionId: string,
@@ -120,38 +115,48 @@ export async function generateBlogPost(
     return { success: false, message: msg };
   }
 
-  // Create WordPress draft post
+  // Look up the show's Google Drive folder
+  const showFolder = await db.showBlogFolder.findUnique({
+    where: { wpShowId: suggestion.job.wpShowId },
+  });
+
+  if (!showFolder) {
+    return {
+      success: false,
+      message: "No Google Drive folder configured for this show. Add a ShowBlogFolder record first.",
+    };
+  }
+
+  // Look up the most recent author for this show (learned default)
+  const previousPost = await db.blogPost.findFirst({
+    where: { wpShowId: suggestion.job.wpShowId, status: "published" },
+    orderBy: { updatedAt: "desc" },
+    select: { author: true },
+  });
+
+  // Create Google Doc
   try {
-    const wpResponse = await fetch(`${WP_API_URL()}/posts`, {
-      method: "POST",
-      headers: {
-        Authorization: WP_AUTH(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const { docId, docUrl } = await createGoogleDoc(
+      postTitle,
+      postContent,
+      showFolder.googleFolderId
+    );
+
+    // Create BlogPost record
+    const blogPost = await db.blogPost.create({
+      data: {
+        suggestionId: suggestion.id,
+        jobId: suggestion.job.id,
+        wpShowId: suggestion.job.wpShowId,
         title: postTitle,
-        content: postContent,
+        googleDocId: docId,
+        googleDocUrl: docUrl,
+        author: previousPost?.author ?? null,
         status: "draft",
-        meta: {
-          _swm_source_episode: suggestion.job.title,
-          _swm_source_suggestion_id: suggestion.id,
-        },
-      }),
+      },
     });
 
-    if (!wpResponse.ok) {
-      const errorBody = await wpResponse.text();
-      return {
-        success: false,
-        message: `WordPress error (${wpResponse.status}): ${errorBody}`,
-      };
-    }
-
-    const wpPost = await wpResponse.json();
-    const postUrl =
-      wpPost.link ?? `${WP_API_URL().replace("/wp-json/wp/v2", "")}/wp-admin/post.php?post=${wpPost.id}&action=edit`;
-
-    // Mark suggestion as accepted/generated
+    // Mark suggestion as accepted
     await db.aiSuggestion.update({
       where: { id: suggestionId },
       data: { accepted: true },
@@ -159,12 +164,13 @@ export async function generateBlogPost(
 
     return {
       success: true,
-      message: "Blog post draft created in WordPress.",
-      postUrl,
+      message: "Blog draft created in Google Docs.",
+      blogPostId: blogPost.id,
+      googleDocUrl: docUrl,
     };
   } catch (error) {
     const msg =
-      error instanceof Error ? error.message : "Failed to create WP post";
+      error instanceof Error ? error.message : "Failed to create Google Doc";
     return { success: false, message: msg };
   }
 }
