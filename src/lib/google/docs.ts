@@ -1,23 +1,32 @@
 import "server-only";
 
-import type { docs_v1 } from "@googleapis/docs";
-import { getGoogleAuth } from "./auth";
+import { getAccessToken } from "./auth";
 import type { DocSection, DocRun } from "./types";
 
 // ---------------------------------------------------------------------------
-// Clients — use require() to avoid edge runtime bundling
+// Google API helpers (fetch-based, no SDK)
 // ---------------------------------------------------------------------------
 
-function getDocsClient() {
-  const { docs } = require("@googleapis/docs") as typeof import("@googleapis/docs");
-  const auth = getGoogleAuth();
-  return docs({ version: "v1", auth });
-}
+const DRIVE_API = "https://www.googleapis.com/drive/v3";
+const DOCS_API = "https://docs.googleapis.com/v1";
 
-function getDriveClient() {
-  const { drive } = require("@googleapis/drive") as typeof import("@googleapis/drive");
-  const auth = getGoogleAuth();
-  return drive({ version: "v3", auth });
+async function googleFetch(url: string, options: RequestInit = {}) {
+  const token = await getAccessToken();
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Google API error (${res.status}): ${body}`);
+  }
+
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -127,31 +136,28 @@ export async function createGoogleDoc(
   htmlContent: string,
   folderId: string
 ): Promise<{ docId: string; docUrl: string }> {
-  const drive = getDriveClient();
-
-  const fileRes = await drive.files.create({
-    requestBody: {
+  // 1. Create empty doc in the target folder via Drive API
+  const fileData = await googleFetch(`${DRIVE_API}/files?fields=id,webViewLink`, {
+    method: "POST",
+    body: JSON.stringify({
       name: title,
       mimeType: "application/vnd.google-apps.document",
       parents: [folderId],
-    },
-    fields: "id,webViewLink",
+    }),
   });
 
-  const docId = fileRes.data.id;
-  if (!docId) throw new Error("Failed to create Google Doc — no ID returned");
+  const docId: string = fileData.id;
+  const docUrl: string = fileData.webViewLink ?? `https://docs.google.com/document/d/${docId}/edit`;
 
-  const docUrl = fileRes.data.webViewLink ?? `https://docs.google.com/document/d/${docId}/edit`;
-
+  // 2. Parse HTML into sections and build batchUpdate requests
   const sections = parseHtmlToSections(htmlContent);
   if (sections.length === 0) return { docId, docUrl };
 
   const requests = buildInsertRequests(sections);
 
-  const docsClient = getDocsClient();
-  await docsClient.documents.batchUpdate({
-    documentId: docId,
-    requestBody: { requests },
+  await googleFetch(`${DOCS_API}/documents/${docId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({ requests }),
   });
 
   return { docId, docUrl };
@@ -162,11 +168,9 @@ export async function createGoogleDoc(
 // ---------------------------------------------------------------------------
 
 export async function readGoogleDocAsHtml(docId: string): Promise<{ title: string; html: string }> {
-  const docsClient = getDocsClient();
-  const res = await docsClient.documents.get({ documentId: docId });
-  const doc = res.data;
+  const doc = await googleFetch(`${DOCS_API}/documents/${docId}`);
 
-  const title = doc.title ?? "";
+  const title: string = doc.title ?? "";
   const sections = docToSections(doc);
   const html = sectionsToHtml(sections);
   return { title, html };
@@ -178,11 +182,26 @@ export async function readGoogleDocAsHtml(docId: string): Promise<{ title: strin
 // sequential execution within the single batchUpdate call.
 // ---------------------------------------------------------------------------
 
-function buildInsertRequests(
-  sections: DocSection[]
-): docs_v1.Schema$Request[] {
-  const textInserts: docs_v1.Schema$Request[] = [];
-  const styleRequests: docs_v1.Schema$Request[] = [];
+interface BatchRequest {
+  insertText?: {
+    location: { index: number };
+    text: string;
+  };
+  updateTextStyle?: {
+    range: { startIndex: number; endIndex: number };
+    textStyle: Record<string, unknown>;
+    fields: string;
+  };
+  updateParagraphStyle?: {
+    range: { startIndex: number; endIndex: number };
+    paragraphStyle: Record<string, unknown>;
+    fields: string;
+  };
+}
+
+function buildInsertRequests(sections: DocSection[]): BatchRequest[] {
+  const textInserts: BatchRequest[] = [];
+  const styleRequests: BatchRequest[] = [];
 
   let idx = 1;
 
@@ -262,7 +281,8 @@ function buildInsertRequests(
 // Internal: Convert Google Doc structure to DocSections
 // ---------------------------------------------------------------------------
 
-function docToSections(doc: docs_v1.Schema$Document): DocSection[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function docToSections(doc: any): DocSection[] {
   const content = doc.body?.content;
   if (!content) return [];
 
