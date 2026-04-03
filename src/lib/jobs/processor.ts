@@ -32,6 +32,9 @@ export interface ProcessingResult {
  *   2. Transistor (parallel-safe, uses extracted audio)
  *   3. WordPress (last — needs YouTube URL for embed)
  */
+// 10 minutes — generous enough for large uploads, short enough to detect hangs
+const JOB_TIMEOUT_MS = 10 * 60 * 1000;
+
 export async function processJob(jobId: string): Promise<ProcessingResult> {
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
@@ -49,6 +52,82 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
     where: { id: jobId },
     data: { status: "processing" },
   });
+
+  // Wrap the actual work in a timeout so hangs (e.g. thumbnail upload)
+  // don't leave the job stuck in "processing" forever.
+  try {
+    return await Promise.race([
+      processJobInner(job),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Job timed out after 10 minutes")),
+          JOB_TIMEOUT_MS
+        )
+      ),
+    ]);
+  } catch (error) {
+    const errMsg =
+      error instanceof Error ? error.message : "Processing failed unexpectedly";
+    console.error(`[processor] Job ${jobId} failed with timeout or error: ${errMsg}`);
+
+    // Mark any in-progress platforms as failed
+    for (const platform of job.platforms) {
+      if (platform.status !== "completed" && platform.status !== "failed") {
+        await db.distributionJobPlatform.update({
+          where: { id: platform.id },
+          data: { status: "failed", error: errMsg },
+        }).catch(() => {}); // best-effort
+      }
+    }
+
+    await db.distributionJob.update({
+      where: { id: jobId },
+      data: { status: "failed" },
+    }).catch(() => {}); // best-effort
+
+    // Send error notification
+    try {
+      const user = await db.user.findUnique({
+        where: { id: job.userId },
+        select: { name: true },
+      });
+
+      let showName = `Show #${job.wpShowId}`;
+      try {
+        const { getShow } = await import("@/lib/wordpress/client");
+        const show = await getShow(job.wpShowId);
+        showName = show.title.rendered;
+      } catch {
+        // Fall back to ID
+      }
+
+      const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+      await sendDistributionErrorNotification({
+        jobTitle: job.title,
+        showName,
+        producerName: user?.name ?? "Unknown",
+        failures: [{ platform: "system", error: errMsg }],
+        jobUrl: `${baseUrl}/dashboard/distribute/${job.id}`,
+      });
+    } catch {
+      // Don't let notification failure mask the real error
+    }
+
+    return {
+      jobId: job.id,
+      status: "failed",
+      platformResults: job.platforms.map((p) => ({
+        platform: p.platform,
+        status: "failed" as const,
+        error: errMsg,
+      })),
+    };
+  }
+}
+
+async function processJobInner(
+  job: Awaited<ReturnType<typeof db.distributionJob.findUnique>> & { platforms: any[] }
+): Promise<ProcessingResult> {
 
   console.log(
     `[processor] Processing job ${job.id}: "${job.title}" (${job.platforms.length} platforms)`
@@ -105,7 +184,7 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
       // Store transcript in job metadata
       const currentMetadata = job.metadata as Record<string, unknown>;
       await db.distributionJob.update({
-        where: { id: jobId },
+        where: { id: job.id },
         data: {
           metadata: {
             ...currentMetadata,
@@ -119,14 +198,14 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
 
       // Generate AI suggestions from transcript
       console.log("[processor] Generating AI suggestions...");
-      await generateAiSuggestions(jobId, formattedTranscript, transcriptionResult.language);
+      await generateAiSuggestions(job.id, formattedTranscript, transcriptionResult.language);
       console.log("[processor] AI suggestions complete.");
     } catch (error) {
       console.error("[processor] Transcription/AI processing failed (non-fatal):", error);
       // Non-fatal: continue with platform uploads even if transcription fails
       // Try AI suggestions without transcript (uses title/description)
       try {
-        await generateAiSuggestions(jobId);
+        await generateAiSuggestions(job.id);
       } catch (aiErr) {
         console.error("[processor] AI suggestions also failed:", aiErr);
       }
@@ -135,7 +214,7 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
 
   // Refresh metadata after potential transcript update
   const updatedJob = await db.distributionJob.findUnique({
-    where: { id: jobId },
+    where: { id: job.id },
     select: { metadata: true },
   });
   const updatedMetadata = (updatedJob?.metadata as Record<string, unknown>) ?? metadata;
