@@ -149,7 +149,13 @@ export async function createGoogleDoc(
   const docId: string = fileData.id;
   const docUrl: string = fileData.webViewLink ?? `https://docs.google.com/document/d/${docId}/edit`;
 
-  // 2. Parse HTML into sections and build batchUpdate requests
+  // 2. Apply document-level styling (fonts, spacing, heading styles)
+  await googleFetch(`${DOCS_API}/documents/${docId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({ requests: buildDocumentStyleRequests() }),
+  });
+
+  // 3. Parse HTML into sections and insert formatted content
   const sections = parseHtmlToSections(htmlContent);
   if (sections.length === 0) return { docId, docUrl };
 
@@ -174,6 +180,90 @@ export async function readGoogleDocAsHtml(docId: string): Promise<{ title: strin
   const sections = docToSections(doc);
   const html = sectionsToHtml(sections);
   return { title, html };
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Document-level styling (named styles for headings + body text)
+// ---------------------------------------------------------------------------
+
+function buildDocumentStyleRequests(): Record<string, unknown>[] {
+  return [
+    {
+      updateDocumentStyle: {
+        documentStyle: {
+          marginTop: { magnitude: 72, unit: "PT" },
+          marginBottom: { magnitude: 72, unit: "PT" },
+          marginLeft: { magnitude: 72, unit: "PT" },
+          marginRight: { magnitude: 72, unit: "PT" },
+        },
+        fields: "marginTop,marginBottom,marginLeft,marginRight",
+      },
+    },
+    {
+      updateNamedStyle: {
+        namedStyleProperties: {
+          namedStyleType: "NORMAL_TEXT",
+          textStyle: {
+            fontSize: { magnitude: 11, unit: "PT" },
+            fontFamily: "Georgia",
+            foregroundColor: {
+              color: { rgbColor: { red: 0.2, green: 0.2, blue: 0.2 } },
+            },
+          },
+          paragraphStyle: {
+            lineSpacing: 150,
+            spaceBelow: { magnitude: 8, unit: "PT" },
+          },
+        },
+        fields:
+          "textStyle.fontSize,textStyle.fontFamily,textStyle.foregroundColor,paragraphStyle.lineSpacing,paragraphStyle.spaceBelow",
+      },
+    },
+    {
+      updateNamedStyle: {
+        namedStyleProperties: {
+          namedStyleType: "HEADING_2",
+          textStyle: {
+            fontSize: { magnitude: 18, unit: "PT" },
+            fontFamily: "Georgia",
+            bold: true,
+            foregroundColor: {
+              color: { rgbColor: { red: 0.1, green: 0.1, blue: 0.1 } },
+            },
+          },
+          paragraphStyle: {
+            lineSpacing: 130,
+            spaceBefore: { magnitude: 24, unit: "PT" },
+            spaceBelow: { magnitude: 8, unit: "PT" },
+          },
+        },
+        fields:
+          "textStyle.fontSize,textStyle.fontFamily,textStyle.bold,textStyle.foregroundColor,paragraphStyle.lineSpacing,paragraphStyle.spaceBefore,paragraphStyle.spaceBelow",
+      },
+    },
+    {
+      updateNamedStyle: {
+        namedStyleProperties: {
+          namedStyleType: "HEADING_3",
+          textStyle: {
+            fontSize: { magnitude: 14, unit: "PT" },
+            fontFamily: "Georgia",
+            bold: true,
+            foregroundColor: {
+              color: { rgbColor: { red: 0.15, green: 0.15, blue: 0.15 } },
+            },
+          },
+          paragraphStyle: {
+            lineSpacing: 130,
+            spaceBefore: { magnitude: 18, unit: "PT" },
+            spaceBelow: { magnitude: 6, unit: "PT" },
+          },
+        },
+        fields:
+          "textStyle.fontSize,textStyle.fontFamily,textStyle.bold,textStyle.foregroundColor,paragraphStyle.lineSpacing,paragraphStyle.spaceBefore,paragraphStyle.spaceBelow",
+      },
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------
