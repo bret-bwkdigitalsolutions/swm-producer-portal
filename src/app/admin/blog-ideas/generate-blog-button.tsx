@@ -30,7 +30,7 @@ export function GenerateBlogButton({
   const [result, setResult] = useState<{
     success: boolean;
     message: string;
-    postUrl?: string;
+    googleDocUrl?: string;
   } | null>(null);
 
   async function handleGenerate() {
@@ -42,7 +42,11 @@ export function GenerateBlogButton({
         suggestionId,
         customInstructions.trim() || undefined
       );
-      setResult(res);
+      setResult({
+        success: res.success,
+        message: res.message,
+        googleDocUrl: res.googleDocUrl,
+      });
     } catch {
       setResult({ success: false, message: "Generation failed unexpectedly." });
     } finally {
@@ -58,14 +62,24 @@ export function GenerateBlogButton({
     );
   }
 
-  if (result?.success && result.postUrl) {
+  if (result?.success && result.googleDocUrl) {
     return (
-      <a href={result.postUrl} target="_blank" rel="noopener noreferrer">
-        <Button variant="outline" size="sm">
-          <ExternalLinkIcon className="size-3.5" />
-          View Draft in WordPress
-        </Button>
-      </a>
+      <div className="space-y-1">
+        <p className="text-sm text-green-700">{result.message}</p>
+        <a
+          href={result.googleDocUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Button variant="outline" size="sm">
+            <ExternalLinkIcon className="size-3.5" />
+            Open Google Doc
+          </Button>
+        </a>
+        <p className="text-xs text-muted-foreground">
+          Reload the page to see full controls.
+        </p>
+      </div>
     );
   }
 

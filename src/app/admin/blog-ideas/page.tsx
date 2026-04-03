@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { BookOpenIcon } from "lucide-react";
 import { GenerateBlogButton } from "./generate-blog-button";
+import { BlogPostControls } from "./blog-post-controls";
 
 export default async function BlogIdeasPage() {
   const [blogSuggestions, allShows] = await Promise.all([
@@ -23,6 +24,7 @@ export default async function BlogIdeasPage() {
             metadata: true,
           },
         },
+        blogPost: true,
       },
       orderBy: { job: { createdAt: "desc" } },
     }),
@@ -38,8 +40,8 @@ export default async function BlogIdeasPage() {
       <div>
         <h2 className="text-2xl font-bold">Blog Ideas</h2>
         <p className="text-sm text-muted-foreground">
-          AI-generated blog post ideas from episode transcripts. Generate a full
-          draft post to WordPress.
+          AI-generated blog post ideas from episode transcripts. Generate a
+          draft, send to the host for review, then publish to WordPress.
         </p>
       </div>
 
@@ -57,8 +59,7 @@ export default async function BlogIdeasPage() {
             const showName =
               showNameMap.get(suggestion.job.wpShowId) ??
               `Show #${suggestion.job.wpShowId}`;
-            const metadata = suggestion.job.metadata as Record<string, unknown>;
-            const wpPostUrl = (metadata._generatedBlogUrl as string) ?? null;
+            const blogPost = suggestion.blogPost;
 
             return (
               <Card key={suggestion.id}>
@@ -72,7 +73,7 @@ export default async function BlogIdeasPage() {
                         {showName}
                       </p>
                     </div>
-                    {suggestion.accepted && (
+                    {suggestion.accepted && !blogPost && (
                       <Badge className="bg-green-100 text-green-800">
                         Generated
                       </Badge>
@@ -83,13 +84,16 @@ export default async function BlogIdeasPage() {
                   <p className="whitespace-pre-wrap text-sm">
                     {suggestion.content}
                   </p>
-                  <div className="flex items-center gap-2">
+
+                  {blogPost ? (
+                    <BlogPostControls blogPost={blogPost} />
+                  ) : (
                     <GenerateBlogButton
                       suggestionId={suggestion.id}
                       episodeTitle={suggestion.job.title}
                       generated={suggestion.accepted}
                     />
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             );
