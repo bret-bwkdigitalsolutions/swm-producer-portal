@@ -187,6 +187,21 @@ export async function readGoogleDocAsHtml(docId: string): Promise<{ title: strin
 // ---------------------------------------------------------------------------
 
 function buildDocumentStyleRequests(): Record<string, unknown>[] {
+  const namedStyle = (
+    type: string,
+    textStyle: Record<string, unknown>,
+    paragraphStyle: Record<string, unknown>,
+    textFields: string,
+    paraFields: string
+  ) => ({
+    updateNamedStyle: {
+      namedStyleType: type,
+      textStyle,
+      paragraphStyle,
+      fields: `textStyle(${textFields}),paragraphStyle(${paraFields})`,
+    },
+  });
+
   return [
     {
       updateDocumentStyle: {
@@ -199,70 +214,58 @@ function buildDocumentStyleRequests(): Record<string, unknown>[] {
         fields: "marginTop,marginBottom,marginLeft,marginRight",
       },
     },
-    {
-      updateNamedStyle: {
-        namedStyleProperties: {
-          namedStyleType: "NORMAL_TEXT",
-          textStyle: {
-            fontSize: { magnitude: 11, unit: "PT" },
-            fontFamily: "Georgia",
-            foregroundColor: {
-              color: { rgbColor: { red: 0.2, green: 0.2, blue: 0.2 } },
-            },
-          },
-          paragraphStyle: {
-            lineSpacing: 150,
-            spaceBelow: { magnitude: 8, unit: "PT" },
-          },
+    namedStyle(
+      "NORMAL_TEXT",
+      {
+        fontSize: { magnitude: 11, unit: "PT" },
+        fontFamily: "Georgia",
+        foregroundColor: {
+          color: { rgbColor: { red: 0.2, green: 0.2, blue: 0.2 } },
         },
-        fields:
-          "textStyle.fontSize,textStyle.fontFamily,textStyle.foregroundColor,paragraphStyle.lineSpacing,paragraphStyle.spaceBelow",
       },
-    },
-    {
-      updateNamedStyle: {
-        namedStyleProperties: {
-          namedStyleType: "HEADING_2",
-          textStyle: {
-            fontSize: { magnitude: 18, unit: "PT" },
-            fontFamily: "Georgia",
-            bold: true,
-            foregroundColor: {
-              color: { rgbColor: { red: 0.1, green: 0.1, blue: 0.1 } },
-            },
-          },
-          paragraphStyle: {
-            lineSpacing: 130,
-            spaceBefore: { magnitude: 24, unit: "PT" },
-            spaceBelow: { magnitude: 8, unit: "PT" },
-          },
+      {
+        lineSpacing: 150,
+        spaceBelow: { magnitude: 8, unit: "PT" },
+      },
+      "fontSize,fontFamily,foregroundColor",
+      "lineSpacing,spaceBelow"
+    ),
+    namedStyle(
+      "HEADING_2",
+      {
+        fontSize: { magnitude: 18, unit: "PT" },
+        fontFamily: "Georgia",
+        bold: true,
+        foregroundColor: {
+          color: { rgbColor: { red: 0.1, green: 0.1, blue: 0.1 } },
         },
-        fields:
-          "textStyle.fontSize,textStyle.fontFamily,textStyle.bold,textStyle.foregroundColor,paragraphStyle.lineSpacing,paragraphStyle.spaceBefore,paragraphStyle.spaceBelow",
       },
-    },
-    {
-      updateNamedStyle: {
-        namedStyleProperties: {
-          namedStyleType: "HEADING_3",
-          textStyle: {
-            fontSize: { magnitude: 14, unit: "PT" },
-            fontFamily: "Georgia",
-            bold: true,
-            foregroundColor: {
-              color: { rgbColor: { red: 0.15, green: 0.15, blue: 0.15 } },
-            },
-          },
-          paragraphStyle: {
-            lineSpacing: 130,
-            spaceBefore: { magnitude: 18, unit: "PT" },
-            spaceBelow: { magnitude: 6, unit: "PT" },
-          },
+      {
+        lineSpacing: 130,
+        spaceBefore: { magnitude: 24, unit: "PT" },
+        spaceBelow: { magnitude: 8, unit: "PT" },
+      },
+      "fontSize,fontFamily,bold,foregroundColor",
+      "lineSpacing,spaceBefore,spaceBelow"
+    ),
+    namedStyle(
+      "HEADING_3",
+      {
+        fontSize: { magnitude: 14, unit: "PT" },
+        fontFamily: "Georgia",
+        bold: true,
+        foregroundColor: {
+          color: { rgbColor: { red: 0.15, green: 0.15, blue: 0.15 } },
         },
-        fields:
-          "textStyle.fontSize,textStyle.fontFamily,textStyle.bold,textStyle.foregroundColor,paragraphStyle.lineSpacing,paragraphStyle.spaceBefore,paragraphStyle.spaceBelow",
       },
-    },
+      {
+        lineSpacing: 130,
+        spaceBefore: { magnitude: 18, unit: "PT" },
+        spaceBelow: { magnitude: 6, unit: "PT" },
+      },
+      "fontSize,fontFamily,bold,foregroundColor",
+      "lineSpacing,spaceBefore,spaceBelow"
+    ),
   ];
 }
 
