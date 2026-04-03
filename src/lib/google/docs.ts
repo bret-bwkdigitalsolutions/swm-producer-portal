@@ -228,12 +228,12 @@ interface BatchRequest {
 // Base text style applied to all body text
 const BODY_TEXT_STYLE = {
   fontSize: { magnitude: 11, unit: "PT" },
-  fontFamily: "Georgia",
+  weightedFontFamily: { fontFamily: "Georgia", weight: 400 },
   foregroundColor: {
     color: { rgbColor: { red: 0.2, green: 0.2, blue: 0.2 } },
   },
 };
-const BODY_TEXT_FIELDS = "fontSize,fontFamily,foregroundColor";
+const BODY_TEXT_FIELDS = "fontSize,weightedFontFamily,foregroundColor";
 
 const BODY_PARAGRAPH_STYLE = {
   lineSpacing: 150,
@@ -244,37 +244,37 @@ const BODY_PARA_FIELDS = "lineSpacing,spaceBelow";
 // Heading text styles (applied on top of named heading style)
 const H2_TEXT_STYLE = {
   fontSize: { magnitude: 18, unit: "PT" },
-  fontFamily: "Georgia",
+  weightedFontFamily: { fontFamily: "Georgia", weight: 400 },
   bold: true,
   foregroundColor: {
     color: { rgbColor: { red: 0.1, green: 0.1, blue: 0.1 } },
   },
 };
-const H2_TEXT_FIELDS = "fontSize,fontFamily,bold,foregroundColor";
+const H2_TEXT_FIELDS = "fontSize,weightedFontFamily,bold,foregroundColor";
 
 const H2_PARAGRAPH_STYLE = {
-  spaceBefore: { magnitude: 24, unit: "PT" },
+  spaceAbove: { magnitude: 24, unit: "PT" },
   spaceBelow: { magnitude: 8, unit: "PT" },
   lineSpacing: 130,
 };
-const H2_PARA_FIELDS = "spaceBefore,spaceBelow,lineSpacing";
+const H2_PARA_FIELDS = "spaceAbove,spaceBelow,lineSpacing";
 
 const H3_TEXT_STYLE = {
   fontSize: { magnitude: 14, unit: "PT" },
-  fontFamily: "Georgia",
+  weightedFontFamily: { fontFamily: "Georgia", weight: 400 },
   bold: true,
   foregroundColor: {
     color: { rgbColor: { red: 0.15, green: 0.15, blue: 0.15 } },
   },
 };
-const H3_TEXT_FIELDS = "fontSize,fontFamily,bold,foregroundColor";
+const H3_TEXT_FIELDS = "fontSize,weightedFontFamily,bold,foregroundColor";
 
 const H3_PARAGRAPH_STYLE = {
-  spaceBefore: { magnitude: 18, unit: "PT" },
+  spaceAbove: { magnitude: 18, unit: "PT" },
   spaceBelow: { magnitude: 6, unit: "PT" },
   lineSpacing: 130,
 };
-const H3_PARA_FIELDS = "spaceBefore,spaceBelow,lineSpacing";
+const H3_PARA_FIELDS = "spaceAbove,spaceBelow,lineSpacing";
 
 function buildInsertRequests(sections: DocSection[]): BatchRequest[] {
   const textInserts: BatchRequest[] = [];
