@@ -27,7 +27,7 @@ function getDriveClient() {
 export function parseHtmlToSections(html: string): DocSection[] {
   if (!html) return [];
 
-  const BLOCK_RE = /<(h2|h3|p)(?:\s[^>]*)?>(.+?)<\/\1>/gis;
+  const BLOCK_RE = /<(h2|h3|p)(?:\s[^>]*)?>([\s\S]+?)<\/\1>/gi;
   const sections: DocSection[] = [];
   let match: RegExpExecArray | null;
 
