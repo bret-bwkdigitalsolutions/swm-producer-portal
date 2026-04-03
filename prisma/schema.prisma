@@ -142,8 +142,9 @@ model DistributionJob {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  platforms    DistributionJobPlatform[]
+  platforms     DistributionJobPlatform[]
   aiSuggestions AiSuggestion[]
+  blogPosts     BlogPost[]
 
   @@map("distribution_jobs")
 }
@@ -170,7 +171,8 @@ model AiSuggestion {
   content  String  @db.Text
   accepted Boolean @default(false)
 
-  job DistributionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job      DistributionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  blogPost BlogPost?
 
   @@map("ai_suggestions")
 }
@@ -289,4 +291,34 @@ model TransistorScrapeLog {
   errors      Json?
 
   @@map("transistor_scrape_logs")
+}
+
+model ShowBlogFolder {
+  id             String @id @default(cuid())
+  wpShowId       Int    @unique
+  googleFolderId String
+
+  @@map("show_blog_folders")
+}
+
+model BlogPost {
+  id            String   @id @default(cuid())
+  suggestionId  String   @unique
+  jobId         String
+  wpShowId      Int
+  title         String
+  googleDocId   String
+  googleDocUrl  String
+  author        String?
+  hostEmail     String?
+  status        String   @default("draft") // "draft" | "reviewing" | "published"
+  wpPostId      Int?
+  wpPostUrl     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  suggestion AiSuggestion    @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  job        DistributionJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("blog_posts")
 }
