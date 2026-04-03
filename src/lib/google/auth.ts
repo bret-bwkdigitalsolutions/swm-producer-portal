@@ -1,12 +1,12 @@
 import "server-only";
-import { auth } from "@googleapis/docs";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/documents",
   "https://www.googleapis.com/auth/drive.file",
 ];
 
-let cachedAuth: InstanceType<typeof auth.GoogleAuth> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let cachedAuth: any = null;
 
 function buildAuth() {
   const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
@@ -15,6 +15,9 @@ function buildAuth() {
   }
 
   const credentials = JSON.parse(keyJson);
+
+  // Dynamic import to avoid edge runtime bundling
+  const { auth } = require("@googleapis/docs") as typeof import("@googleapis/docs");
 
   return new auth.GoogleAuth({
     credentials,
