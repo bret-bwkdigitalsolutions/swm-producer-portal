@@ -808,39 +808,37 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
             </div>
           )}
 
-          {/* Thumbnail upload */}
-          {descriptionMode && (
-            <div className="space-y-2">
-              <Label htmlFor="thumbnail">Thumbnail</Label>
-              <label
-                htmlFor="thumbnail"
-                className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
-              >
-                <UploadIcon className="size-6 text-muted-foreground" />
-                {thumbnailFileName ? (
-                  <span className="text-sm font-medium">
-                    {thumbnailFileName}
-                  </span>
-                ) : (
-                  <span className="text-sm text-muted-foreground">
-                    Upload episode thumbnail image
-                  </span>
-                )}
-                <input
-                  id="thumbnail"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  disabled={isDisabled}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    thumbnailFileRef.current = file;
-                    setThumbnailFileName(file?.name ?? null);
-                  }}
-                />
-              </label>
-            </div>
-          )}
+          {/* Thumbnail upload — always visible so it's available before AI analysis */}
+          <div className="space-y-2">
+            <Label htmlFor="thumbnail">Thumbnail</Label>
+            <label
+              htmlFor="thumbnail"
+              className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
+            >
+              <UploadIcon className="size-6 text-muted-foreground" />
+              {thumbnailFileName ? (
+                <span className="text-sm font-medium">
+                  {thumbnailFileName}
+                </span>
+              ) : (
+                <span className="text-sm text-muted-foreground">
+                  Upload episode thumbnail image
+                </span>
+              )}
+              <input
+                id="thumbnail"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                disabled={isDisabled}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  thumbnailFileRef.current = file;
+                  setThumbnailFileName(file?.name ?? null);
+                }}
+              />
+            </label>
+          </div>
 
           {/* Target platforms — shown for manual path always, AI path after suggestions */}
           {(descriptionMode === "manual" || aiReady) && (
