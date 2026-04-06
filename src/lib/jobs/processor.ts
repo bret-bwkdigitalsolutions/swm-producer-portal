@@ -296,15 +296,25 @@ async function processJobInner(
       const thumbnailGcsPath = metadata.thumbnailGcsPath as string | undefined;
       if (thumbnailGcsPath && youtubeVideoId) {
         try {
+          const ext = thumbnailGcsPath.match(/\.(jpe?g|png|webp)$/i)?.[0] ?? ".jpg";
+          const mimeMap: Record<string, string> = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".webp": "image/webp",
+          };
+          const thumbContentType = mimeMap[ext.toLowerCase()] ?? "image/jpeg";
+
           const thumbDir = await mkdtemp(join(tmpdir(), "swm-thumb-"));
-          const thumbPath = join(thumbDir, "thumbnail.jpg");
+          const thumbPath = join(thumbDir, `thumbnail${ext}`);
           const thumbUrl = await generateSignedDownloadUrl(thumbnailGcsPath);
           const thumbResponse = await fetch(thumbUrl);
           if (thumbResponse.ok && thumbResponse.body) {
             const thumbStream = createWriteStream(thumbPath);
             await pipeline(Readable.fromWeb(thumbResponse.body as any), thumbStream);
-            await setThumbnail(job.wpShowId, youtubeVideoId, thumbPath);
+            await setThumbnail(job.wpShowId, youtubeVideoId, thumbPath, thumbContentType);
             await unlink(thumbPath).catch(() => {});
+            console.log(`[processor] YouTube thumbnail set from ${thumbnailGcsPath}`);
+          } else {
+            console.error(`[processor] Failed to download thumbnail from GCS (${thumbResponse.status})`);
           }
         } catch (error) {
           console.error("[processor] Thumbnail set failed (non-fatal):", error);

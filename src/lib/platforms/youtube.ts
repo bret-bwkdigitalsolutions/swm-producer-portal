@@ -120,7 +120,8 @@ export async function uploadToYouTube(
 export async function setThumbnail(
   wpShowId: number,
   videoId: string,
-  thumbnailFilePath: string
+  thumbnailFilePath: string,
+  contentType: string = "image/jpeg"
 ): Promise<void> {
   const accessToken = await getYouTubeAccessToken(wpShowId);
   if (!accessToken) return;
@@ -136,7 +137,7 @@ export async function setThumbnail(
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "image/jpeg",
+        "Content-Type": contentType,
         "Content-Length": fileSize.toString(),
       },
       body: Readable.toWeb(fileStream) as any,
