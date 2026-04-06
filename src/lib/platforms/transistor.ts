@@ -164,7 +164,7 @@ export async function uploadToTransistor(
   const episodeData: Record<string, unknown> = {
     show_id: transistorShowId,
     title,
-    description, // Full show notes / description (HTML OK)
+    description: description.replace(/\n/g, "<br>"), // Convert newlines to HTML for Transistor
     audio_url: audioUrl,
   };
 
