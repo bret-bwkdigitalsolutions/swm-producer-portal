@@ -4,53 +4,53 @@
 A web portal for content producers to streamline multimedia workflows, combining AI-powered transcription, content generation, and rich text editing into a unified platform. Producers upload audio content, receive automated transcriptions via speech-to-text processing, and leverage AI assistance to transform raw content into polished output, reducing the manual overhead of content creation pipelines.
 
 ## Current Architecture
-Next.js 16 application with App Router and React 19, configured for standalone deployment. Prisma ORM manages PostgreSQL data with dedicated adapter, while NextAuth handles authentication using Prisma for session storage. External services include Deepgram for speech-to-text, Anthropic Claude for AI content generation, Google Cloud Storage for file persistence, and Upstash Redis for caching layers. Resend provides email delivery. Frontend uses Base UI components with Tailwind CSS and Tiptap rich text editor. The standalone output configuration suggests containerized deployment strategy.
+Next.js 16 application with App Router and React 19, configured for standalone deployment. Prisma ORM manages PostgreSQL data with dedicated adapter, while NextAuth handles authentication using Prisma for session storage. External services include Deepgram for speech-to-text, Anthropic Claude for AI content generation, Google Cloud Storage for file persistence, and Upstash Redis for caching layers. Resend provides email delivery. Frontend uses Base UI components with Tailwind CSS and Tiptap rich text editor. The standalone output configuration suggests containerized deployment strategy, with server-external package configuration isolating database drivers from the Next.js bundle.
 
 ## What Works Today
-- User registration and authenticated sessions
-- Rich text editing with link embedding and content placeholders
-- Audio transcription processing through Deepgram integration
-- AI-powered content enhancement via Claude API
-- File upload and cloud storage operations
-- Chart and analytics visualization components
-- Email notification delivery
-- Database schema management with seeding scripts
-- Responsive UI components with modern styling
+- User authentication and session management through NextAuth
+- Rich text editing with link embedding, content placeholders, and collaborative features
+- Audio file transcription processing via Deepgram speech-to-text API
+- AI-powered content enhancement and generation using Anthropic Claude
+- File upload and persistent storage through Google Cloud Storage
+- Email notifications and communications via Resend
+- Chart visualization and analytics display components
+- Database operations with automated seeding for development
+- Responsive UI with modern component library and styling system
 
 ## Known Gaps & Limitations
-- Producer-specific workflows and role differentiation remain undefined in codebase
-- No visible content project management or organizational structure
-- Missing comprehensive error handling for external service failures
-- Audio processing pipeline and file size limitations unclear
-- Real-time features absent despite collaborative implications of "producer portal"
-- Test coverage extremely limited with only basic framework setup
-- Production environment configuration and secrets management patterns unclear
+- Project structure and component implementations remain invisible from repository root
+- Producer-specific workflows and content organization patterns undefined
+- Error handling strategies for external service failures unclear
+- Audio processing pipeline limitations and file size constraints unspecified
+- Real-time collaboration features absent despite multi-user portal implications
+- Test coverage minimal with only basic Vitest framework configuration
+- Environment configuration patterns and deployment secrets management unclear
+- Content versioning and collaborative editing conflict resolution missing
 
 ## Next Meaningful Capabilities
-- Project-based content organization with producer workspace management
-- Automated transcription-to-publication workflows with customizable templates
-- Real-time collaboration for multi-producer content creation
-- Content analytics dashboard showing engagement and performance metrics
-- Batch audio processing for podcast or series production workflows
-- Integration hooks for content management systems and distribution platforms
+- Project-based content organization with producer workspace isolation and permissions
+- Automated transcription-to-publication workflows with customizable output templates
+- Real-time collaborative editing for multi-producer content creation sessions
+- Content performance analytics dashboard with engagement metrics and insights
+- Batch audio processing capabilities for podcast series and episodic content
+- Distribution platform integrations for automated content publishing and syndication
 
 ## Open Technical Questions
-- How producer permissions and content ownership are modeled and enforced
-- Whether Redis serves as session cache, job queue, or both for processing workflows
-- File storage architecture for handling large media files and retention policies
-- AI prompt engineering strategy for consistent content generation quality
-- Real-time synchronization approach given current stack without WebSocket infrastructure
-- Content versioning and revision control implementation for collaborative editing
+- How producer roles, permissions, and content ownership boundaries are enforced
+- Whether Redis serves session caching, job queuing, or real-time synchronization needs
+- File storage architecture for large media assets and retention policy implementation
+- AI prompt engineering strategy for maintaining consistent content generation quality
+- Real-time feature implementation approach given current synchronous-only stack
+- Content revision control and collaborative editing conflict resolution mechanisms
+- Production deployment strategy and infrastructure requirements for standalone builds
 
 ## Key Files & Entry Points
-- `app/page.tsx` — Primary application interface and user dashboard entry
-- `prisma/schema.prisma` — Data model definitions and relationships (location inferred)
-- `prisma/seed.ts` — Database initialization and development data setup
-- `src/lib/auth.ts` — Authentication configuration and session handling (location inferred)
-- `src/components/` — Reusable UI component library (location inferred)
-- `scripts/smoke-test.ts` — Application health verification for deployment pipelines
-- `next.config.ts` — Build configuration with standalone deployment setup
-- `.env.example` — Required environment variables for external service integration
+- `app/page.tsx` — Primary application entry point and user interface
+- `package.json` — Dependency management and development workflow scripts
+- `next.config.ts` — Build configuration with standalone deployment and external packages
+- `tsconfig.json` — TypeScript configuration with path mapping and module resolution
+- `prisma/seed.ts` — Database initialization and development data population
+- `scripts/smoke-test.ts` — Application health verification for deployment validation
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-02_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-06_
