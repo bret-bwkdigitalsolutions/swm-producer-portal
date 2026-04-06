@@ -65,6 +65,7 @@ export interface TransistorUploadParams {
   transcript?: string;
   youtubeVideoUrl?: string;
   explicit?: boolean;
+  isDraft?: boolean;
 }
 
 export interface TransistorUploadResult {
@@ -81,7 +82,7 @@ export async function uploadToTransistor(
   const {
     wpShowId, title, description, seasonNumber, episodeNumber,
     gcsAudioPath, chapters, tags, thumbnailGcsPath, author,
-    transcript, youtubeVideoUrl, explicit: isExplicit,
+    transcript, youtubeVideoUrl, explicit: isExplicit, isDraft,
   } = params;
 
   const apiKey = await getTransistorApiKey(wpShowId);
@@ -156,16 +157,14 @@ export async function uploadToTransistor(
   // 3. Create the episode with the uploaded audio URL
   console.log("[transistor] Creating episode...");
 
-  // Build show notes: description + chapters
-  const showNotes = chapters
-    ? `${description}\n\n<h3>Chapters</h3>\n${chapters}`
-    : description;
-
+  // Transistor has no API field for chapters — including them in the
+  // description just clutters the show notes without populating the
+  // chapter UI.  Keep the description clean.
   const episodeData: Record<string, unknown> = {
     show_id: transistorShowId,
     title,
     summary: description.slice(0, 255), // Short summary for podcast players
-    description: showNotes, // Full show notes / description (HTML OK)
+    description, // Full show notes / description (HTML OK)
     audio_url: audioUrl,
   };
 
@@ -180,12 +179,16 @@ export async function uploadToTransistor(
   if (youtubeVideoUrl) episodeData.video_url = youtubeVideoUrl;
   if (isExplicit !== undefined) episodeData.explicit = isExplicit;
 
-  // Episode artwork
+  // Episode artwork — use a 4-hour signed URL so Transistor has time to
+  // fetch the image even if it processes the episode asynchronously.
   if (thumbnailGcsPath) {
     try {
-      const thumbUrl = await generateSignedDownloadUrl(thumbnailGcsPath);
+      const thumbUrl = await generateSignedDownloadUrl(
+        thumbnailGcsPath,
+        4 * 60 * 60 * 1000 // 4 hours
+      );
       episodeData.image_url = thumbUrl;
-      console.log("[transistor] Setting episode artwork from GCS");
+      console.log("[transistor] Setting episode artwork from GCS:", thumbnailGcsPath);
     } catch (e) {
       console.warn("[transistor] Could not get thumbnail URL:", e);
     }
@@ -219,29 +222,33 @@ export async function uploadToTransistor(
   }
 
   // 4. Publish the episode (Transistor creates as draft by default)
-  console.log(`[transistor] Publishing episode ${episodeId}...`);
-  const publishRes = await fetch(`${BASE_URL}/episodes/${episodeId}/publish`, {
-    method: "PATCH",
-    headers: {
-      "x-api-key": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      episode: { status: "published" },
-    }),
-  });
+  if (isDraft) {
+    console.log(`[transistor] Episode ${episodeId} left as draft (isDraft=true)`);
+  } else {
+    console.log(`[transistor] Publishing episode ${episodeId}...`);
+    const publishRes = await fetch(`${BASE_URL}/episodes/${episodeId}/publish`, {
+      method: "PATCH",
+      headers: {
+        "x-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        episode: { status: "published" },
+      }),
+    });
 
-  if (!publishRes.ok) {
-    console.warn(
-      `[transistor] Publish failed (${publishRes.status}), episode remains as draft`
-    );
+    if (!publishRes.ok) {
+      console.warn(
+        `[transistor] Publish failed (${publishRes.status}), episode remains as draft`
+      );
+    }
   }
 
   const shareUrl =
     createData.data?.attributes?.share_url ??
     `https://share.transistor.fm/s/${episodeId}`;
 
-  console.log(`[transistor] Episode published: ${shareUrl}`);
+  console.log(`[transistor] Episode ${isDraft ? "drafted" : "published"}: ${shareUrl}`);
 
   return { episodeId: String(episodeId), episodeUrl: shareUrl };
 }

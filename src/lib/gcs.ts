@@ -86,7 +86,8 @@ export async function generateSignedUploadUrl(
  * @returns Signed download URL
  */
 export async function generateSignedDownloadUrl(
-  gcsPath: string
+  gcsPath: string,
+  expiresInMs: number = 60 * 60 * 1000 // default 1 hour
 ): Promise<string> {
   const storage = getStorage();
   const bucketName = getBucketName();
@@ -97,7 +98,7 @@ export async function generateSignedDownloadUrl(
   const [url] = await file.getSignedUrl({
     version: "v4",
     action: "read",
-    expires: Date.now() + 60 * 60 * 1000, // 1 hour
+    expires: Date.now() + expiresInMs,
   });
 
   return url;
