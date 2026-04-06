@@ -380,6 +380,7 @@ async function processJobInner(
         transcript: transcript ?? (updatedMetadata.transcript as string) ?? undefined,
         youtubeVideoUrl: youtubeUrl ?? undefined,
         explicit: (updatedMetadata.explicit as boolean) ?? undefined,
+        isDraft: (updatedMetadata.isDraft as boolean) ?? false,
       });
 
       await db.distributionJobPlatform.update({
@@ -427,6 +428,7 @@ async function processJobInner(
               transcript: transcript ?? (updatedMetadata.transcript as string) ?? undefined,
               youtubeVideoUrl: youtubeUrl ?? undefined,
               explicit: (updatedMetadata.explicit as boolean) ?? undefined,
+              isDraft: (updatedMetadata.isDraft as boolean) ?? false,
             });
             console.log("[processor] Network Transistor cross-post succeeded");
           }
