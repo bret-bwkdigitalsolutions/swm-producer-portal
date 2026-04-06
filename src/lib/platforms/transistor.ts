@@ -170,10 +170,8 @@ export async function uploadToTransistor(
   // Optional fields
   if (author) episodeData.author = author;
   if (tags?.length) episodeData.keywords = tags.join(",");
-  // Explicitly set season/number even when empty — omitting them causes
-  // Transistor to auto-assign values from the show's internal counter.
-  episodeData.season = seasonNumber ?? null;
-  episodeData.number = episodeNumber ?? null;
+  if (seasonNumber) episodeData.season = seasonNumber;
+  if (episodeNumber) episodeData.number = episodeNumber;
   if (transcript) episodeData.transcript_text = transcript;
   if (youtubeVideoUrl) episodeData.video_url = youtubeVideoUrl;
   if (isExplicit !== undefined) episodeData.explicit = isExplicit;
