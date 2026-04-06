@@ -113,39 +113,24 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
   const [aiUploadedJobId, setAiUploadedJobId] = useState<string | null>(null);
 
   /**
-   * Upload thumbnail to GCS via a simple PUT (images are small).
+   * Upload thumbnail to GCS via the server (avoids browser CORS issues).
    */
   const uploadThumbnailToGCS = useCallback(async (jobId: string) => {
     const file = thumbnailFileRef.current;
     if (!file) return;
 
-    const signedUrlRes = await fetch("/api/upload/signed-url", {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("jobId", jobId);
+
+    const res = await fetch("/api/upload/thumbnail", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        filename: file.name,
-        contentType: file.type,
-        jobId,
-        purpose: "thumbnail",
-      }),
+      body: formData,
     });
 
-    if (!signedUrlRes.ok) {
-      const err = await signedUrlRes.json();
-      console.error("[thumbnail] Failed to get upload URL:", err.error);
-      return; // Non-fatal — proceed without thumbnail
-    }
-
-    const { uploadUrl } = await signedUrlRes.json();
-
-    const uploadRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": file.type },
-      body: file,
-    });
-
-    if (!uploadRes.ok) {
-      console.error("[thumbnail] Upload failed:", uploadRes.status);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Upload failed" }));
+      console.error("[thumbnail] Upload failed:", err.error);
     }
   }, []);
 

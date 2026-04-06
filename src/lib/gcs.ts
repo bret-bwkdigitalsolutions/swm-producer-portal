@@ -108,6 +108,30 @@ export async function generateSignedDownloadUrl(
 }
 
 /**
+ * Upload a file buffer directly to GCS from the server.
+ * Use this for small files (thumbnails) to avoid browser CORS / signed-URL issues.
+ */
+export async function uploadBuffer(
+  filename: string,
+  buffer: Buffer,
+  contentType: string
+): Promise<string> {
+  const storage = getStorage();
+  const bucketName = getBucketName();
+  const gcsPath = generateGcsPath(filename);
+
+  const bucket = storage.bucket(bucketName);
+  const file = bucket.file(gcsPath);
+
+  await file.save(buffer, {
+    contentType,
+    resumable: false,
+  });
+
+  return gcsPath;
+}
+
+/**
  * Delete a file from GCS.
  *
  * @param gcsPath - The path of the file in GCS
