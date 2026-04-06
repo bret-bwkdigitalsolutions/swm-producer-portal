@@ -72,7 +72,13 @@ const PLATFORMS = [
 const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB
 const MAX_RETRIES = 5;
 
-export function DistributionForm({ shows }: { shows: Show[] }) {
+export function DistributionForm({
+  shows,
+  descriptionFooters = {},
+}: {
+  shows: Show[];
+  descriptionFooters?: Record<string, string>;
+}) {
   const router = useRouter();
   const [state, formAction, isPending] = useActionState<FormState, FormData>(
     submitDistribution,
@@ -316,7 +322,11 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
       // Pre-populate description and chapters from suggestions
       const summarySuggestion = aiSuggestions.find((s) => s.type === "summary");
       if (summarySuggestion) {
-        setDescription(summarySuggestion.content);
+        const footer = descriptionFooters[showId];
+        const desc = footer
+          ? `${summarySuggestion.content}\n\n${footer}`
+          : summarySuggestion.content;
+        setDescription(desc);
       }
       const chaptersSuggestion = aiSuggestions.find(
         (s) => s.type === "chapters"
@@ -344,6 +354,7 @@ export function DistributionForm({ shows }: { shows: Show[] }) {
     publishState.status,
     uploadVideoToGCS,
     uploadThumbnailToGCS,
+    descriptionFooters,
   ]);
 
   /**

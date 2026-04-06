@@ -4,7 +4,9 @@ import { CONTENT_TYPE_LABELS } from "@/lib/constants";
 import { getCachedShows } from "@/lib/wordpress/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { updateVisibilityPreferences } from "./actions";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { updateVisibilityPreferences, updateDescriptionFooters } from "./actions";
 
 export default async function SettingsPage({
   searchParams,
@@ -42,6 +44,15 @@ export default async function SettingsPage({
   } catch {
     // WP not configured yet — fall back to ID display
   }
+
+  // Fetch existing description footers for shows the user can access
+  const showMetadataList = await db.showMetadata.findMany({
+    where: { wpShowId: { in: allowedShowIds } },
+    select: { wpShowId: true, descriptionFooter: true },
+  });
+  const footerMap = Object.fromEntries(
+    showMetadataList.map((sm) => [sm.wpShowId, sm.descriptionFooter ?? ""])
+  );
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -116,6 +127,38 @@ export default async function SettingsPage({
           </CardContent>
         </Card>
       </form>
+      {allowedShowIds.length > 0 && (
+        <form action={updateDescriptionFooters}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Episode Description Footers</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Set default text that will be appended to AI-generated episode
+                descriptions for each show. Great for social links, credits, or
+                recurring sign-offs.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {allowedShowIds.map((showId) => (
+                <div key={showId} className="space-y-1.5">
+                  <Label htmlFor={`footer-${showId}`}>
+                    {showNameMap[showId] ?? `Show #${showId}`}
+                  </Label>
+                  <Textarea
+                    id={`footer-${showId}`}
+                    name={`footer_${showId}`}
+                    rows={3}
+                    placeholder="e.g., Follow us on Instagram @showname | Support us at patreon.com/showname"
+                    defaultValue={footerMap[showId] ?? ""}
+                    className="text-sm"
+                  />
+                </div>
+              ))}
+              <Button type="submit">Save Footers</Button>
+            </CardContent>
+          </Card>
+        </form>
+      )}
     </div>
   );
 }

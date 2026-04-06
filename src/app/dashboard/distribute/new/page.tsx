@@ -25,6 +25,18 @@ export default async function NewDistributionPage() {
     allowedShows = allShows.filter((show) => allowedIds.has(show.id));
   }
 
+  const showIds = allowedShows.map((s) => s.id);
+  const showMetadataList = await db.showMetadata.findMany({
+    where: { wpShowId: { in: showIds } },
+    select: { wpShowId: true, descriptionFooter: true },
+  });
+  const footerMap: Record<string, string> = {};
+  for (const sm of showMetadataList) {
+    if (sm.descriptionFooter) {
+      footerMap[String(sm.wpShowId)] = sm.descriptionFooter;
+    }
+  }
+
   const shows = allowedShows.map((show) => ({
     id: String(show.id),
     title: show.title.rendered,
@@ -32,7 +44,7 @@ export default async function NewDistributionPage() {
 
   return (
     <div className="py-6">
-      <DistributionForm shows={shows} />
+      <DistributionForm shows={shows} descriptionFooters={footerMap} />
     </div>
   );
 }

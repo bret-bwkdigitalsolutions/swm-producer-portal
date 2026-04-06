@@ -189,9 +189,10 @@ model ShowPlatformLink {
 }
 
 model ShowMetadata {
-  id       String @id @default(cuid())
-  wpShowId Int    @unique
-  hosts    String // Comma-separated host names (e.g. "John Henry, Jake White")
+  id                String  @id @default(cuid())
+  wpShowId          Int     @unique
+  hosts             String // Comma-separated host names (e.g. "John Henry, Jake White")
+  descriptionFooter String? // Default text appended to AI-generated episode descriptions
 
   @@map("show_metadata")
 }
