@@ -59,7 +59,8 @@ function generateGcsPath(filename: string): string {
  */
 export async function generateSignedUploadUrl(
   filename: string,
-  contentType: string
+  contentType: string,
+  options?: { resumable?: boolean }
 ): Promise<{ uploadUrl: string; gcsPath: string }> {
   const storage = getStorage();
   const bucketName = getBucketName();
@@ -68,9 +69,11 @@ export async function generateSignedUploadUrl(
   const bucket = storage.bucket(bucketName);
   const file = bucket.file(gcsPath);
 
+  const resumable = options?.resumable ?? true;
+
   const [url] = await file.getSignedUrl({
     version: "v4",
-    action: "resumable",
+    action: resumable ? "resumable" : "write",
     expires: Date.now() + 4 * 60 * 60 * 1000, // 4 hours
     contentType,
   });

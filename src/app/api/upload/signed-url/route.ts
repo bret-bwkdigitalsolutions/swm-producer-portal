@@ -89,7 +89,8 @@ export async function POST(request: NextRequest) {
   try {
     const { uploadUrl, gcsPath } = await generateSignedUploadUrl(
       filename,
-      contentType
+      contentType,
+      { resumable: !isThumbnail }
     );
 
     if (isThumbnail) {
