@@ -163,7 +163,6 @@ export async function uploadToTransistor(
   const episodeData: Record<string, unknown> = {
     show_id: transistorShowId,
     title,
-    summary: description.slice(0, 255), // Short summary for podcast players
     description, // Full show notes / description (HTML OK)
     audio_url: audioUrl,
   };
