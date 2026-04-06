@@ -173,7 +173,7 @@ export async function uploadToTransistor(
   if (tags?.length) episodeData.keywords = tags.join(",");
   if (seasonNumber) episodeData.season = seasonNumber;
   if (episodeNumber) episodeData.number = episodeNumber;
-  if (transcript) episodeData.transcript_text = transcript;
+  if (transcript) episodeData.transcript_text = transcript.replace(/\n/g, "<br>");
   if (youtubeVideoUrl) episodeData.video_url = youtubeVideoUrl;
   if (isExplicit !== undefined) episodeData.explicit = isExplicit;
 
