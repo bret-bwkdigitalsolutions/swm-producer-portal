@@ -1,16 +1,6 @@
 import { db } from "@/lib/db";
 import { getCachedShows } from "@/lib/wordpress/cache";
 
-function decodeHtml(html: string): string {
-  return html
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&nbsp;/g, " ");
-}
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShowStakeholderManager } from "./stakeholder-manager";
@@ -116,7 +106,7 @@ export default async function AdminShowsPage() {
               <Card key={show.id}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-3">
-                    <span>{decodeHtml(show.title.rendered)}</span>
+                    <span>{show.title.rendered}</span>
                     <Badge variant="outline" className="font-mono text-xs">
                       ID: {show.id}
                     </Badge>
@@ -136,13 +126,13 @@ export default async function AdminShowsPage() {
                   <div className="border-t pt-4" />
                   <ShowStakeholderManager
                     wpShowId={show.id}
-                    showName={decodeHtml(show.title.rendered)}
+                    showName={show.title.rendered}
                     stakeholders={stakeholders}
                   />
                   <div className="border-t pt-4">
                     <ShowPlatformLinks
                       wpShowId={show.id}
-                      showName={decodeHtml(show.title.rendered)}
+                      showName={show.title.rendered}
                       links={platformLinks}
                       networkDefaults={networkDefaults}
                     />

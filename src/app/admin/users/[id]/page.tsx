@@ -37,9 +37,6 @@ export default async function UserEditPage({
   const allowedShowIds = new Set(user.allowedShows.map((s) => s.wpShowId));
   const allShows = await getCachedShows().catch(() => []);
 
-  function decodeHtml(html: string): string {
-    return html.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
-  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -173,7 +170,7 @@ export default async function UserEditPage({
                       defaultChecked={allowedShowIds.has(show.id)}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-sm">{decodeHtml(show.title.rendered)}</span>
+                    <span className="text-sm">{show.title.rendered}</span>
                   </label>
                 ))}
                 {allShows.length === 0 && (

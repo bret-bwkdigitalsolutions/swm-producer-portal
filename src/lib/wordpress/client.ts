@@ -9,6 +9,17 @@ import {
 } from "./types";
 import { ContentType } from "@/lib/constants";
 
+/** Decode HTML numeric & named entities that WordPress injects into rendered titles. */
+function decodeHtmlEntities(html: string): string {
+  return html
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
 const WP_API_URL = () => process.env.WP_API_URL!;
 const WP_AUTH = () =>
   "Basic " +
@@ -53,11 +64,15 @@ async function wpFetch<T>(
 }
 
 export async function getShows(): Promise<WpShow[]> {
-  return wpFetch<WpShow[]>("/swm_show?per_page=100&_fields=id,title,slug,status,meta,acf");
+  const shows = await wpFetch<WpShow[]>("/swm_show?per_page=100&_fields=id,title,slug,status,meta,acf");
+  for (const s of shows) s.title.rendered = decodeHtmlEntities(s.title.rendered);
+  return shows;
 }
 
 export async function getShow(id: number): Promise<WpShow> {
-  return wpFetch<WpShow>(`/swm_show/${id}`);
+  const show = await wpFetch<WpShow>(`/swm_show/${id}`);
+  show.title.rendered = decodeHtmlEntities(show.title.rendered);
+  return show;
 }
 
 export async function getTaxonomyTerms(
