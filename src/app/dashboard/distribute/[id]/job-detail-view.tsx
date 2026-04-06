@@ -373,8 +373,8 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         </CardContent>
       </Card>
 
-      {/* AI Suggestions panel — shown when job is awaiting_review or has suggestions */}
-      {job.aiSuggestions.length > 0 && (
+      {/* AI Suggestions panel — blog suggestions only shown in Admin > Blog Ideas */}
+      {job.aiSuggestions.filter((s) => s.type !== "blog").length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <SparklesIcon className="size-5 text-purple-500" />
@@ -386,9 +386,11 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
               You can edit the content before accepting.
             </p>
           )}
-          {job.aiSuggestions.map((suggestion) => (
-            <AiSuggestionCard key={suggestion.id} suggestion={suggestion} />
-          ))}
+          {job.aiSuggestions
+            .filter((s) => s.type !== "blog")
+            .map((suggestion) => (
+              <AiSuggestionCard key={suggestion.id} suggestion={suggestion} />
+            ))}
         </div>
       )}
     </div>
