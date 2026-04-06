@@ -373,26 +373,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         </CardContent>
       </Card>
 
-      {/* AI Suggestions panel — blog suggestions only shown in Admin > Blog Ideas */}
-      {job.aiSuggestions.filter((s) => s.type !== "blog").length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <SparklesIcon className="size-5 text-purple-500" />
-            <h3 className="text-lg font-semibold">AI Suggestions</h3>
-          </div>
-          {job.status === "awaiting_review" && (
-            <p className="text-sm text-muted-foreground">
-              Review and accept or reject each AI-generated suggestion below.
-              You can edit the content before accepting.
-            </p>
-          )}
-          {job.aiSuggestions
-            .filter((s) => s.type !== "blog")
-            .map((suggestion) => (
-              <AiSuggestionCard key={suggestion.id} suggestion={suggestion} />
-            ))}
-        </div>
-      )}
+      {/* AI suggestions (description, chapters, blog) are reviewed during
+          distribution and managed in Admin > Blog Ideas — no need to show
+          them again on this status page. */}
     </div>
   );
 }
