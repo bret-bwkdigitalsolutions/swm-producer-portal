@@ -77,18 +77,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, status: "pending" });
   }
 
-  // Re-read metadata (may have been updated by updateDistribution)
-  const freshJob = await db.distributionJob.findUnique({
-    where: { id: jobId },
-    select: { metadata: true },
-  });
-  const metadata = (freshJob?.metadata ?? job.metadata) as Record<string, unknown>;
-  const scheduleMode = (metadata.scheduleMode as string) ?? "now";
-
-  if (scheduleMode === "schedule") {
-    return NextResponse.json({ success: true, status: "scheduled" });
-  }
-
   // Atomically transition to processing to prevent double invocation
   const updated = await db.distributionJob.updateMany({
     where: { id: jobId, status: "pending" },

@@ -12,6 +12,7 @@ export interface YouTubeUploadParams {
   privacy: "public" | "unlisted" | "private";
   categoryId?: string; // YouTube category ID, defaults to "22" (People & Blogs)
   videoFilePath: string; // local temp file path
+  scheduledAt?: string; // ISO 8601 date — if set, video is private until this time
 }
 
 export interface YouTubeUploadResult {
@@ -25,7 +26,7 @@ export interface YouTubeUploadResult {
 export async function uploadToYouTube(
   params: YouTubeUploadParams
 ): Promise<YouTubeUploadResult> {
-  const { wpShowId, title, description, tags, privacy, categoryId, videoFilePath } = params;
+  const { wpShowId, title, description, tags, privacy, categoryId, videoFilePath, scheduledAt } = params;
 
   const accessToken = await getYouTubeAccessToken(wpShowId);
   if (!accessToken) {
@@ -37,6 +38,15 @@ export async function uploadToYouTube(
   // 1. Initiate resumable upload session
   console.log(`[youtube] Initiating upload for "${title}"`);
 
+  const status: Record<string, unknown> = {
+    privacyStatus: scheduledAt ? "private" : privacy,
+    selfDeclaredMadeForKids: false,
+  };
+  if (scheduledAt) {
+    status.publishAt = scheduledAt;
+    console.log(`[youtube] Scheduling publish at ${scheduledAt}`);
+  }
+
   const metadata = {
     snippet: {
       title,
@@ -44,10 +54,7 @@ export async function uploadToYouTube(
       tags,
       categoryId: categoryId ?? "22",
     },
-    status: {
-      privacyStatus: privacy,
-      selfDeclaredMadeForKids: false,
-    },
+    status,
   };
 
   const initResponse = await fetch(

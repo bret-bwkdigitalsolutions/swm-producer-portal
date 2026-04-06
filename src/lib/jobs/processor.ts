@@ -269,6 +269,10 @@ async function processJobInner(
         : description;
       const tags = (metadata.tags as string[]) ?? [];
       const isDraft = (metadata.isDraft as boolean) ?? false;
+      const scheduleMode = (metadata.scheduleMode as string) ?? "now";
+      const scheduledAt = scheduleMode === "schedule"
+        ? (metadata.scheduledAt as string) ?? undefined
+        : undefined;
 
       const result = await uploadToYouTube({
         wpShowId: job.wpShowId,
@@ -277,6 +281,7 @@ async function processJobInner(
         tags,
         privacy: isDraft ? "unlisted" : "public",
         videoFilePath: tempVideoPath,
+        scheduledAt,
       });
 
       youtubeUrl = result.videoUrl;
@@ -391,6 +396,9 @@ async function processJobInner(
         youtubeVideoUrl: youtubeUrl ?? undefined,
         explicit: (updatedMetadata.explicit as boolean) ?? undefined,
         isDraft: (updatedMetadata.isDraft as boolean) ?? false,
+        scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
+          ? (updatedMetadata.scheduledAt as string) ?? undefined
+          : undefined,
       });
 
       await db.distributionJobPlatform.update({
@@ -439,6 +447,9 @@ async function processJobInner(
               youtubeVideoUrl: youtubeUrl ?? undefined,
               explicit: (updatedMetadata.explicit as boolean) ?? undefined,
               isDraft: (updatedMetadata.isDraft as boolean) ?? false,
+              scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
+                ? (updatedMetadata.scheduledAt as string) ?? undefined
+                : undefined,
             });
             console.log("[processor] Network Transistor cross-post succeeded");
           }

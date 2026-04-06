@@ -66,6 +66,7 @@ export interface TransistorUploadParams {
   youtubeVideoUrl?: string;
   explicit?: boolean;
   isDraft?: boolean;
+  scheduledAt?: string; // ISO 8601 date — if set, episode is scheduled for future publish
 }
 
 export interface TransistorUploadResult {
@@ -82,7 +83,7 @@ export async function uploadToTransistor(
   const {
     wpShowId, title, description, seasonNumber, episodeNumber,
     gcsAudioPath, chapters, tags, thumbnailGcsPath, author,
-    transcript, youtubeVideoUrl, explicit: isExplicit, isDraft,
+    transcript, youtubeVideoUrl, explicit: isExplicit, isDraft, scheduledAt,
   } = params;
 
   const apiKey = await getTransistorApiKey(wpShowId);
@@ -218,9 +219,27 @@ export async function uploadToTransistor(
     throw new Error("Transistor did not return an episode ID.");
   }
 
-  // 4. Publish the episode (Transistor creates as draft by default)
+  // 4. Publish or schedule the episode (Transistor creates as draft by default)
   if (isDraft) {
     console.log(`[transistor] Episode ${episodeId} left as draft (isDraft=true)`);
+  } else if (scheduledAt) {
+    console.log(`[transistor] Scheduling episode ${episodeId} for ${scheduledAt}`);
+    const publishRes = await fetch(`${BASE_URL}/episodes/${episodeId}/publish`, {
+      method: "PATCH",
+      headers: {
+        "x-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        episode: { status: "scheduled", published_at: scheduledAt },
+      }),
+    });
+
+    if (!publishRes.ok) {
+      console.warn(
+        `[transistor] Schedule failed (${publishRes.status}), episode remains as draft`
+      );
+    }
   } else {
     console.log(`[transistor] Publishing episode ${episodeId}...`);
     const publishRes = await fetch(`${BASE_URL}/episodes/${episodeId}/publish`, {
@@ -241,11 +260,12 @@ export async function uploadToTransistor(
     }
   }
 
+  const statusLabel = isDraft ? "drafted" : scheduledAt ? "scheduled" : "published";
   const shareUrl =
     createData.data?.attributes?.share_url ??
     `https://share.transistor.fm/s/${episodeId}`;
 
-  console.log(`[transistor] Episode ${isDraft ? "drafted" : "published"}: ${shareUrl}`);
+  console.log(`[transistor] Episode ${statusLabel}: ${shareUrl}`);
 
   return { episodeId: String(episodeId), episodeUrl: shareUrl };
 }
