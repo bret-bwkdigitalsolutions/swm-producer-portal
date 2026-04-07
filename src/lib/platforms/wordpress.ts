@@ -85,6 +85,7 @@ export async function publishToWordPress(
       _swm_portal_submission: true,
       parent_show_id: wpShowId,
       youtube_video_url: youtubeUrl,
+      vimeo_video_url: youtubeUrl, // Theme uses this field for the video embed
       ...(episodeNumber !== undefined
         ? { episode_number: episodeNumber }
         : {}),
