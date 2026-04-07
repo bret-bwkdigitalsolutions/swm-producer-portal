@@ -330,7 +330,7 @@ export default function YouTubeAnalyticsPage() {
         {dataLoading ? (
           <div className="h-48 animate-pulse rounded bg-muted" />
         ) : (
-          <VideoTable videos={videos} />
+          <VideoTable videos={videos} limit={10} />
         )}
       </div>
 

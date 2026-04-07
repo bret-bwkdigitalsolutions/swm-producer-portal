@@ -76,7 +76,10 @@ export default function BarChart({
             backgroundColor: "hsl(var(--card))",
             border: "1px solid hsl(var(--border))",
             borderRadius: 8,
+            color: "hsl(var(--card-foreground))",
           }}
+          labelStyle={{ color: "hsl(var(--card-foreground))", fontWeight: 600 }}
+          itemStyle={{ color: "hsl(var(--card-foreground))" }}
         />
         {(series.length > 1 || stacked) && <Legend />}
         {series.map((s) => (
