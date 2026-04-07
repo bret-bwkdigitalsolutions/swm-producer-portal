@@ -7,6 +7,10 @@ import type {
   YouTubeAnalyticsPoint,
   YouTubeTrafficSource,
   YouTubeCountryData,
+  YouTubeDemographic,
+  YouTubeSubscriptionStatus,
+  YouTubeDeviceType,
+  YouTubeContentType,
   DateRange,
 } from "./types";
 
@@ -380,6 +384,110 @@ export async function getYouTubeGeoAnalytics(
 
       return (data.rows || []).map((row: (string | number)[]) => ({
         country: row[0] as string,
+        views: row[1] as number,
+        estimatedMinutesWatched: row[2] as number,
+      }));
+    }
+  );
+}
+
+export async function getYouTubeDemographics(
+  wpShowId: number,
+  dateRange: DateRange
+): Promise<YouTubeDemographic[]> {
+  const accessToken = await requireAccessToken(wpShowId);
+
+  return getCached(
+    `analytics:youtube:${wpShowId}:demographics:${dateRange.from}:${dateRange.to}`,
+    21600,
+    async () => {
+      const data = await fetchAnalyticsApi(accessToken, {
+        metrics: "viewerPercentage",
+        dimensions: "ageGroup,gender",
+        startDate: dateRange.from,
+        endDate: dateRange.to,
+      });
+
+      return (data.rows || []).map((row: (string | number)[]) => ({
+        ageGroup: row[0] as string,
+        gender: row[1] as string,
+        viewerPercentage: row[2] as number,
+      }));
+    }
+  );
+}
+
+export async function getYouTubeSubscriptionStatus(
+  wpShowId: number,
+  dateRange: DateRange
+): Promise<YouTubeSubscriptionStatus[]> {
+  const accessToken = await requireAccessToken(wpShowId);
+
+  return getCached(
+    `analytics:youtube:${wpShowId}:subscription:${dateRange.from}:${dateRange.to}`,
+    21600,
+    async () => {
+      const data = await fetchAnalyticsApi(accessToken, {
+        metrics: "views,estimatedMinutesWatched",
+        dimensions: "subscribedStatus",
+        startDate: dateRange.from,
+        endDate: dateRange.to,
+      });
+
+      return (data.rows || []).map((row: (string | number)[]) => ({
+        status: row[0] as string,
+        views: row[1] as number,
+        estimatedMinutesWatched: row[2] as number,
+      }));
+    }
+  );
+}
+
+export async function getYouTubeDeviceTypes(
+  wpShowId: number,
+  dateRange: DateRange
+): Promise<YouTubeDeviceType[]> {
+  const accessToken = await requireAccessToken(wpShowId);
+
+  return getCached(
+    `analytics:youtube:${wpShowId}:devices:${dateRange.from}:${dateRange.to}`,
+    21600,
+    async () => {
+      const data = await fetchAnalyticsApi(accessToken, {
+        metrics: "views,estimatedMinutesWatched",
+        dimensions: "deviceType",
+        startDate: dateRange.from,
+        endDate: dateRange.to,
+      });
+
+      return (data.rows || []).map((row: (string | number)[]) => ({
+        deviceType: row[0] as string,
+        views: row[1] as number,
+        estimatedMinutesWatched: row[2] as number,
+      }));
+    }
+  );
+}
+
+export async function getYouTubeContentTypes(
+  wpShowId: number,
+  dateRange: DateRange
+): Promise<YouTubeContentType[]> {
+  const accessToken = await requireAccessToken(wpShowId);
+
+  return getCached(
+    `analytics:youtube:${wpShowId}:content-types:${dateRange.from}:${dateRange.to}`,
+    21600,
+    async () => {
+      const data = await fetchAnalyticsApi(accessToken, {
+        metrics: "views,estimatedMinutesWatched",
+        dimensions: "creatorContentType",
+        startDate: dateRange.from,
+        endDate: dateRange.to,
+      });
+
+      return (data.rows || []).map((row: (string | number)[]) => ({
+        contentType: row[0] as string,
         views: row[1] as number,
         estimatedMinutesWatched: row[2] as number,
       }));
