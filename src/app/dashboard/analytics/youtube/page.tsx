@@ -22,6 +22,14 @@ import {
   fetchAggregatedYouTubeVideos,
   fetchAggregatedYouTubeAnalytics,
   fetchAggregatedYouTubeGeo,
+  fetchYouTubeDemographics,
+  fetchYouTubeSubscription,
+  fetchYouTubeDevices,
+  fetchYouTubeContentTypes,
+  fetchAggregatedYouTubeDemographics,
+  fetchAggregatedYouTubeSubscription,
+  fetchAggregatedYouTubeDevices,
+  fetchAggregatedYouTubeContentTypes,
 } from "@/app/dashboard/analytics/actions";
 import type {
   YouTubeChannelStats,
@@ -29,6 +37,10 @@ import type {
   YouTubeAnalyticsPoint,
   YouTubeTrafficSource,
   YouTubeCountryData,
+  YouTubeDemographic,
+  YouTubeSubscriptionStatus,
+  YouTubeDeviceType,
+  YouTubeContentType,
 } from "@/lib/analytics/types";
 
 export default function YouTubeAnalyticsPage() {
@@ -48,6 +60,10 @@ export default function YouTubeAnalyticsPage() {
     []
   );
   const [countries, setCountries] = useState<YouTubeCountryData[]>([]);
+  const [demographics, setDemographics] = useState<YouTubeDemographic[]>([]);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<YouTubeSubscriptionStatus[]>([]);
+  const [deviceTypes, setDeviceTypes] = useState<YouTubeDeviceType[]>([]);
+  const [contentTypes, setContentTypes] = useState<YouTubeContentType[]>([]);
   const [staticLoading, setStaticLoading] = useState(false);
   const [dateLoading, setDateLoading] = useState(false);
 
@@ -95,27 +111,36 @@ export default function YouTubeAnalyticsPage() {
     const dateRange = { from, to };
     const isSingle = showsInScope.length === 1;
 
-    const fetches: [
-      Promise<YouTubeAnalyticsPoint[]>,
-      Promise<YouTubeTrafficSource[]>,
-      Promise<YouTubeCountryData[]>,
-    ] = [
+    Promise.all([
       isSingle
         ? fetchYouTubeAnalytics(showsInScope[0], dateRange)
         : fetchAggregatedYouTubeAnalytics(showsInScope, dateRange),
-      // Traffic sources only available at show level
       isSingle
         ? fetchYouTubeTraffic(showsInScope[0], dateRange)
         : Promise.resolve([]),
       isSingle
         ? fetchYouTubeGeo(showsInScope[0], dateRange)
         : fetchAggregatedYouTubeGeo(showsInScope, dateRange),
-    ];
-
-    Promise.all(fetches).then(([analyticsData, trafficData, geoData]) => {
+      isSingle
+        ? fetchYouTubeDemographics(showsInScope[0], dateRange)
+        : fetchAggregatedYouTubeDemographics(showsInScope, dateRange),
+      isSingle
+        ? fetchYouTubeSubscription(showsInScope[0], dateRange)
+        : fetchAggregatedYouTubeSubscription(showsInScope, dateRange),
+      isSingle
+        ? fetchYouTubeDevices(showsInScope[0], dateRange)
+        : fetchAggregatedYouTubeDevices(showsInScope, dateRange),
+      isSingle
+        ? fetchYouTubeContentTypes(showsInScope[0], dateRange)
+        : fetchAggregatedYouTubeContentTypes(showsInScope, dateRange),
+    ]).then(([analyticsData, trafficData, geoData, demosData, subsData, devicesData, contentData]) => {
       setAnalytics(analyticsData);
       setTrafficSources(trafficData);
       setCountries(geoData);
+      setDemographics(demosData);
+      setSubscriptionStatus(subsData);
+      setDeviceTypes(devicesData);
+      setContentTypes(contentData);
       setDateLoading(false);
     });
   }, [initialized, showsInScope, from, to]);
@@ -134,6 +159,48 @@ export default function YouTubeAnalyticsPage() {
   const avgViewDuration =
     totalViews > 0 ? Math.round(totalMinutes / totalViews) : 0;
   const dataLoading = staticLoading || dateLoading;
+
+  const AGE_LABELS: Record<string, string> = {
+    "age13-17": "13-17",
+    "age18-24": "18-24",
+    "age25-34": "25-34",
+    "age35-44": "35-44",
+    "age45-54": "45-54",
+    "age55-64": "55-64",
+    "age65-": "65+",
+  };
+
+  const GENDER_LABELS: Record<string, string> = {
+    male: "Male",
+    female: "Female",
+    user_specified: "Other",
+  };
+
+  const DEVICE_LABELS: Record<string, string> = {
+    DESKTOP: "Desktop",
+    MOBILE: "Mobile",
+    TABLET: "Tablet",
+    TV: "TV",
+    GAME_CONSOLE: "Console",
+    UNKNOWN_PLATFORM: "Other",
+  };
+
+  const CONTENT_TYPE_LABELS: Record<string, string> = {
+    SHORTS: "Shorts",
+    VIDEO_ON_DEMAND: "Videos",
+    LIVE_STREAM: "Live",
+    UNSPECIFIED: "Other",
+  };
+
+  const demoChartData = Object.keys(AGE_LABELS).map((ageGroup) => {
+    const row: Record<string, unknown> = { ageGroup: AGE_LABELS[ageGroup] };
+    for (const d of demographics) {
+      if (d.ageGroup === ageGroup) {
+        row[GENDER_LABELS[d.gender] ?? d.gender] = d.viewerPercentage;
+      }
+    }
+    return row;
+  });
 
   if (!initialized) {
     return <p className="text-muted-foreground">Loading shows...</p>;
@@ -264,6 +331,65 @@ export default function YouTubeAnalyticsPage() {
           <div className="h-48 animate-pulse rounded bg-muted" />
         ) : (
           <VideoTable videos={videos} />
+        )}
+      </div>
+
+      {/* Audience Demographics */}
+      {demographics.length > 0 && (
+        <div className="rounded-lg border bg-card p-4">
+          <h2 className="mb-4 text-base font-semibold">Audience Demographics</h2>
+          <BarChart
+            data={demoChartData as Record<string, unknown>[]}
+            xKey="ageGroup"
+            series={[
+              { dataKey: "Male", name: "Male", color: "#6366f1" },
+              { dataKey: "Female", name: "Female", color: "#ec4899" },
+              { dataKey: "Other", name: "Other", color: "#a3a3a3" },
+            ]}
+            stacked
+            height={300}
+          />
+        </div>
+      )}
+
+      {/* Subscription, Devices, Content Types — 3-column donut row */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {subscriptionStatus.length > 0 && (
+          <div className="rounded-lg border bg-card p-4">
+            <h2 className="mb-4 text-base font-semibold">Subscription Status</h2>
+            <DonutChart
+              data={subscriptionStatus.map((s) => ({
+                name: s.status === "SUBSCRIBED" ? "Subscribed" : "Not Subscribed",
+                value: s.views,
+              }))}
+            />
+          </div>
+        )}
+
+        {deviceTypes.length > 0 && (
+          <div className="rounded-lg border bg-card p-4">
+            <h2 className="mb-4 text-base font-semibold">Device Types</h2>
+            <DonutChart
+              data={deviceTypes.map((d) => ({
+                name: DEVICE_LABELS[d.deviceType] ?? d.deviceType,
+                value: d.views,
+              }))}
+            />
+          </div>
+        )}
+
+        {contentTypes.length > 0 && (
+          <div className="rounded-lg border bg-card p-4">
+            <h2 className="mb-4 text-base font-semibold">Content Types</h2>
+            <DonutChart
+              data={contentTypes
+                .filter((c) => c.views > 0)
+                .map((c) => ({
+                  name: CONTENT_TYPE_LABELS[c.contentType] ?? c.contentType,
+                  value: c.views,
+                }))}
+            />
+          </div>
         )}
       </div>
     </div>
