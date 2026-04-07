@@ -509,6 +509,7 @@ async function processJobInner(
         description,
         chapters: chapters || undefined,
         youtubeUrl,
+        thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
         status: wpStatus,
         scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
         portalUserId: job.userId,

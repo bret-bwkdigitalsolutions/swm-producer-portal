@@ -1,4 +1,5 @@
-import { createPost } from "@/lib/wordpress/client";
+import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { generateSignedDownloadUrl } from "@/lib/gcs";
 import { ContentType } from "@/lib/constants";
 
 export interface WordPressPublishParams {
@@ -7,6 +8,7 @@ export interface WordPressPublishParams {
   description: string;
   chapters?: string; // formatted chapter text
   youtubeUrl: string;
+  thumbnailGcsPath?: string;
   episodeNumber?: number;
   seasonNumber?: number;
   durationMinutes?: number;
@@ -32,6 +34,7 @@ export async function publishToWordPress(
     description,
     chapters,
     youtubeUrl,
+    thumbnailGcsPath,
     episodeNumber,
     seasonNumber,
     durationMinutes,
@@ -41,9 +44,32 @@ export async function publishToWordPress(
   } = params;
 
   // Build content: description + chapters (if available)
-  let content = description;
+  let content = description.replace(/\n/g, "<br>");
   if (chapters) {
-    content += `\n\n<h3>Chapters</h3>\n<pre>${chapters}</pre>`;
+    const formattedChapters = chapters.replace(/\n/g, "<br>");
+    content += `<br><br><h3>Chapters</h3>\n${formattedChapters}`;
+  }
+
+  // Upload thumbnail as featured image if available
+  let featuredMediaId: number | undefined;
+  if (thumbnailGcsPath) {
+    try {
+      const thumbUrl = await generateSignedDownloadUrl(thumbnailGcsPath);
+      const thumbResponse = await fetch(thumbUrl);
+      if (thumbResponse.ok) {
+        const buffer = await thumbResponse.arrayBuffer();
+        const ext = thumbnailGcsPath.match(/\.(jpe?g|png|webp)$/i)?.[0] ?? ".jpg";
+        const filename = `${title.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 50)}${ext}`;
+        const file = new File([buffer], filename, {
+          type: ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg",
+        });
+        const media = await uploadMedia(file, filename);
+        featuredMediaId = media.id;
+        console.log(`[wordpress] Uploaded featured image: ${media.id}`);
+      }
+    } catch (error) {
+      console.error("[wordpress] Featured image upload failed (non-fatal):", error);
+    }
   }
 
   console.log(`[wordpress] Creating episode post: "${title}"`);
@@ -52,6 +78,7 @@ export async function publishToWordPress(
     title,
     content,
     status,
+    ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
     ...(status === "future" && scheduledDate ? { date: scheduledDate } : {}),
     meta: {
       _swm_portal_user_id: portalUserId,
