@@ -348,6 +348,7 @@ export default function YouTubeAnalyticsPage() {
             ]}
             stacked
             height={300}
+            valueSuffix="%"
           />
         </div>
       )}

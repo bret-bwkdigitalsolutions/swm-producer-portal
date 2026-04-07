@@ -24,6 +24,7 @@ interface BarChartProps {
   layout?: "horizontal" | "vertical";
   height?: number;
   stacked?: boolean;
+  valueSuffix?: string; // e.g. "%" — appended to tooltip values
 }
 
 export default function BarChart({
@@ -33,6 +34,7 @@ export default function BarChart({
   layout = "vertical",
   height = 300,
   stacked = false,
+  valueSuffix,
 }: BarChartProps) {
   const isHorizontal = layout === "horizontal";
 
@@ -47,14 +49,12 @@ export default function BarChart({
           <>
             <XAxis
               type="number"
-              tick={{ fontSize: 12 }}
-              className="text-muted-foreground"
+              tick={{ fontSize: 12, fill: "hsl(var(--foreground))" }}
             />
             <YAxis
               type="category"
               dataKey={xKey}
-              tick={{ fontSize: 12 }}
-              className="text-muted-foreground"
+              tick={{ fontSize: 12, fill: "hsl(var(--foreground))" }}
               width={100}
             />
           </>
@@ -62,12 +62,10 @@ export default function BarChart({
           <>
             <XAxis
               dataKey={xKey}
-              tick={{ fontSize: 12 }}
-              className="text-muted-foreground"
+              tick={{ fontSize: 12, fill: "hsl(var(--foreground))" }}
             />
             <YAxis
-              tick={{ fontSize: 12 }}
-              className="text-muted-foreground"
+              tick={{ fontSize: 12, fill: "hsl(var(--foreground))" }}
             />
           </>
         )}
@@ -76,10 +74,16 @@ export default function BarChart({
             backgroundColor: "hsl(var(--card))",
             border: "1px solid hsl(var(--border))",
             borderRadius: 8,
-            color: "hsl(var(--card-foreground))",
+            color: "hsl(var(--foreground))",
           }}
-          labelStyle={{ color: "hsl(var(--card-foreground))", fontWeight: 600 }}
-          itemStyle={{ color: "hsl(var(--card-foreground))" }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
+          {...(valueSuffix ? {
+            formatter: (value: unknown) => {
+              const n = Number(value);
+              return Number.isFinite(n) ? `${Math.round(n * 10) / 10}${valueSuffix}` : String(value);
+            },
+          } : {})}
         />
         {(series.length > 1 || stacked) && <Legend />}
         {series.map((s) => (
