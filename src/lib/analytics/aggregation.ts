@@ -5,6 +5,10 @@ import type {
   YouTubeVideo,
   YouTubeChannelStats,
   YouTubeCountryData,
+  YouTubeDemographic,
+  YouTubeSubscriptionStatus,
+  YouTubeDeviceType,
+  YouTubeContentType,
 } from "./types";
 
 // These interfaces match the ones exported from actions.ts
@@ -286,4 +290,103 @@ export function mergeVideos(allVideos: YouTubeVideo[][]): YouTubeVideo[] {
       return true;
     })
     .sort((a, b) => b.viewCount - a.viewCount);
+}
+
+export function aggregateYouTubeDemographics(
+  allDemos: YouTubeDemographic[][]
+): YouTubeDemographic[] {
+  const showCount = allDemos.filter((d) => d.length > 0).length;
+  if (showCount === 0) return [];
+
+  const keyMap = new Map<string, number>();
+  for (const demos of allDemos) {
+    for (const d of demos) {
+      const key = `${d.ageGroup}|${d.gender}`;
+      keyMap.set(key, (keyMap.get(key) ?? 0) + d.viewerPercentage);
+    }
+  }
+
+  return Array.from(keyMap.entries()).map(([key, total]) => {
+    const [ageGroup, gender] = key.split("|");
+    return { ageGroup, gender, viewerPercentage: total / showCount };
+  });
+}
+
+export function aggregateYouTubeSubscription(
+  allSubs: YouTubeSubscriptionStatus[][]
+): YouTubeSubscriptionStatus[] {
+  const statusMap = new Map<string, { views: number; minutes: number }>();
+  for (const subs of allSubs) {
+    for (const s of subs) {
+      const existing = statusMap.get(s.status);
+      if (existing) {
+        existing.views += s.views;
+        existing.minutes += s.estimatedMinutesWatched;
+      } else {
+        statusMap.set(s.status, {
+          views: s.views,
+          minutes: s.estimatedMinutesWatched,
+        });
+      }
+    }
+  }
+  return Array.from(statusMap.entries()).map(([status, { views, minutes }]) => ({
+    status,
+    views,
+    estimatedMinutesWatched: minutes,
+  }));
+}
+
+export function aggregateYouTubeDevices(
+  allDevices: YouTubeDeviceType[][]
+): YouTubeDeviceType[] {
+  const deviceMap = new Map<string, { views: number; minutes: number }>();
+  for (const devices of allDevices) {
+    for (const d of devices) {
+      const existing = deviceMap.get(d.deviceType);
+      if (existing) {
+        existing.views += d.views;
+        existing.minutes += d.estimatedMinutesWatched;
+      } else {
+        deviceMap.set(d.deviceType, {
+          views: d.views,
+          minutes: d.estimatedMinutesWatched,
+        });
+      }
+    }
+  }
+  return Array.from(deviceMap.entries())
+    .sort(([, a], [, b]) => b.views - a.views)
+    .map(([deviceType, { views, minutes }]) => ({
+      deviceType,
+      views,
+      estimatedMinutesWatched: minutes,
+    }));
+}
+
+export function aggregateYouTubeContentTypes(
+  allTypes: YouTubeContentType[][]
+): YouTubeContentType[] {
+  const typeMap = new Map<string, { views: number; minutes: number }>();
+  for (const types of allTypes) {
+    for (const t of types) {
+      const existing = typeMap.get(t.contentType);
+      if (existing) {
+        existing.views += t.views;
+        existing.minutes += t.estimatedMinutesWatched;
+      } else {
+        typeMap.set(t.contentType, {
+          views: t.views,
+          minutes: t.estimatedMinutesWatched,
+        });
+      }
+    }
+  }
+  return Array.from(typeMap.entries())
+    .sort(([, a], [, b]) => b.views - a.views)
+    .map(([contentType, { views, minutes }]) => ({
+      contentType,
+      views,
+      estimatedMinutesWatched: minutes,
+    }));
 }
