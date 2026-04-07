@@ -17,6 +17,10 @@ import {
   getYouTubeGeoAnalytics,
   getPlaylistAnalytics,
   getPlaylistVideos,
+  getYouTubeDemographics,
+  getYouTubeSubscriptionStatus,
+  getYouTubeDeviceTypes,
+  getYouTubeContentTypes,
 } from "@/lib/analytics/youtube";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { bustCachePrefix } from "@/lib/analytics/cache";
@@ -31,6 +35,10 @@ import {
   aggregateScrapedOverviews,
   mergeEpisodes,
   mergeVideos,
+  aggregateYouTubeDemographics,
+  aggregateYouTubeSubscription,
+  aggregateYouTubeDevices,
+  aggregateYouTubeContentTypes,
 } from "@/lib/analytics/aggregation";
 import type {
   AccessibleShow,
@@ -42,6 +50,10 @@ import type {
   YouTubeAnalyticsPoint,
   YouTubeTrafficSource,
   YouTubeCountryData,
+  YouTubeDemographic,
+  YouTubeSubscriptionStatus,
+  YouTubeDeviceType,
+  YouTubeContentType,
 } from "@/lib/analytics/types";
 
 async function requireShowAccess(wpShowId: number): Promise<void> {
@@ -156,6 +168,38 @@ export async function fetchYouTubeGeo(
 ): Promise<YouTubeCountryData[]> {
   await requireShowAccess(wpShowId);
   return getYouTubeGeoAnalytics(wpShowId, dateRange);
+}
+
+export async function fetchYouTubeDemographics(
+  wpShowId: number,
+  dateRange: DateRange
+): Promise<YouTubeDemographic[]> {
+  await requireShowAccess(wpShowId);
+  return getYouTubeDemographics(wpShowId, dateRange);
+}
+
+export async function fetchYouTubeSubscription(
+  wpShowId: number,
+  dateRange: DateRange
+): Promise<YouTubeSubscriptionStatus[]> {
+  await requireShowAccess(wpShowId);
+  return getYouTubeSubscriptionStatus(wpShowId, dateRange);
+}
+
+export async function fetchYouTubeDevices(
+  wpShowId: number,
+  dateRange: DateRange
+): Promise<YouTubeDeviceType[]> {
+  await requireShowAccess(wpShowId);
+  return getYouTubeDeviceTypes(wpShowId, dateRange);
+}
+
+export async function fetchYouTubeContentTypes(
+  wpShowId: number,
+  dateRange: DateRange
+): Promise<YouTubeContentType[]> {
+  await requireShowAccess(wpShowId);
+  return getYouTubeContentTypes(wpShowId, dateRange);
 }
 
 // --- Scraped Transistor analytics actions ---
@@ -422,6 +466,46 @@ export async function fetchAggregatedYouTubeGeo(
     getYouTubeGeoAnalytics(id, dateRange)
   );
   return aggregateYouTubeGeo(allGeo);
+}
+
+export async function fetchAggregatedYouTubeDemographics(
+  wpShowIds: number[],
+  dateRange: DateRange
+): Promise<YouTubeDemographic[]> {
+  const allDemos = await throttledMap(wpShowIds, (id) =>
+    getYouTubeDemographics(id, dateRange)
+  );
+  return aggregateYouTubeDemographics(allDemos);
+}
+
+export async function fetchAggregatedYouTubeSubscription(
+  wpShowIds: number[],
+  dateRange: DateRange
+): Promise<YouTubeSubscriptionStatus[]> {
+  const allSubs = await throttledMap(wpShowIds, (id) =>
+    getYouTubeSubscriptionStatus(id, dateRange)
+  );
+  return aggregateYouTubeSubscription(allSubs);
+}
+
+export async function fetchAggregatedYouTubeDevices(
+  wpShowIds: number[],
+  dateRange: DateRange
+): Promise<YouTubeDeviceType[]> {
+  const allDevices = await throttledMap(wpShowIds, (id) =>
+    getYouTubeDeviceTypes(id, dateRange)
+  );
+  return aggregateYouTubeDevices(allDevices);
+}
+
+export async function fetchAggregatedYouTubeContentTypes(
+  wpShowIds: number[],
+  dateRange: DateRange
+): Promise<YouTubeContentType[]> {
+  const allTypes = await throttledMap(wpShowIds, (id) =>
+    getYouTubeContentTypes(id, dateRange)
+  );
+  return aggregateYouTubeContentTypes(allTypes);
 }
 
 export async function fetchAggregatedScrapedOverview(
