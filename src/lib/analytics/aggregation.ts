@@ -277,5 +277,13 @@ export function mergeEpisodes(
 }
 
 export function mergeVideos(allVideos: YouTubeVideo[][]): YouTubeVideo[] {
-  return allVideos.flat().sort((a, b) => b.viewCount - a.viewCount);
+  const seen = new Set<string>();
+  return allVideos
+    .flat()
+    .filter((v) => {
+      if (seen.has(v.id)) return false;
+      seen.add(v.id);
+      return true;
+    })
+    .sort((a, b) => b.viewCount - a.viewCount);
 }
