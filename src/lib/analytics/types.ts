@@ -103,6 +103,30 @@ export interface YouTubeCountryData {
   estimatedMinutesWatched: number;
 }
 
+export interface YouTubeDemographic {
+  ageGroup: string;
+  gender: string;
+  viewerPercentage: number;
+}
+
+export interface YouTubeSubscriptionStatus {
+  status: string;
+  views: number;
+  estimatedMinutesWatched: number;
+}
+
+export interface YouTubeDeviceType {
+  deviceType: string;
+  views: number;
+  estimatedMinutesWatched: number;
+}
+
+export interface YouTubeContentType {
+  contentType: string;
+  views: number;
+  estimatedMinutesWatched: number;
+}
+
 // Shared types
 
 export interface DateRange {
