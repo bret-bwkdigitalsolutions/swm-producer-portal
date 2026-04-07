@@ -154,7 +154,17 @@ export async function publishToWordPress(
   const blogPost = await db.blogPost.findUnique({
     where: { id: blogPostId },
     include: {
-      job: { select: { title: true, wpShowId: true } },
+      job: {
+        select: {
+          title: true,
+          wpShowId: true,
+          platforms: {
+            where: { platform: "website", status: "completed" },
+            select: { externalId: true },
+            take: 1,
+          },
+        },
+      },
       suggestion: { select: { id: true } },
     },
   });
@@ -204,6 +214,9 @@ export async function publishToWordPress(
           parent_show_id: blogPost.job.wpShowId,
           _swm_blog_author: blogPost.author ?? "",
           _swm_source_suggestion_id: blogPost.suggestion.id,
+          ...(blogPost.job.platforms[0]?.externalId
+            ? { _swm_linked_episode: parseInt(blogPost.job.platforms[0].externalId, 10) }
+            : {}),
           ...(blogPost.seoDescription
             ? { _swm_seo_description: blogPost.seoDescription }
             : {}),
