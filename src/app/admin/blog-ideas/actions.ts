@@ -81,7 +81,11 @@ export async function generateBlogPost(
     "- Naturally incorporate SEO keywords from the topic idea",
     "- Reference the episode at the end with a call-to-action to listen",
     "- Output the post body in HTML (no <html>/<head>/<body> tags, just the content)",
-    "- First line should be the headline as plain text (no HTML), followed by a blank line, then the HTML body",
+    "- First line should be the headline as plain text (no HTML)",
+    "- Second line should be a ~30 word excerpt/summary for preview cards, prefixed with EXCERPT:",
+    "- Third line should be a meta description for SEO (max 160 chars), prefixed with SEO:",
+    "- Fourth line should be an SEO focus keyphrase (2-4 words), prefixed with KEYPHRASE:",
+    "- Then a blank line, then the HTML body",
     customInstructions
       ? `\n## Additional Instructions from Editor\n${customInstructions}`
       : "",
@@ -91,6 +95,9 @@ export async function generateBlogPost(
 
   let postTitle: string;
   let postContent: string;
+  let excerpt = "";
+  let seoDescription = "";
+  let seoKeyphrase = "";
 
   try {
     const response = await client.messages.create({
@@ -102,10 +109,31 @@ export async function generateBlogPost(
     const textBlock = response.content.find((b) => b.type === "text");
     const fullText = textBlock?.text ?? "";
 
-    // Split first line (title) from the rest (HTML body)
+    // Parse structured output: title, excerpt, SEO description, keyphrase, then HTML body
     const lines = fullText.split("\n");
     postTitle = lines[0].replace(/^#+\s*/, "").trim();
-    postContent = lines.slice(1).join("\n").trim();
+
+    let bodyStartIndex = 1;
+
+    for (let i = 1; i < Math.min(lines.length, 10); i++) {
+      const line = lines[i].trim();
+      if (line.startsWith("EXCERPT:")) {
+        excerpt = line.replace("EXCERPT:", "").trim();
+        bodyStartIndex = i + 1;
+      } else if (line.startsWith("SEO:")) {
+        seoDescription = line.replace("SEO:", "").trim().slice(0, 160);
+        bodyStartIndex = i + 1;
+      } else if (line.startsWith("KEYPHRASE:")) {
+        seoKeyphrase = line.replace("KEYPHRASE:", "").trim();
+        bodyStartIndex = i + 1;
+      } else if (line.startsWith("<")) {
+        // HTML content started
+        bodyStartIndex = i;
+        break;
+      }
+    }
+
+    postContent = lines.slice(bodyStartIndex).join("\n").trim();
 
     if (!postTitle || !postContent) {
       return { success: false, message: "AI generated empty content." };
@@ -152,6 +180,9 @@ export async function generateBlogPost(
         googleDocId: docId,
         googleDocUrl: docUrl,
         author: previousPost?.author ?? null,
+        excerpt: excerpt || null,
+        seoDescription: seoDescription || null,
+        seoKeyphrase: seoKeyphrase || null,
         status: "draft",
       },
     });

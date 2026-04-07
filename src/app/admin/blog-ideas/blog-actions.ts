@@ -154,7 +154,7 @@ export async function publishToWordPress(
   const blogPost = await db.blogPost.findUnique({
     where: { id: blogPostId },
     include: {
-      job: { select: { title: true } },
+      job: { select: { title: true, wpShowId: true } },
       suggestion: { select: { id: true } },
     },
   });
@@ -187,9 +187,9 @@ export async function publishToWordPress(
   // Use the BlogPost title (admin may have edited it), fall back to doc title
   const title = blogPost.title || docTitle;
 
-  // Publish to WordPress
+  // Publish to WordPress as swm_blog custom post type
   try {
-    const wpResponse = await fetch(`${WP_API_URL()}/posts`, {
+    const wpResponse = await fetch(`${WP_API_URL()}/swm_blog`, {
       method: "POST",
       headers: {
         Authorization: WP_AUTH(),
@@ -199,11 +199,16 @@ export async function publishToWordPress(
         title,
         content: docHtml,
         status: wpStatus,
+        excerpt: blogPost.excerpt ?? "",
         meta: {
-          _swm_source_episode: blogPost.job.title,
+          parent_show_id: blogPost.job.wpShowId,
+          _swm_blog_author: blogPost.author ?? "",
           _swm_source_suggestion_id: blogPost.suggestion.id,
-          ...(blogPost.author
-            ? { _swm_blog_author: blogPost.author }
+          ...(blogPost.seoDescription
+            ? { _swm_seo_description: blogPost.seoDescription }
+            : {}),
+          ...(blogPost.seoKeyphrase
+            ? { _swm_seo_focus_keyphrase: blogPost.seoKeyphrase }
             : {}),
         },
       }),

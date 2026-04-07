@@ -303,20 +303,23 @@ model ShowBlogFolder {
 }
 
 model BlogPost {
-  id            String   @id @default(cuid())
-  suggestionId  String   @unique
-  jobId         String
-  wpShowId      Int
-  title         String
-  googleDocId   String
-  googleDocUrl  String
-  author        String?
-  hostEmail     String?
-  status        String   @default("draft") // "draft" | "reviewing" | "published"
-  wpPostId      Int?
-  wpPostUrl     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(cuid())
+  suggestionId     String   @unique
+  jobId            String
+  wpShowId         Int
+  title            String
+  googleDocId      String
+  googleDocUrl     String
+  author           String?
+  hostEmail        String?
+  excerpt          String?
+  seoDescription   String?
+  seoKeyphrase     String?
+  status           String   @default("draft") // "draft" | "reviewing" | "published"
+  wpPostId         Int?
+  wpPostUrl        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   suggestion AiSuggestion    @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
   job        DistributionJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
