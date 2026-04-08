@@ -100,10 +100,13 @@ export async function getRecentSubmissions(
     )
   );
 
-  return results
+  const posts = results
     .flat()
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, limit);
+
+  for (const p of posts) p.title.rendered = decodeHtmlEntities(p.title.rendered);
+  return posts;
 }
 
 export async function uploadMedia(
