@@ -143,14 +143,11 @@ export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
 
       {/* Date/time end */}
       <div className="space-y-2">
-        <Label htmlFor="datetime_end">
-          End date/time <span className="text-destructive">*</span>
-        </Label>
+        <Label htmlFor="datetime_end">End date/time</Label>
         <Input
           id="datetime_end"
           name="datetime_end"
           type="datetime-local"
-          required
         />
       </div>
 

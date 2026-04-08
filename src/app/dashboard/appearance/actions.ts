@@ -65,7 +65,6 @@ export async function submitAppearance(
 
   if (!showId) errors.show_id = ["Please select a show."];
   if (!datetimeStart) errors.datetime_start = ["Start date/time is required."];
-  if (!datetimeEnd) errors.datetime_end = ["End date/time is required."];
   if (!venue) errors.venue = ["Venue is required."];
   if (!location) errors.location = ["Location is required."];
   if (!address) errors.address = ["Address is required."];
