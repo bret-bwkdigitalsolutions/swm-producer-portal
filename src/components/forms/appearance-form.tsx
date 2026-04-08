@@ -6,6 +6,7 @@ import { ShowSelect } from "@/components/forms/show-select";
 import { PublishToggle, PublishState } from "@/components/forms/publish-toggle";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -115,6 +116,17 @@ export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
         value={showId}
         onValueChange={setShowId}
       />
+
+      {/* Description */}
+      <div className="space-y-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
+          name="description"
+          placeholder="Describe the appearance or event..."
+          rows={4}
+        />
+      </div>
 
       {/* Date/time start */}
       <div className="space-y-2">

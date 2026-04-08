@@ -44,6 +44,7 @@ export async function submitAppearance(
 
   // Extract fields
   const showId = formData.get("show_id") as string;
+  const description = (formData.get("description") as string)?.trim() ?? "";
   const datetimeStart = formData.get("datetime_start") as string;
   const datetimeEnd = formData.get("datetime_end") as string;
   const venue = formData.get("venue") as string;
@@ -108,6 +109,7 @@ export async function submitAppearance(
     // Create post in WordPress
     const wpPost = await createPost(ContentType.APPEARANCE, {
       title,
+      content: description,
       status: publishStatus,
       ...(publishStatus === "future" && scheduledDate
         ? { date: scheduledDate }
