@@ -103,13 +103,14 @@ export async function submitAppearance(
     // Split datetime-local values into separate date and time fields
     // Input format: "2026-03-31T14:30"
     const [dateStart, timeStart] = datetimeStart.split("T");
-    const [dateEnd, timeEnd] = datetimeEnd.split("T");
+    const [dateEnd, timeEnd] = datetimeEnd ? datetimeEnd.split("T") : ["", ""];
 
     // Create post in WordPress
     const wpPost = await createPost(ContentType.APPEARANCE, {
       title,
       content: description,
       status: publishStatus,
+      ...(galleryIds.length > 0 ? { featured_media: galleryIds[0] } : {}),
       ...(publishStatus === "future" && scheduledDate
         ? { date: scheduledDate }
         : {}),
@@ -119,8 +120,8 @@ export async function submitAppearance(
         _swm_appearance_show_id: Number(showId),
         _swm_appearance_date_start: dateStart,
         _swm_appearance_time_start: timeStart,
-        _swm_appearance_date_end: dateEnd,
-        _swm_appearance_time_end: timeEnd,
+        _swm_appearance_date_end: dateEnd || "",
+        _swm_appearance_time_end: timeEnd || "",
         _swm_appearance_venue: venue,
         _swm_appearance_location: location,
         _swm_appearance_address: address,
