@@ -48,7 +48,7 @@ export async function updateBlogPostAuthor(
  */
 export async function sendToHost(
   blogPostId: string,
-  hostEmail: string
+  hostEmails: string
 ): Promise<ActionResult> {
   await requireAdmin();
 
@@ -63,8 +63,13 @@ export async function sendToHost(
     return { success: false, message: "Blog post not found." };
   }
 
-  if (!hostEmail.trim()) {
-    return { success: false, message: "Host email is required." };
+  const emails = hostEmails
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean);
+
+  if (emails.length === 0) {
+    return { success: false, message: "At least one email is required." };
   }
 
   // Get show name for the email
@@ -118,7 +123,7 @@ export async function sendToHost(
   try {
     await resend.emails.send({
       from: "SWM Producer Portal <info@stolenwatermedia.com>",
-      to: [hostEmail.trim()],
+      to: emails,
       subject,
       html,
     });
@@ -127,15 +132,28 @@ export async function sendToHost(
     return { success: false, message: msg };
   }
 
+  const emailsString = emails.join(", ");
+
   await db.blogPost.update({
     where: { id: blogPostId },
     data: {
       status: "reviewing",
-      hostEmail: hostEmail.trim(),
+      hostEmail: emailsString,
     },
   });
 
-  return { success: true, message: `Email sent to ${hostEmail.trim()}.` };
+  // Remember these emails for future blog reviews for this show
+  await db.showMetadata.upsert({
+    where: { wpShowId: blogPost.job.wpShowId },
+    update: { blogReviewerEmails: emailsString },
+    create: {
+      wpShowId: blogPost.job.wpShowId,
+      hosts: "",
+      blogReviewerEmails: emailsString,
+    },
+  });
+
+  return { success: true, message: `Email sent to ${emailsString}.` };
 }
 
 /**

@@ -192,7 +192,8 @@ model ShowMetadata {
   id                String  @id @default(cuid())
   wpShowId          Int     @unique
   hosts             String // Comma-separated host names (e.g. "John Henry, Jake White")
-  descriptionFooter String? // Default text appended to AI-generated episode descriptions
+  descriptionFooter  String? // Default text appended to AI-generated episode descriptions
+  blogReviewerEmails String? // Comma-separated emails for blog review notifications
 
   @@map("show_metadata")
 }

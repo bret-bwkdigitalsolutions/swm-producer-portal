@@ -109,15 +109,15 @@ export function BlogPostControls({
         <p className="text-sm text-muted-foreground">Author: {author}</p>
       )}
 
-      {/* Draft state: send to host */}
+      {/* Draft state: send to host(s) */}
       {status === "draft" && (
         <div className="flex items-center gap-2">
           <Input
-            type="email"
-            placeholder="Host email"
+            type="text"
+            placeholder="Email(s), comma-separated"
             value={hostEmail}
             onChange={(e) => setHostEmail(e.target.value)}
-            className="h-8 w-56 text-sm"
+            className="h-8 w-72 text-sm"
           />
           <Button
             variant="outline"

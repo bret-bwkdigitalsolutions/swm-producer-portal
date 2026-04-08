@@ -12,7 +12,7 @@ import { GenerateBlogButton } from "./generate-blog-button";
 import { BlogPostControls } from "./blog-post-controls";
 
 export default async function BlogIdeasPage() {
-  const [blogSuggestions, allShows] = await Promise.all([
+  const [blogSuggestions, allShows, allShowMetadata] = await Promise.all([
     db.aiSuggestion.findMany({
       where: { type: "blog" },
       include: {
@@ -29,10 +29,18 @@ export default async function BlogIdeasPage() {
       orderBy: { job: { createdAt: "desc" } },
     }),
     getCachedShows().catch(() => []),
+    db.showMetadata.findMany({
+      select: { wpShowId: true, blogReviewerEmails: true },
+    }),
   ]);
 
   const showNameMap = new Map(
     allShows.map((s) => [s.id, s.title.rendered])
+  );
+  const reviewerEmailMap = new Map(
+    allShowMetadata
+      .filter((sm) => sm.blogReviewerEmails)
+      .map((sm) => [sm.wpShowId, sm.blogReviewerEmails!])
   );
 
   return (
@@ -86,7 +94,10 @@ export default async function BlogIdeasPage() {
                   </p>
 
                   {blogPost ? (
-                    <BlogPostControls blogPost={blogPost} />
+                    <BlogPostControls
+                      blogPost={blogPost}
+                      defaultHostEmail={reviewerEmailMap.get(suggestion.job.wpShowId)}
+                    />
                   ) : (
                     <GenerateBlogButton
                       suggestionId={suggestion.id}
