@@ -336,6 +336,34 @@ async function processJobInner(
         await addToPlaylist(job.wpShowId, playlistId, youtubeVideoId);
       }
 
+      // Also add to the network YouTube playlist if this show is part of
+      // the Sunset Lounge network (uses network default YouTube credentials)
+      if (youtubeVideoId) {
+        try {
+          const showOverride = await db.platformCredential.findUnique({
+            where: { wpShowId_platform: { wpShowId: job.wpShowId, platform: "youtube" } },
+          });
+
+          if (!showOverride) {
+            const networkPlaylist = await db.showPlatformLink.findUnique({
+              where: { wpShowId_platform: { wpShowId: 0, platform: "youtube_playlist" } },
+            });
+
+            if (networkPlaylist?.url) {
+              const networkPlaylistId = networkPlaylist.url.split("list=").pop() ?? networkPlaylist.url;
+              console.log(
+                `[processor] Adding to network YouTube playlist: ${networkPlaylistId}`
+              );
+              await addToPlaylist(0, networkPlaylistId, youtubeVideoId);
+              console.log("[processor] Network YouTube playlist add succeeded");
+            }
+          }
+        } catch (networkErr) {
+          // Non-fatal: log but don't fail the job
+          console.error("[processor] Network YouTube playlist add failed:", networkErr);
+        }
+      }
+
       platformResults.push({ platform: "youtube", status: "completed" });
     } catch (error) {
       const errMsg =
