@@ -96,9 +96,14 @@ function buildBlogPrompt(ctx: AnalysisContext): string {
     "",
     "DO NOT suggest posts that simply summarize or recap the episode.",
     "DO suggest posts that a listener would want to read AFTER hearing the episode to learn more about something that caught their interest.",
+    ctx.language === "es"
+      ? "\nIMPORTANT: Write all blog titles, descriptions, and keywords in Spanish. The show is Spanish-language."
+      : "",
     "",
     source,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**
@@ -130,12 +135,19 @@ export async function generateAiSuggestions(
     return;
   }
 
+  const showMetadata = await db.showMetadata.findUnique({
+    where: { wpShowId: job.wpShowId },
+  });
+
+  // ShowMetadata.language takes precedence over detected language for blog content
+  const showLanguage = showMetadata?.language ?? language ?? undefined;
+
   const metadata = job.metadata as Record<string, unknown>;
   const ctx: AnalysisContext = {
     title: job.title,
     description: (metadata.description as string) ?? undefined,
     transcript: transcript ?? undefined,
-    language: language ?? undefined,
+    language: showLanguage,
   };
 
   const typesToGenerate = types ?? ["chapters", "summary", "blog"];
