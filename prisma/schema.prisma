@@ -194,6 +194,8 @@ model ShowMetadata {
   hosts             String // Comma-separated host names (e.g. "John Henry, Jake White")
   descriptionFooter  String? // Default text appended to AI-generated episode descriptions
   blogReviewerEmails String? // Comma-separated emails for blog review notifications
+  language          String  @default("en") // Primary content language (e.g. "en", "es")
+  bilingual         Boolean @default(false) // Whether to auto-translate blog posts
 
   @@map("show_metadata")
 }
