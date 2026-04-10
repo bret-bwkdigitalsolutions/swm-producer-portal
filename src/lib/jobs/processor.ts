@@ -32,8 +32,8 @@ export interface ProcessingResult {
  *   2. Transistor (parallel-safe, uses extracted audio)
  *   3. WordPress (last — needs YouTube URL for embed)
  */
-// 10 minutes — generous enough for large uploads, short enough to detect hangs
-const JOB_TIMEOUT_MS = 10 * 60 * 1000;
+// 30 minutes — large videos need time for YouTube + 2x Transistor uploads
+const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 
 export async function processJob(jobId: string): Promise<ProcessingResult> {
   const job = await db.distributionJob.findUnique({
@@ -60,7 +60,7 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
       processJobInner(job),
       new Promise<never>((_, reject) =>
         setTimeout(
-          () => reject(new Error("Job timed out after 10 minutes")),
+          () => reject(new Error("Job timed out after 30 minutes")),
           JOB_TIMEOUT_MS
         )
       ),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useEffect, useCallback } from "react";
 import { updateAiSuggestion, retryPlatform, deleteJob } from "./actions";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -248,9 +248,34 @@ function AiSuggestionCard({ suggestion }: { suggestion: AiSuggestion }) {
   );
 }
 
+const TERMINAL_STATUSES = ["completed", "failed"];
+const POLL_INTERVAL_MS = 5_000;
+
 export function JobDetailView({ job }: { job: SerializedJob }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [liveStatus, setLiveStatus] = useState(job.status);
+  const [livePlatforms, setLivePlatforms] = useState(job.platforms);
+
+  const isTerminal = TERMINAL_STATUSES.includes(liveStatus);
+
+  const pollStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/distribute/${job.id}/status`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setLiveStatus(data.status);
+      setLivePlatforms(data.platforms);
+    } catch {
+      // Silently ignore — next poll will retry
+    }
+  }, [job.id]);
+
+  useEffect(() => {
+    if (isTerminal) return;
+    const interval = setInterval(pollStatus, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [isTerminal, pollStatus]);
 
   const metadata = job.metadata;
   const description = (metadata.description as string) ?? "";
@@ -294,8 +319,8 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className={STATUS_COLORS[job.status] ?? ""}>
-            {STATUS_LABELS[job.status] ?? job.status}
+          <Badge className={STATUS_COLORS[liveStatus] ?? ""}>
+            {STATUS_LABELS[liveStatus] ?? liveStatus}
           </Badge>
           <Button
             variant="outline"
@@ -367,7 +392,7 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
           <CardTitle className="text-base">Platform Status</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {job.platforms.map((platform) => (
+          {livePlatforms.map((platform) => (
             <PlatformStatusRow key={platform.id} platform={platform} />
           ))}
         </CardContent>
