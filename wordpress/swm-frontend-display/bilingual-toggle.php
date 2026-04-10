@@ -22,10 +22,11 @@ function swm_register_bilingual_meta() {
 
     foreach ($fields as $field) {
         register_post_meta('swm_blog', $field, [
-            'show_in_rest' => true,
-            'single'       => true,
-            'type'         => 'string',
-            'auth_callback' => function() {
+            'show_in_rest'      => true,
+            'single'            => true,
+            'type'              => 'string',
+            'sanitize_callback' => 'wp_kses_post',
+            'auth_callback'     => function() {
                 return current_user_can('edit_posts');
             },
         ]);

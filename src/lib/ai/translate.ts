@@ -1,5 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+let _client: Anthropic | null = null;
+
+function getClient(): Anthropic | null {
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!_client) {
+    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _client;
+}
+
 export interface BlogTranslation {
   title: string;
   content: string;
@@ -23,8 +33,8 @@ export async function translateBlogPost(
   fromLanguage: string,
   toLanguage: string
 ): Promise<BlogTranslation | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const client = getClient();
+  if (!client) {
     console.error("[translate] ANTHROPIC_API_KEY is not set.");
     return null;
   }
@@ -64,7 +74,6 @@ export async function translateBlogPost(
   ].join("\n");
 
   try {
-    const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 8192,
