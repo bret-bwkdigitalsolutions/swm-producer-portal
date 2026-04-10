@@ -1,0 +1,30 @@
+.swm-lang-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: #f1f1f1;
+  border-radius: 6px;
+  margin-bottom: 1.5em;
+}
+
+.swm-lang-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #666;
+  transition: background 0.15s, color 0.15s;
+}
+
+.swm-lang-btn.active {
+  background: #fff;
+  color: #111;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.swm-lang-btn:hover:not(.active) {
+  color: #333;
+}
