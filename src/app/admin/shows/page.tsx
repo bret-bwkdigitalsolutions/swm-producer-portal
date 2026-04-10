@@ -7,6 +7,7 @@ import { ShowStakeholderManager } from "./stakeholder-manager";
 import { ShowPlatformLinks } from "./platform-links";
 import { RefreshShowsButton } from "./refresh-shows-button";
 import { ShowHostsEditor } from "./show-hosts-editor";
+import { ShowLanguageEditor } from "./show-language-editor";
 import Link from "next/link";
 import { ArrowRightLeftIcon } from "lucide-react";
 
@@ -122,6 +123,11 @@ export default async function AdminShowsPage() {
                   <ShowHostsEditor
                     wpShowId={show.id}
                     currentHosts={showMeta?.hosts ?? ""}
+                  />
+                  <ShowLanguageEditor
+                    wpShowId={show.id}
+                    currentLanguage={showMeta?.language ?? "en"}
+                    currentBilingual={showMeta?.bilingual ?? false}
                   />
                   <div className="border-t pt-4" />
                   <ShowStakeholderManager

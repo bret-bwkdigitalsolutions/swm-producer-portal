@@ -163,6 +163,42 @@ export async function updateShowHosts(
   }
 }
 
+export async function updateShowLanguage(
+  _prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, message: "Unauthorized." };
+  }
+
+  const wpShowId = parseInt(formData.get("wp_show_id") as string, 10);
+  const language = (formData.get("language") as string)?.trim() || "en";
+  const bilingual = formData.get("bilingual") === "on";
+
+  if (isNaN(wpShowId) || wpShowId <= 0) {
+    return { success: false, message: "Invalid show." };
+  }
+
+  if (language !== "en" && language !== "es") {
+    return { success: false, message: "Invalid language." };
+  }
+
+  try {
+    await db.showMetadata.upsert({
+      where: { wpShowId },
+      create: { wpShowId, hosts: "", language, bilingual },
+      update: { language, bilingual },
+    });
+
+    revalidatePath("/admin/shows");
+    return { success: true, message: "Language settings saved." };
+  } catch (error) {
+    console.error("Failed to update show language:", error);
+    return { success: false, message: "Failed to save language settings." };
+  }
+}
+
 export async function refreshShowCache(): Promise<FormState> {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {
