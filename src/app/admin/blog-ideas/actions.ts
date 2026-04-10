@@ -39,6 +39,11 @@ export async function generateBlogPost(
     return { success: false, message: "Suggestion not found." };
   }
 
+  const showMetadata = await db.showMetadata.findUnique({
+    where: { wpShowId: suggestion.job.wpShowId },
+  });
+  const showLanguage = showMetadata?.language ?? "en";
+
   if (suggestion.type !== "blog") {
     return { success: false, message: "Not a blog suggestion." };
   }
@@ -86,6 +91,9 @@ export async function generateBlogPost(
     "- Third line should be a meta description for SEO (max 160 chars), prefixed with SEO:",
     "- Fourth line should be an SEO focus keyphrase (2-4 words), prefixed with KEYPHRASE:",
     "- Then a blank line, then the HTML body",
+    showLanguage === "es"
+      ? "- IMPORTANT: Write the entire blog post in Spanish — headline, excerpt, SEO description, keyphrase, and HTML body must all be in Spanish"
+      : "",
     customInstructions
       ? `\n## Additional Instructions from Editor\n${customInstructions}`
       : "",
