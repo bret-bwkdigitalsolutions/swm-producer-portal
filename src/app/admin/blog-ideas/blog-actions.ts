@@ -11,6 +11,7 @@ function escapeHtml(str: string): string {
 }
 import { db } from "@/lib/db";
 import { readGoogleDocAsHtml } from "@/lib/google/docs";
+import { translateBlogPost } from "@/lib/ai/translate";
 import { revalidateTag } from "next/cache";
 
 const WP_API_URL = () => process.env.WP_API_URL!;
@@ -215,6 +216,45 @@ export async function publishToWordPress(
   // Use the BlogPost title (admin may have edited it), fall back to doc title
   const title = blogPost.title || docTitle;
 
+  // Look up show language settings
+  const showMetadata = await db.showMetadata.findUnique({
+    where: { wpShowId: blogPost.job.wpShowId },
+  });
+  const isBilingual = showMetadata?.bilingual ?? false;
+  const primaryLanguage = showMetadata?.language ?? "en";
+
+  // Translate if bilingual
+  let translationMeta: Record<string, string> = {};
+  if (isBilingual) {
+    const secondaryLanguage = primaryLanguage === "es" ? "en" : "es";
+    const translation = await translateBlogPost(
+      {
+        title,
+        content: docHtml,
+        excerpt: blogPost.excerpt,
+        seoDescription: blogPost.seoDescription,
+        seoKeyphrase: blogPost.seoKeyphrase,
+      },
+      primaryLanguage,
+      secondaryLanguage
+    );
+
+    if (translation) {
+      const suffix = `_${secondaryLanguage}`;
+      translationMeta = {
+        [`_swm_blog_title${suffix}`]: translation.title,
+        [`_swm_blog_content${suffix}`]: translation.content,
+        [`_swm_blog_excerpt${suffix}`]: translation.excerpt,
+        [`_swm_blog_seo_description${suffix}`]: translation.seoDescription,
+        [`_swm_blog_seo_keyphrase${suffix}`]: translation.seoKeyphrase,
+      };
+    } else {
+      console.warn(
+        `[publishToWordPress] Translation failed for blog post ${blogPostId}. Publishing primary language only.`
+      );
+    }
+  }
+
   // Publish to WordPress as swm_blog custom post type
   try {
     const wpResponse = await fetch(`${WP_API_URL()}/swm_blog`, {
@@ -241,6 +281,7 @@ export async function publishToWordPress(
           ...(blogPost.seoKeyphrase
             ? { _swm_seo_focus_keyphrase: blogPost.seoKeyphrase }
             : {}),
+          ...translationMeta,
         },
       }),
     });
