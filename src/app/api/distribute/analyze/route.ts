@@ -47,22 +47,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  let gcsPath = job.gcsPath;
-  if (!gcsPath) {
-    const jobMeta = job.metadata as Record<string, unknown>;
-    const existingYoutubeUrl = jobMeta.existingYoutubeUrl as string | undefined;
-    if (!existingYoutubeUrl) {
-      return NextResponse.json({ error: "No video uploaded." }, { status: 400 });
-    }
-    console.log(`[analyze] Downloading YouTube video for job ${jobId}`);
-    gcsPath = await downloadYouTubeVideoToGcs(existingYoutubeUrl, jobId);
-    await db.distributionJob.update({
-      where: { id: jobId },
-      data: { gcsPath },
-    });
-  }
-
   try {
+    // For live YouTube recordings: download the video to GCS if not already done
+    let gcsPath = job.gcsPath;
+    if (!gcsPath) {
+      const jobMeta = job.metadata as Record<string, unknown>;
+      const existingYoutubeUrl = jobMeta.existingYoutubeUrl as string | undefined;
+      if (!existingYoutubeUrl) {
+        return NextResponse.json({ error: "No video uploaded." }, { status: 400 });
+      }
+      console.log(`[analyze] Downloading YouTube video for job ${jobId}`);
+      gcsPath = await downloadYouTubeVideoToGcs(existingYoutubeUrl, jobId);
+      await db.distributionJob.update({
+        where: { id: jobId },
+        data: { gcsPath },
+      });
+    }
+
     // 1. Extract audio
     console.log(`[analyze] Extracting audio for job ${jobId}`);
     const gcsAudioPath = await extractAudio(gcsPath);
