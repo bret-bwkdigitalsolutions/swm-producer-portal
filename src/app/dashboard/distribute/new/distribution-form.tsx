@@ -39,6 +39,7 @@ import {
   GlobeIcon,
   PenLineIcon,
   SparklesIcon,
+  LinkIcon,
 } from "lucide-react";
 
 interface Show {
@@ -101,6 +102,8 @@ export function DistributionForm({
     null
   );
   const thumbnailFileRef = useRef<File | null>(null);
+  const [videoSource, setVideoSource] = useState<"upload" | "youtube">("upload");
+  const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -257,8 +260,6 @@ export function DistributionForm({
    * AI path: create job -> upload video -> analyze -> show suggestions
    */
   const startAiAnalysis = useCallback(async () => {
-    // We need a job first. Submit the form data programmatically
-    // to create the job, then upload + analyze.
     if (!formRef.current) return;
 
     setAnalyzing(true);
@@ -267,20 +268,21 @@ export function DistributionForm({
     setAnalysisStep("Creating job...");
 
     try {
-      // Build FormData from current state for job creation
       const fd = new FormData();
       fd.set("show_id", showId);
       fd.set("title", title);
       fd.set("description", "AI-generated description pending");
-      fd.set("video_file_name", videoFileName ?? "");
-      fd.set("video_file_size", videoFileSize.toString());
-      fd.set("video_content_type", videoContentType);
-      // Need at least one platform for validation - use youtube as placeholder
-      // The actual platforms will be set when the form is submitted for real
       fd.set("platform_youtube", "on");
       if (publishState.status === "draft") fd.set("status", "draft");
 
-      // Create the job via server action
+      if (videoSource === "upload") {
+        fd.set("video_file_name", videoFileName ?? "");
+        fd.set("video_file_size", videoFileSize.toString());
+        fd.set("video_content_type", videoContentType);
+      } else {
+        fd.set("existing_youtube_url", youtubeUrlInput);
+      }
+
       const result = await submitDistribution({}, fd);
       if (!result.success || !result.jobId) {
         throw new Error(result.message ?? "Failed to create job");
@@ -289,15 +291,17 @@ export function DistributionForm({
       const jobId = result.jobId;
       setAiUploadedJobId(jobId);
 
-      // Upload video and thumbnail
-      setAnalysisStep("Uploading video...");
-      await Promise.all([
-        uploadVideoToGCS(jobId),
-        uploadThumbnailToGCS(jobId),
-      ]);
+      if (videoSource === "upload") {
+        setAnalysisStep("Uploading video...");
+        await Promise.all([
+          uploadVideoToGCS(jobId),
+          uploadThumbnailToGCS(jobId),
+        ]);
+      } else {
+        await uploadThumbnailToGCS(jobId);
+      }
 
-      // Mark upload complete (sets gcsPath on server)
-      setAnalysisStep("Extracting audio...");
+      setAnalysisStep("Preparing...");
       const confirmRes = await fetch("/api/upload/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -308,8 +312,11 @@ export function DistributionForm({
         throw new Error(err.error ?? "Failed to confirm upload");
       }
 
-      // Run AI analysis
-      setAnalysisStep("Transcribing... this may take a few minutes");
+      setAnalysisStep(
+        videoSource === "youtube"
+          ? "Downloading video from YouTube... this may take several minutes"
+          : "Transcribing... this may take a few minutes"
+      );
       const analyzeRes = await fetch("/api/distribute/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -326,7 +333,6 @@ export function DistributionForm({
       const aiSuggestions: AiSuggestion[] = data.suggestions ?? [];
       setSuggestions(aiSuggestions);
 
-      // Pre-populate description and chapters from suggestions
       const summarySuggestion = aiSuggestions.find((s) => s.type === "summary");
       if (summarySuggestion) {
         const footer = descriptionFooters[showId];
@@ -335,14 +341,11 @@ export function DistributionForm({
           : summarySuggestion.content;
         setDescription(desc);
       }
-      const chaptersSuggestion = aiSuggestions.find(
-        (s) => s.type === "chapters"
-      );
+      const chaptersSuggestion = aiSuggestions.find((s) => s.type === "chapters");
       if (chaptersSuggestion) {
         setChapters(chaptersSuggestion.content);
       }
 
-      // Parse AI keywords and merge with any un-selected frequent tags
       const keywordsSuggestion = aiSuggestions.find((s) => s.type === "keywords");
       if (keywordsSuggestion) {
         const aiKeywords = keywordsSuggestion.content
@@ -370,9 +373,11 @@ export function DistributionForm({
   }, [
     showId,
     title,
+    videoSource,
     videoFileName,
     videoFileSize,
     videoContentType,
+    youtubeUrlInput,
     publishState.status,
     uploadVideoToGCS,
     uploadThumbnailToGCS,
@@ -387,10 +392,14 @@ export function DistributionForm({
   const uploadAndConfirmManual = useCallback(
     async (jobId: string) => {
       try {
-        await Promise.all([
-          uploadVideoToGCS(jobId),
-          uploadThumbnailToGCS(jobId),
-        ]);
+        if (videoSource === "upload") {
+          await Promise.all([
+            uploadVideoToGCS(jobId),
+            uploadThumbnailToGCS(jobId),
+          ]);
+        } else {
+          await uploadThumbnailToGCS(jobId);
+        }
 
         const confirmRes = await fetch("/api/upload/confirm", {
           method: "POST",
@@ -410,7 +419,7 @@ export function DistributionForm({
         setUploading(false);
       }
     },
-    [uploadVideoToGCS, uploadThumbnailToGCS, router]
+    [videoSource, uploadVideoToGCS, uploadThumbnailToGCS, router]
   );
 
   /**
@@ -495,7 +504,11 @@ export function DistributionForm({
   ]);
 
   const isDisabled = isPending || uploading || analyzing;
-  const showModeChoice = !!videoFileName && !descriptionMode;
+  const videoSourceReady =
+    videoSource === "upload"
+      ? !!videoFileName
+      : youtubeUrlInput.trim().startsWith("https://www.youtube.com/watch?v=");
+  const showModeChoice = videoSourceReady && !descriptionMode;
 
   const aiReady = descriptionMode === "ai" && suggestions.length > 0 && !analyzing;
 
@@ -606,48 +619,130 @@ export function DistributionForm({
             }}
           />
 
-          {/* Video file select */}
+          {/* Video source toggle */}
           <div className="space-y-2">
-            <Label htmlFor="video_file">
-              Video File <span className="text-destructive">*</span>
-            </Label>
-            <label
-              htmlFor="video_file"
-              className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-8 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
-            >
-              <UploadIcon className="size-8 text-muted-foreground" />
-              {videoFileName ? (
-                <span className="text-sm font-medium">{videoFileName}</span>
-              ) : (
-                <span className="text-sm text-muted-foreground">
-                  Click to upload or drag and drop a video file
-                </span>
-              )}
-              <input
-                id="video_file"
-                type="file"
-                accept="video/*"
-                className="sr-only"
-                disabled={isDisabled}
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  videoFileRef.current = file;
-                  setVideoFileName(file?.name ?? null);
-                  setVideoFileSize(file?.size ?? 0);
-                  setVideoContentType(file?.type ?? "");
-                  // Reset mode if video changes
+            <Label>Video Source</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setVideoSource("upload");
+                  setYoutubeUrlInput("");
                   setDescriptionMode(null);
                   setSuggestions([]);
                   setAiUploadedJobId(null);
                   setTags(frequentTags[showId] ?? []);
                   setSuggestedTags([]);
                 }}
-              />
-            </label>
+                disabled={isDisabled}
+                className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors ${
+                  videoSource === "upload"
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-input hover:border-primary/50 hover:bg-muted/30"
+                }`}
+              >
+                <UploadIcon className="size-4" />
+                Upload video file
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setVideoSource("youtube");
+                  videoFileRef.current = null;
+                  setVideoFileName(null);
+                  setVideoFileSize(0);
+                  setVideoContentType("");
+                  setDescriptionMode(null);
+                  setSuggestions([]);
+                  setAiUploadedJobId(null);
+                  setTags(frequentTags[showId] ?? []);
+                  setSuggestedTags([]);
+                }}
+                disabled={isDisabled}
+                className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors ${
+                  videoSource === "youtube"
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-input hover:border-primary/50 hover:bg-muted/30"
+                }`}
+              >
+                <LinkIcon className="size-4" />
+                Recorded live on YouTube
+              </button>
+            </div>
           </div>
 
+          {/* Upload dropzone — only shown when source is "upload" */}
+          {videoSource === "upload" && (
+            <div className="space-y-2">
+              <Label htmlFor="video_file">
+                Video File <span className="text-destructive">*</span>
+              </Label>
+              <label
+                htmlFor="video_file"
+                className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-8 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
+              >
+                <UploadIcon className="size-8 text-muted-foreground" />
+                {videoFileName ? (
+                  <span className="text-sm font-medium">{videoFileName}</span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    Click to upload or drag and drop a video file
+                  </span>
+                )}
+                <input
+                  id="video_file"
+                  type="file"
+                  accept="video/*"
+                  className="sr-only"
+                  disabled={isDisabled}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    videoFileRef.current = file;
+                    setVideoFileName(file?.name ?? null);
+                    setVideoFileSize(file?.size ?? 0);
+                    setVideoContentType(file?.type ?? "");
+                    setDescriptionMode(null);
+                    setSuggestions([]);
+                    setAiUploadedJobId(null);
+                    setTags(frequentTags[showId] ?? []);
+                    setSuggestedTags([]);
+                  }}
+                />
+              </label>
+            </div>
+          )}
+
+          {/* YouTube URL input — only shown when source is "youtube" */}
+          {videoSource === "youtube" && (
+            <div className="space-y-2">
+              <Label htmlFor="youtube_url_input">
+                YouTube URL <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="youtube_url_input"
+                type="url"
+                placeholder="https://www.youtube.com/watch?v=..."
+                value={youtubeUrlInput}
+                onChange={(e) => {
+                  setYoutubeUrlInput(e.target.value);
+                  if (aiUploadedJobId) {
+                    setDescriptionMode(null);
+                    setSuggestions([]);
+                    setAiUploadedJobId(null);
+                    setTags(frequentTags[showId] ?? []);
+                    setSuggestedTags([]);
+                  }
+                }}
+                disabled={isDisabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                Paste the URL of the YouTube video that was recorded live. The system will download it to extract audio for Transistor and generate AI suggestions.
+              </p>
+            </div>
+          )}
+
           {/* Hidden fields for video metadata */}
-          {videoFileName && (
+          {videoSource === "upload" && videoFileName && (
             <>
               <input type="hidden" name="video_file_name" value={videoFileName} />
               <input
@@ -661,6 +756,9 @@ export function DistributionForm({
                 value={videoContentType}
               />
             </>
+          )}
+          {videoSource === "youtube" && youtubeUrlInput && (
+            <input type="hidden" name="existing_youtube_url" value={youtubeUrlInput} />
           )}
 
           {/* Episode title */}
@@ -719,8 +817,8 @@ export function DistributionForm({
             </Label>
           </div>
 
-          {/* Thumbnail upload — visible once a video is selected */}
-          {videoFileName && (
+          {/* Thumbnail upload — visible once video source is ready */}
+          {videoSourceReady && (
             <div className="space-y-2">
               <Label htmlFor="thumbnail">Thumbnail</Label>
               <label
