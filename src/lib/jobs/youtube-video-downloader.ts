@@ -1,6 +1,6 @@
 import ytdl from "@distube/ytdl-core";
 import { createWriteStream } from "node:fs";
-import { unlink, mkdtemp } from "node:fs/promises";
+import { unlink, mkdtemp, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -24,7 +24,7 @@ export async function downloadYouTubeVideoToGcs(
   let videoId: string | null = null;
   try {
     const url = new URL(youtubeUrl);
-    if (!url.hostname.includes("youtube.com") && !url.hostname.includes("youtu.be")) {
+    if (!url.hostname.includes("youtube.com")) {
       throw new Error(`Invalid YouTube URL: ${youtubeUrl}`);
     }
     videoId = url.searchParams.get("v");
@@ -71,5 +71,6 @@ export async function downloadYouTubeVideoToGcs(
     return gcsPath;
   } finally {
     await unlink(tempVideoPath).catch(() => {});
+    await rmdir(tempDir).catch(() => {});
   }
 }

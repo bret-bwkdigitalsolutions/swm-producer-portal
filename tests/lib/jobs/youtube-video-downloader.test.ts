@@ -7,6 +7,7 @@ const {
   mockPipeline,
   mockMkdtemp,
   mockUnlink,
+  mockRmdir,
 } = vi.hoisted(() => {
   const { Writable } = require("node:stream");
   return {
@@ -17,6 +18,7 @@ const {
     mockPipeline: vi.fn().mockResolvedValue(undefined),
     mockMkdtemp: vi.fn().mockResolvedValue("/tmp/swm-yt-dl-test"),
     mockUnlink: vi.fn().mockResolvedValue(undefined),
+    mockRmdir: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -53,10 +55,10 @@ vi.mock("node:stream/promises", () => ({
 }));
 
 vi.mock("node:fs/promises", () => ({
-  default: { mkdtemp: mockMkdtemp, unlink: mockUnlink },
+  default: { mkdtemp: mockMkdtemp, unlink: mockUnlink, rmdir: mockRmdir },
   mkdtemp: mockMkdtemp,
   unlink: mockUnlink,
-  rmdir: vi.fn().mockResolvedValue(undefined),
+  rmdir: mockRmdir,
 }));
 
 import { downloadYouTubeVideoToGcs } from "@/lib/jobs/youtube-video-downloader";
@@ -67,6 +69,8 @@ describe("downloadYouTubeVideoToGcs", () => {
     vi.clearAllMocks();
     // Restore return values cleared by vi.clearAllMocks()
     mockMkdtemp.mockResolvedValue("/tmp/swm-yt-dl-test");
+    mockUnlink.mockResolvedValue(undefined);
+    mockRmdir.mockResolvedValue(undefined);
     mockPipeline.mockResolvedValue(undefined);
     mockBucketUpload.mockResolvedValue([]);
     process.env.GCS_BUCKET_NAME = "test-bucket";
