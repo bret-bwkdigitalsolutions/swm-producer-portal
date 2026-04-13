@@ -47,9 +47,18 @@ export async function downloadYouTubeVideoToGcs(
 
   const bucketName = process.env.GCS_BUCKET_NAME!;
   const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
-  const storage = credentialsJson
-    ? new Storage({ credentials: JSON.parse(credentialsJson) })
-    : new Storage({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
+  let storage: Storage;
+  if (credentialsJson) {
+    let credentials: object;
+    try {
+      credentials = JSON.parse(credentialsJson);
+    } catch {
+      throw new Error("GCS_CREDENTIALS_JSON is not valid JSON — check the Railway environment variable");
+    }
+    storage = new Storage({ credentials });
+  } else {
+    storage = new Storage({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
+  }
 
   const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-dl-"));
   const tempVideoPath = join(tempDir, "video.mp4");
