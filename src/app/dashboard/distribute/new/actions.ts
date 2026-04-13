@@ -47,6 +47,7 @@ export async function submitDistribution(
   const videoFileName = formData.get("video_file_name") as string | null;
   const videoFileSize = formData.get("video_file_size") as string | null;
   const videoContentType = formData.get("video_content_type") as string | null;
+  const existingYoutubeUrl = formData.get("existing_youtube_url") as string | null;
   const seasonNumber = formData.get("season_number") as string | null;
   const episodeNumber = formData.get("episode_number") as string | null;
   const explicit = formData.get("explicit") === "true";
@@ -79,8 +80,8 @@ export async function submitDistribution(
     errors.scheduled_at = ["Please select a date and time for scheduling."];
   }
 
-  if (!videoFileName) {
-    errors.video_file = ["Please select a video file."];
+  if (!videoFileName && !existingYoutubeUrl) {
+    errors.video_file = ["Please select a video file or provide a YouTube URL."];
   }
 
   if (Object.keys(errors).length > 0) {
@@ -117,6 +118,7 @@ export async function submitDistribution(
     seasonNumber: seasonNumber ? parseInt(seasonNumber, 10) : undefined,
     episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
     explicit,
+    ...(existingYoutubeUrl ? { existingYoutubeUrl } : {}),
   };
 
   // Verify user has access to this show
