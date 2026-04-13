@@ -4,16 +4,26 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Mock Prisma
 // ---------------------------------------------------------------------------
 
-const mockFindUnique = vi.fn();
-const mockCreate = vi.fn();
+const mockJobFindUnique = vi.fn();
+const mockShowMetaFindUnique = vi.fn();
+const mockSuggestionFindFirst = vi.fn();
+const mockSuggestionUpsert = vi.fn();
+const mockSuggestionDeleteMany = vi.fn();
+const mockSuggestionCreate = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
     distributionJob: {
-      findUnique: (...args: unknown[]) => mockFindUnique(...args),
+      findUnique: (...args: unknown[]) => mockJobFindUnique(...args),
+    },
+    showMetadata: {
+      findUnique: (...args: unknown[]) => mockShowMetaFindUnique(...args),
     },
     aiSuggestion: {
-      create: (...args: unknown[]) => mockCreate(...args),
+      findFirst: (...args: unknown[]) => mockSuggestionFindFirst(...args),
+      upsert: (...args: unknown[]) => mockSuggestionUpsert(...args),
+      deleteMany: (...args: unknown[]) => mockSuggestionDeleteMany(...args),
+      create: (...args: unknown[]) => mockSuggestionCreate(...args),
     },
   },
 }));
@@ -46,6 +56,7 @@ import { generateAiSuggestions } from "@/lib/jobs/ai-processor";
 
 const MOCK_JOB = {
   id: "job-123",
+  wpShowId: 42,
   title: "The Mystery of the Missing Cat",
   metadata: {
     description: "An in-depth look at a puzzling case.",
@@ -69,54 +80,52 @@ describe("generateAiSuggestions", () => {
     vi.clearAllMocks();
     process.env = { ...originalEnv, ANTHROPIC_API_KEY: "test-key-123" };
 
-    mockFindUnique.mockResolvedValue(MOCK_JOB);
+    mockJobFindUnique.mockResolvedValue(MOCK_JOB);
+    mockShowMetaFindUnique.mockResolvedValue(null); // no show metadata
+    mockSuggestionFindFirst.mockResolvedValue(null); // no existing suggestion
+    mockSuggestionUpsert.mockResolvedValue({ id: "suggestion-1" });
+    mockSuggestionDeleteMany.mockResolvedValue({ count: 0 });
+    mockSuggestionCreate.mockResolvedValue({ id: "suggestion-new" });
     mockMessagesCreate.mockResolvedValue(
       makeMockResponse("Mock AI response content")
     );
-    mockCreate.mockResolvedValue({ id: "suggestion-1" });
   });
 
   afterEach(() => {
     process.env = originalEnv;
   });
 
-  it("creates three AI suggestions (chapters, summary, blog) for a valid job", async () => {
+  it("creates four AI suggestions (chapters, summary, keywords, blog) for a valid job", async () => {
     await generateAiSuggestions("job-123", "This is a transcript about cats.");
 
-    // Should have fetched the job
-    expect(mockFindUnique).toHaveBeenCalledWith({
-      where: { id: "job-123" },
-    });
+    expect(mockJobFindUnique).toHaveBeenCalledWith({ where: { id: "job-123" } });
 
-    // Should have called Claude 3 times
-    expect(mockMessagesCreate).toHaveBeenCalledTimes(3);
+    // 3 via Promise.allSettled (chapters, summary, keywords) + 1 for blog = 4
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(4);
 
-    // Should have created 3 AiSuggestion records
-    expect(mockCreate).toHaveBeenCalledTimes(3);
-
-    const types = mockCreate.mock.calls.map(
-      (call: unknown[]) => (call[0] as { data: { type: string } }).data.type
+    // chapters, summary, keywords are upserted (3 calls)
+    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(3);
+    const upsertTypes = mockSuggestionUpsert.mock.calls.map(
+      (call) => (call[0] as { create: { type: string } }).create.type
     );
-    expect(types).toContain("chapters");
-    expect(types).toContain("summary");
-    expect(types).toContain("blog");
+    expect(upsertTypes).toContain("chapters");
+    expect(upsertTypes).toContain("summary");
+    expect(upsertTypes).toContain("keywords");
 
-    // All suggestions should default to accepted: false
-    for (const call of mockCreate.mock.calls) {
-      expect(
-        (call as unknown[])[0] as { data: { accepted: boolean } }
-      ).toMatchObject({
-        data: expect.objectContaining({ accepted: false }),
-      });
-    }
+    // blog ideas are created (1 — mock response has no '---' separator)
+    expect(mockSuggestionCreate).toHaveBeenCalledTimes(1);
+    expect(mockSuggestionCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ type: "blog", accepted: false }),
+    });
   });
 
   it("uses title/description when no transcript is provided", async () => {
     await generateAiSuggestions("job-123");
 
-    // Should still generate all 3 suggestion types
-    expect(mockMessagesCreate).toHaveBeenCalledTimes(3);
-    expect(mockCreate).toHaveBeenCalledTimes(3);
+    // Should still generate all 4 suggestion types
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(4);
+    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(3);
+    expect(mockSuggestionCreate).toHaveBeenCalledTimes(1);
 
     // Verify prompts contain the title (not "Transcript:")
     for (const call of mockMessagesCreate.mock.calls) {
@@ -126,6 +135,39 @@ describe("generateAiSuggestions", () => {
       expect(prompt).toContain("The Mystery of the Missing Cat");
       expect(prompt).not.toContain("Transcript:");
     }
+  });
+
+  it("keywords prompt includes SEO tag instructions and transcript content", async () => {
+    await generateAiSuggestions("job-123", "A transcript about serial killers and forensic science.");
+
+    // Find the call where the prompt contains keywords-specific instructions
+    const keywordsCall = mockMessagesCreate.mock.calls.find((call) => {
+      const params = call[0] as { messages: { content: string }[] };
+      return params.messages[0].content.includes("One tag per line");
+    });
+    expect(keywordsCall).toBeDefined();
+
+    const prompt = (keywordsCall![0] as { messages: { content: string }[] })
+      .messages[0].content;
+    expect(prompt).toContain("8-12");
+    expect(prompt).toContain("Lowercase only");
+    expect(prompt).toContain("A transcript about serial killers");
+  });
+
+  it("keywords prompt uses Spanish instruction when show language is es", async () => {
+    mockShowMetaFindUnique.mockResolvedValue({ language: "es" });
+
+    await generateAiSuggestions("job-123", "Una transcripción en español.");
+
+    const keywordsCall = mockMessagesCreate.mock.calls.find((call) => {
+      const params = call[0] as { messages: { content: string }[] };
+      return params.messages[0].content.includes("One tag per line");
+    });
+    expect(keywordsCall).toBeDefined();
+
+    const prompt = (keywordsCall![0] as { messages: { content: string }[] })
+      .messages[0].content;
+    expect(prompt).toContain("Write all tags in Spanish");
   });
 
   it("skips generation gracefully when ANTHROPIC_API_KEY is missing", async () => {
@@ -141,8 +183,14 @@ describe("generateAiSuggestions", () => {
     // Re-mock after resetModules
     vi.doMock("@/lib/db", () => ({
       db: {
-        distributionJob: { findUnique: mockFindUnique },
-        aiSuggestion: { create: mockCreate },
+        distributionJob: { findUnique: mockJobFindUnique },
+        showMetadata: { findUnique: mockShowMetaFindUnique },
+        aiSuggestion: {
+          findFirst: mockSuggestionFindFirst,
+          upsert: mockSuggestionUpsert,
+          deleteMany: mockSuggestionDeleteMany,
+          create: mockSuggestionCreate,
+        },
       },
     }));
     vi.doMock("@anthropic-ai/sdk", () => ({
@@ -161,28 +209,32 @@ describe("generateAiSuggestions", () => {
       expect.stringContaining("ANTHROPIC_API_KEY is not set")
     );
     expect(mockMessagesCreate).not.toHaveBeenCalled();
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockSuggestionUpsert).not.toHaveBeenCalled();
+    expect(mockSuggestionCreate).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
   });
 
   it("handles partial failures gracefully — creates suggestions for successful calls", async () => {
-    // First call succeeds, second fails, third succeeds
+    // chapters succeeds, summary fails, keywords succeeds, blog succeeds
     mockMessagesCreate
       .mockResolvedValueOnce(makeMockResponse("Chapters content"))
       .mockRejectedValueOnce(new Error("Rate limit exceeded"))
+      .mockResolvedValueOnce(makeMockResponse("Keywords content"))
       .mockResolvedValueOnce(makeMockResponse("Blog content"));
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await generateAiSuggestions("job-123", "Some transcript");
 
-    // Two suggestions should have been created (the one that failed won't)
-    expect(mockCreate).toHaveBeenCalledTimes(2);
+    // 2 upserts succeed (chapters and keywords), 1 fails (summary)
+    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(2);
+    // blog create succeeds
+    expect(mockSuggestionCreate).toHaveBeenCalledTimes(1);
 
     // Should have logged the error
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to generate suggestion"),
+      expect.stringContaining("[ai-processor] Failed:"),
       expect.any(Error)
     );
 
@@ -190,14 +242,15 @@ describe("generateAiSuggestions", () => {
   });
 
   it("handles job not found", async () => {
-    mockFindUnique.mockResolvedValue(null);
+    mockJobFindUnique.mockResolvedValue(null);
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await generateAiSuggestions("nonexistent-job");
 
     expect(mockMessagesCreate).not.toHaveBeenCalled();
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockSuggestionUpsert).not.toHaveBeenCalled();
+    expect(mockSuggestionCreate).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("not found")
     );
