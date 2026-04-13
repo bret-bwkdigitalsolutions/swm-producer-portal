@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { extractAudio } from "@/lib/jobs/audio-extractor";
 import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
 import { generateAiSuggestions } from "@/lib/jobs/ai-processor";
+import { downloadYouTubeVideoToGcs } from "@/lib/jobs/youtube-video-downloader";
 
 /**
  * POST /api/distribute/analyze
@@ -46,14 +47,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  if (!job.gcsPath) {
-    return NextResponse.json({ error: "No video uploaded." }, { status: 400 });
+  let gcsPath = job.gcsPath;
+  if (!gcsPath) {
+    const jobMeta = job.metadata as Record<string, unknown>;
+    const existingYoutubeUrl = jobMeta.existingYoutubeUrl as string | undefined;
+    if (!existingYoutubeUrl) {
+      return NextResponse.json({ error: "No video uploaded." }, { status: 400 });
+    }
+    console.log(`[analyze] Downloading YouTube video for job ${jobId}`);
+    gcsPath = await downloadYouTubeVideoToGcs(existingYoutubeUrl, jobId);
+    await db.distributionJob.update({
+      where: { id: jobId },
+      data: { gcsPath },
+    });
   }
 
   try {
     // 1. Extract audio
     console.log(`[analyze] Extracting audio for job ${jobId}`);
-    const gcsAudioPath = await extractAudio(job.gcsPath);
+    const gcsAudioPath = await extractAudio(gcsPath);
 
     // 2. Transcribe
     console.log(`[analyze] Transcribing audio for job ${jobId}`);

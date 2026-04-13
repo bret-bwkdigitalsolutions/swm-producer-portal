@@ -57,10 +57,14 @@ export async function POST(request: NextRequest) {
   }
 
   if (!job.gcsPath) {
-    return NextResponse.json(
-      { error: "No file has been uploaded for this job." },
-      { status: 400 }
-    );
+    const jobMetadata = job.metadata as Record<string, unknown>;
+    if (!jobMetadata.existingYoutubeUrl) {
+      return NextResponse.json(
+        { error: "No file has been uploaded for this job." },
+        { status: 400 }
+      );
+    }
+    // Live YouTube job — no GCS upload needed, proceeding without a file
   }
 
   // Move to pending if still uploading
