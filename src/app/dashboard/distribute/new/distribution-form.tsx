@@ -757,7 +757,7 @@ export function DistributionForm({
               />
             </>
           )}
-          {videoSource === "youtube" && youtubeUrlInput && (
+          {videoSource === "youtube" && youtubeUrlInput.trim().startsWith("https://www.youtube.com/watch?v=") && (
             <input type="hidden" name="existing_youtube_url" value={youtubeUrlInput} />
           )}
 
