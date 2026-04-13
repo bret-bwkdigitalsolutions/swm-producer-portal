@@ -1,56 +1,56 @@
 # swm-producer-portal — Living State
 
 ## What This Is
-A web portal for content producers to streamline multimedia workflows, combining AI-powered transcription, content generation, and rich text editing into a unified platform. Producers upload audio content, receive automated transcriptions via speech-to-text processing, and leverage AI assistance to transform raw content into polished output, reducing the manual overhead of content creation pipelines.
+A web portal enabling content producers to transform audio recordings into polished written content through AI-powered transcription and editing workflows. Producers upload audio files, receive automated transcriptions via Deepgram, and use Claude AI assistance within a rich text editor to refine and enhance their content for publication.
 
 ## Current Architecture
-Next.js 16 application with App Router and React 19, configured for standalone deployment. Prisma ORM manages PostgreSQL data with dedicated adapter, while NextAuth handles authentication using Prisma for session storage. External services include Deepgram for speech-to-text, Anthropic Claude for AI content generation, Google Cloud Storage for file persistence, and Upstash Redis for caching layers. Resend provides email delivery. Frontend uses Base UI components with Tailwind CSS and Tiptap rich text editor. The standalone output configuration suggests containerized deployment strategy, with server-external package configuration isolating database drivers from the Next.js bundle.
+Next.js 16 application with App Router serving a React 19 frontend, configured for standalone container deployment. PostgreSQL database managed through Prisma ORM with dedicated adapter for connection pooling. NextAuth provides authentication with Prisma-based session storage. External service integrations include Deepgram for speech-to-text processing, Anthropic Claude for AI content assistance, Google Cloud Storage for audio file persistence, Upstash Redis for caching, and Resend for email delivery. Frontend combines Base UI headless components with Tailwind CSS styling and Tiptap for rich text editing. The serverExternalPackages configuration isolates database drivers from the Next.js bundle to support containerized deployment.
 
 ## What Works Today
-- User authentication and session management through NextAuth
-- Rich text editing with link embedding, content placeholders, and collaborative features
-- Audio file transcription processing via Deepgram speech-to-text API
-- AI-powered content enhancement and generation using Anthropic Claude
-- File upload and persistent storage through Google Cloud Storage
-- Email notifications and communications via Resend
-- Chart visualization and analytics display components
-- Database operations with automated seeding for development
-- Responsive UI with modern component library and styling system
+- User registration and session-based authentication
+- Audio file upload to Google Cloud Storage
+- Speech-to-text transcription via Deepgram API integration
+- Rich text editing with link insertion, placeholder text, and content formatting
+- AI content enhancement requests to Anthropic Claude
+- Email notifications through Resend service
+- Data visualization components using Recharts
+- Database seeding for development environments
+- Component testing framework with Vitest and React Testing Library
 
 ## Known Gaps & Limitations
-- Project structure and component implementations remain invisible from repository root
-- Producer-specific workflows and content organization patterns undefined
-- Error handling strategies for external service failures unclear
-- Audio processing pipeline limitations and file size constraints unspecified
-- Real-time collaboration features absent despite multi-user portal implications
-- Test coverage minimal with only basic Vitest framework configuration
-- Environment configuration patterns and deployment secrets management unclear
-- Content versioning and collaborative editing conflict resolution missing
+- Application pages and routing structure not visible in repository root examination
+- Producer workflow states and content management patterns undefined from available code
+- Audio processing queue management and failure recovery mechanisms unclear
+- File size limits and supported audio formats for transcription unspecified
+- User roles and content access controls implementation unknown
+- Real-time features absent despite collaborative portal positioning
+- Production environment configuration and secrets management patterns unclear
+- Limited test coverage beyond basic framework setup
 
 ## Next Meaningful Capabilities
-- Project-based content organization with producer workspace isolation and permissions
-- Automated transcription-to-publication workflows with customizable output templates
-- Real-time collaborative editing for multi-producer content creation sessions
-- Content performance analytics dashboard with engagement metrics and insights
-- Batch audio processing capabilities for podcast series and episodic content
-- Distribution platform integrations for automated content publishing and syndication
+- Project workspace organization for managing multiple content pieces per producer
+- Transcription accuracy improvement through custom vocabulary and speaker identification
+- Content template system for consistent output formatting across different content types
+- Collaborative review workflow allowing multiple stakeholders to suggest edits
+- Automated content distribution to publishing platforms and social media channels
+- Performance analytics showing transcription accuracy, editing time, and content engagement metrics
 
 ## Open Technical Questions
-- How producer roles, permissions, and content ownership boundaries are enforced
-- Whether Redis serves session caching, job queuing, or real-time synchronization needs
-- File storage architecture for large media assets and retention policy implementation
-- AI prompt engineering strategy for maintaining consistent content generation quality
-- Real-time feature implementation approach given current synchronous-only stack
-- Content revision control and collaborative editing conflict resolution mechanisms
-- Production deployment strategy and infrastructure requirements for standalone builds
+- Whether Redis serves as session store, job queue, or real-time synchronization layer
+- How audio processing handles long-form content and maintains transcription state
+- User permission model for shared content and multi-producer collaboration scenarios
+- AI prompt engineering strategy for maintaining consistent content enhancement quality
+- File storage retention policies and cost management for large audio libraries
+- Production deployment infrastructure requirements for standalone container builds
+- Integration approach for external publishing platforms and content management systems
 
 ## Key Files & Entry Points
-- `app/page.tsx` — Primary application entry point and user interface
-- `package.json` — Dependency management and development workflow scripts
-- `next.config.ts` — Build configuration with standalone deployment and external packages
-- `tsconfig.json` — TypeScript configuration with path mapping and module resolution
-- `prisma/seed.ts` — Database initialization and development data population
-- `scripts/smoke-test.ts` — Application health verification for deployment validation
+- `app/page.tsx` — Main application landing page and primary user interface
+- `next.config.ts` — Build configuration with standalone output and external package handling
+- `package.json` — Project dependencies and development workflow automation scripts
+- `prisma/seed.ts` — Database initialization script for development data setup
+- `scripts/smoke-test.ts` — Deployment verification and application health checks
+- `tsconfig.json` — TypeScript configuration with path mapping for source organization
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-06_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-13_
