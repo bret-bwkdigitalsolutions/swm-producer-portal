@@ -8,6 +8,7 @@ import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification } from "@/lib/notifications";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl } from "@/lib/gcs";
+import { downloadYouTubeVideoToGcs } from "./youtube-video-downloader";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -136,6 +137,23 @@ async function processJobInner(
   const metadata = job.metadata as Record<string, unknown>;
   const platformResults: ProcessingResult["platformResults"] = [];
 
+  const existingYoutubeUrl = metadata.existingYoutubeUrl as string | undefined;
+
+  // For live YouTube recordings: download the video to GCS if not already done.
+  // After this point, effectiveGcsPath is set and all downstream processing
+  // (audio extraction, Transistor, WordPress) runs identically to a normal upload.
+  let effectiveGcsPath: string | null = job.gcsPath;
+  if (existingYoutubeUrl && !effectiveGcsPath) {
+    console.log(`[processor] Live YouTube recording — downloading ${existingYoutubeUrl}`);
+    const downloadedPath = await downloadYouTubeVideoToGcs(existingYoutubeUrl, job.id);
+    await db.distributionJob.update({
+      where: { id: job.id },
+      data: { gcsPath: downloadedPath },
+    });
+    effectiveGcsPath = downloadedPath;
+    console.log(`[processor] YouTube video downloaded to GCS: ${downloadedPath}`);
+  }
+
   // Look up show hosts for Transistor author field
   const showMeta = await db.showMetadata.findUnique({
     where: { wpShowId: job.wpShowId },
@@ -147,9 +165,9 @@ async function processJobInner(
   const transistorNeedsWork = job.platforms.some(
     (p) => p.platform === "transistor" && p.status !== "completed"
   );
-  if (transistorNeedsWork && job.gcsPath) {
+  if (transistorNeedsWork && effectiveGcsPath) {
     try {
-      gcsAudioPath = await extractAudio(job.gcsPath);
+      gcsAudioPath = await extractAudio(effectiveGcsPath);
     } catch (error) {
       console.error("[processor] Audio extraction failed:", error);
       // Mark Transistor as failed but continue with other platforms
@@ -224,11 +242,11 @@ async function processJobInner(
   const youtubeNeedsWork = job.platforms.some(
     (p) => p.platform === "youtube" && p.status !== "completed"
   );
-  if (youtubeNeedsWork && job.gcsPath) {
+  if (youtubeNeedsWork && effectiveGcsPath) {
     try {
       const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
       tempVideoPath = join(tempDir, "video.mp4");
-      const downloadUrl = await generateSignedDownloadUrl(job.gcsPath);
+      const downloadUrl = await generateSignedDownloadUrl(effectiveGcsPath);
       const response = await fetch(downloadUrl);
       if (!response.ok || !response.body) {
         throw new Error(`Failed to download video: ${response.status}`);
@@ -242,14 +260,29 @@ async function processJobInner(
   }
 
   // --- Phase 1: YouTube (must complete first for WordPress) ---
-  let youtubeUrl: string | null = null;
-  let youtubeVideoId: string | null = null;
+  let youtubeUrl: string | null = existingYoutubeUrl ?? null;
+  let youtubeVideoId: string | null = youtubeUrl
+    ? new URL(youtubeUrl).searchParams.get("v")
+    : null;
   const youtubePlatform = job.platforms.find((p) => p.platform === "youtube");
 
   if (youtubePlatform && youtubePlatform.status === "completed") {
     // Already completed — preserve the result for WordPress
     youtubeUrl = youtubePlatform.externalUrl;
     youtubeVideoId = youtubePlatform.externalId;
+    platformResults.push({ platform: "youtube", status: "completed" });
+  } else if (youtubePlatform && existingYoutubeUrl) {
+    // Live recording — this video is already on YouTube at the provided URL.
+    // Mark the platform as completed without re-uploading.
+    await db.distributionJobPlatform.update({
+      where: { id: youtubePlatform.id },
+      data: {
+        status: "completed",
+        externalId: new URL(existingYoutubeUrl).searchParams.get("v") ?? "",
+        externalUrl: existingYoutubeUrl,
+        completedAt: new Date(),
+      },
+    });
     platformResults.push({ platform: "youtube", status: "completed" });
   } else if (youtubePlatform) {
     await db.distributionJobPlatform.update({
