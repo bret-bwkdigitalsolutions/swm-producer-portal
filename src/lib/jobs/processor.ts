@@ -242,7 +242,7 @@ async function processJobInner(
   const youtubeNeedsWork = job.platforms.some(
     (p) => p.platform === "youtube" && p.status !== "completed"
   );
-  if (youtubeNeedsWork && effectiveGcsPath) {
+  if (youtubeNeedsWork && effectiveGcsPath && !existingYoutubeUrl) {
     try {
       const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
       tempVideoPath = join(tempDir, "video.mp4");
