@@ -84,6 +84,20 @@ export async function submitDistribution(
     errors.video_file = ["Please select a video file or provide a YouTube URL."];
   }
 
+  if (existingYoutubeUrl) {
+    try {
+      const parsedUrl = new URL(existingYoutubeUrl);
+      const videoId = parsedUrl.searchParams.get("v");
+      if (!parsedUrl.hostname.includes("youtube.com") || !videoId) {
+        errors.video_file = [
+          "Please provide a valid YouTube watch URL (e.g. https://www.youtube.com/watch?v=VIDEO_ID).",
+        ];
+      }
+    } catch {
+      errors.video_file = ["Please provide a valid YouTube watch URL."];
+    }
+  }
+
   if (Object.keys(errors).length > 0) {
     return {
       success: false,

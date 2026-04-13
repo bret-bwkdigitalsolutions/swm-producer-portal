@@ -90,4 +90,24 @@ describe("submitDistribution", () => {
     expect(result.success).toBe(false);
     expect(result.errors?.video_file).toBeDefined();
   });
+
+  it("fails validation for a non-YouTube URL", async () => {
+    const fd = makeFormData({
+      ...BASE_FIELDS,
+      existing_youtube_url: "https://vimeo.com/123456",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(false);
+    expect(result.errors?.video_file).toBeDefined();
+  });
+
+  it("fails validation for a YouTube URL without a video ID", async () => {
+    const fd = makeFormData({
+      ...BASE_FIELDS,
+      existing_youtube_url: "https://www.youtube.com/playlist?list=abc",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(false);
+    expect(result.errors?.video_file).toBeDefined();
+  });
 });
