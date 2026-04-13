@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
 
-export type AiSuggestionType = "chapters" | "summary" | "blog";
+export type AiSuggestionType = "chapters" | "summary" | "blog" | "keywords";
 
 interface AnalysisContext {
   title: string;
@@ -106,6 +106,30 @@ function buildBlogPrompt(ctx: AnalysisContext): string {
     .join("\n");
 }
 
+function buildKeywordsPrompt(ctx: AnalysisContext): string {
+  const source = ctx.transcript
+    ? `Transcript:\n${ctx.transcript}`
+    : `Title: "${ctx.title}"\nDescription: ${ctx.description ?? "N/A"}`;
+
+  return [
+    "You are helping a podcast producer tag an episode for SEO discovery.",
+    "Generate 8-12 short, SEO-friendly tags (1-3 word phrases each).",
+    "Requirements:",
+    "- One tag per line",
+    "- No markdown, no bullet points, no numbering",
+    "- No duplicates",
+    "- Lowercase only",
+    "- Focus on topics, themes, people, and places discussed",
+    ctx.language === "es"
+      ? "- Write all tags in Spanish since the episode is in Spanish"
+      : "",
+    "",
+    source,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 /**
  * Generate AI suggestions for a distribution job.
  *
@@ -150,7 +174,7 @@ export async function generateAiSuggestions(
     language: showLanguage,
   };
 
-  const typesToGenerate = types ?? ["chapters", "summary", "blog"];
+  const typesToGenerate = types ?? ["chapters", "summary", "blog", "keywords"];
 
   const suggestionConfigs: { type: AiSuggestionType; prompt: string }[] = [];
 
@@ -160,11 +184,12 @@ export async function generateAiSuggestions(
   if (typesToGenerate.includes("summary")) {
     suggestionConfigs.push({ type: "summary", prompt: buildSummaryPrompt(ctx) });
   }
-  // Generate chapters and summary as single suggestions
-  const singleConfigs = suggestionConfigs;
+  if (typesToGenerate.includes("keywords")) {
+    suggestionConfigs.push({ type: "keywords", prompt: buildKeywordsPrompt(ctx) });
+  }
 
   const results = await Promise.allSettled(
-    singleConfigs.map(async ({ type, prompt }) => {
+    suggestionConfigs.map(async ({ type, prompt }) => {
       const response = await client.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 2048,

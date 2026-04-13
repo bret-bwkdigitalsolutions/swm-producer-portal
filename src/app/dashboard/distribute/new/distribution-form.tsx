@@ -18,6 +18,7 @@ import {
   PublishToggle,
   type PublishState,
 } from "@/components/forms/publish-toggle";
+import { TagInput } from "@/components/forms/tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
@@ -54,7 +55,7 @@ interface FormState {
 
 interface AiSuggestion {
   id: string;
-  type: "chapters" | "summary" | "blog";
+  type: "chapters" | "summary" | "blog" | "keywords";
   content: string;
   accepted: boolean;
 }
@@ -75,9 +76,11 @@ const MAX_RETRIES = 5;
 export function DistributionForm({
   shows,
   descriptionFooters = {},
+  frequentTags = {},
 }: {
   shows: Show[];
   descriptionFooters?: Record<string, string>;
+  frequentTags?: Record<string, string[]>;
 }) {
   const router = useRouter();
   const [state, formAction, isPending] = useActionState<FormState, FormData>(
@@ -114,6 +117,10 @@ export function DistributionForm({
   const [analysisStep, setAnalysisStep] = useState("");
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  // Tag chip state
+  const [tags, setTags] = useState<string[]>([]);
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
 
   // Track whether upload was done for AI path (video uploaded before form submit)
   const [aiUploadedJobId, setAiUploadedJobId] = useState<string | null>(null);
@@ -335,6 +342,21 @@ export function DistributionForm({
         setChapters(chaptersSuggestion.content);
       }
 
+      // Parse AI keywords and merge with any un-selected frequent tags
+      const keywordsSuggestion = aiSuggestions.find((s) => s.type === "keywords");
+      if (keywordsSuggestion) {
+        const aiKeywords = keywordsSuggestion.content
+          .split("\n")
+          .map((k) => k.trim())
+          .filter(Boolean);
+        const alreadySelected = new Set(tags);
+        const aiNew = aiKeywords.filter((k) => !alreadySelected.has(k));
+        const freqRemaining = (frequentTags[showId] ?? []).filter(
+          (t) => !alreadySelected.has(t) && !aiNew.includes(t)
+        );
+        setSuggestedTags([...aiNew, ...freqRemaining]);
+      }
+
       setAnalysisStep("");
     } catch (error) {
       const message =
@@ -355,6 +377,8 @@ export function DistributionForm({
     uploadVideoToGCS,
     uploadThumbnailToGCS,
     descriptionFooters,
+    tags,
+    frequentTags,
   ]);
 
   /**
@@ -575,7 +599,11 @@ export function DistributionForm({
           <ShowSelect
             allowedShows={shows}
             value={showId}
-            onValueChange={setShowId}
+            onValueChange={(newShowId) => {
+              setShowId(newShowId);
+              setTags(frequentTags[newShowId] ?? []);
+              setSuggestedTags([]);
+            }}
           />
 
           {/* Video file select */}
@@ -611,6 +639,8 @@ export function DistributionForm({
                   setDescriptionMode(null);
                   setSuggestions([]);
                   setAiUploadedJobId(null);
+                  setTags(frequentTags[showId] ?? []);
+                  setSuggestedTags([]);
                 }}
               />
             </label>
@@ -828,12 +858,13 @@ export function DistributionForm({
           {/* Tags */}
           {descriptionMode && (
             <div className="space-y-2">
-              <Label htmlFor="tags">Tags</Label>
-              <Input
-                id="tags"
-                name="tags"
-                placeholder="true crime, cold case, investigation (comma-separated)"
+              <Label>Tags</Label>
+              <TagInput
+                selectedTags={tags}
+                suggestedTags={descriptionMode === "ai" ? suggestedTags : []}
+                onChange={setTags}
                 disabled={isDisabled}
+                placeholder="true crime, cold case, investigation..."
               />
             </div>
           )}

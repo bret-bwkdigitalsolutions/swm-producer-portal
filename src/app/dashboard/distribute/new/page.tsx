@@ -37,6 +37,35 @@ export default async function NewDistributionPage() {
     }
   }
 
+  // Compute top-12 frequent tags per show from past distribution jobs
+  const pastJobs = await db.distributionJob.findMany({
+    where: {
+      wpShowId: { in: showIds.map(Number) },
+      status: { not: "uploading" },
+    },
+    select: { wpShowId: true, metadata: true },
+  });
+
+  const frequentTagsMap: Record<string, string[]> = {};
+  for (const showId of showIds) {
+    const tagCounts: Record<string, number> = {};
+    for (const job of pastJobs) {
+      if (String(job.wpShowId) !== String(showId)) continue;
+      const meta = job.metadata as Record<string, unknown>;
+      const tags = meta.tags;
+      if (!Array.isArray(tags)) continue;
+      for (const tag of tags as string[]) {
+        if (typeof tag === "string" && tag.trim()) {
+          tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;
+        }
+      }
+    }
+    frequentTagsMap[showId] = Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([tag]) => tag);
+  }
+
   const shows = allowedShows.map((show) => ({
     id: String(show.id),
     title: show.title.rendered,
@@ -44,7 +73,11 @@ export default async function NewDistributionPage() {
 
   return (
     <div className="py-6">
-      <DistributionForm shows={shows} descriptionFooters={footerMap} />
+      <DistributionForm
+        shows={shows}
+        descriptionFooters={footerMap}
+        frequentTags={frequentTagsMap}
+      />
     </div>
   );
 }
