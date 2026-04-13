@@ -12,6 +12,7 @@ export interface WordPressPublishParams {
   episodeNumber?: number;
   seasonNumber?: number;
   durationMinutes?: number;
+  transcript?: string;
   status: "publish" | "draft" | "future";
   scheduledDate?: string; // ISO date for future posts
   portalUserId: string;
@@ -38,6 +39,7 @@ export async function publishToWordPress(
     episodeNumber,
     seasonNumber,
     durationMinutes,
+    transcript,
     status,
     scheduledDate,
     portalUserId,
@@ -96,6 +98,7 @@ export async function publishToWordPress(
       ...(durationMinutes !== undefined
         ? { duration_minutes: durationMinutes }
         : {}),
+      ...(transcript ? { episode_transcript: transcript } : {}),
     },
   };
 
