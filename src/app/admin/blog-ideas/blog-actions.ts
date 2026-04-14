@@ -13,6 +13,8 @@ import { db } from "@/lib/db";
 import { readGoogleDocAsHtml } from "@/lib/google/docs";
 import { translateBlogPost } from "@/lib/ai/translate";
 import { revalidateTag } from "next/cache";
+import { uploadMedia } from "@/lib/wordpress/client";
+import { generateSignedDownloadUrl } from "@/lib/gcs";
 
 const WP_API_URL = () => process.env.WP_API_URL!;
 const WP_AUTH = () =>
@@ -177,6 +179,7 @@ export async function publishToWordPress(
         select: {
           title: true,
           wpShowId: true,
+          metadata: true,
           platforms: {
             where: { platform: "website", status: "completed" },
             select: { externalId: true },
@@ -255,6 +258,50 @@ export async function publishToWordPress(
     }
   }
 
+  // Upload the episode's thumbnail as the blog's featured image,
+  // falling back to the show's featured image if no episode thumbnail exists
+  let featuredMediaId: number | undefined;
+  const metadata = blogPost.job.metadata as Record<string, unknown> | null;
+  const thumbnailGcsPath = metadata?.thumbnailGcsPath as string | undefined;
+  if (thumbnailGcsPath) {
+    try {
+      const thumbUrl = await generateSignedDownloadUrl(thumbnailGcsPath);
+      const thumbResponse = await fetch(thumbUrl);
+      if (thumbResponse.ok) {
+        const buffer = await thumbResponse.arrayBuffer();
+        const ext = thumbnailGcsPath.match(/\.(jpe?g|png|webp)$/i)?.[0] ?? ".jpg";
+        const filename = `${title.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 50)}${ext}`;
+        const file = new File([buffer], filename, {
+          type: ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg",
+        });
+        const media = await uploadMedia(file, filename);
+        featuredMediaId = media.id;
+        console.log(`[blog] Uploaded featured image from episode: ${media.id}`);
+      }
+    } catch (error) {
+      console.error("[blog] Featured image upload failed (non-fatal):", error);
+    }
+  }
+
+  // Fallback: use the show's featured image from WordPress
+  if (!featuredMediaId) {
+    try {
+      const showRes = await fetch(
+        `${WP_API_URL()}/swm_show/${blogPost.job.wpShowId}?_fields=featured_media`,
+        { headers: { Authorization: WP_AUTH() } }
+      );
+      if (showRes.ok) {
+        const show = await showRes.json();
+        if (show.featured_media) {
+          featuredMediaId = show.featured_media;
+          console.log(`[blog] Using show featured image: ${featuredMediaId}`);
+        }
+      }
+    } catch (error) {
+      console.error("[blog] Show featured image lookup failed (non-fatal):", error);
+    }
+  }
+
   // Publish to WordPress as swm_blog custom post type
   try {
     const wpResponse = await fetch(`${WP_API_URL()}/swm_blog`, {
@@ -268,6 +315,7 @@ export async function publishToWordPress(
         content: docHtml,
         status: wpStatus,
         excerpt: blogPost.excerpt ?? "",
+        ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
         meta: {
           parent_show_id: blogPost.job.wpShowId,
           _swm_blog_author: blogPost.author ?? "",
