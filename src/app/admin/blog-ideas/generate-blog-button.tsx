@@ -18,12 +18,14 @@ interface GenerateBlogButtonProps {
   suggestionId: string;
   episodeTitle: string;
   generated: boolean;
+  hasStyleGuide?: boolean;
 }
 
 export function GenerateBlogButton({
   suggestionId,
   episodeTitle,
   generated,
+  hasStyleGuide,
 }: GenerateBlogButtonProps) {
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
@@ -122,6 +124,12 @@ export function GenerateBlogButton({
           </Button>
         )}
       </div>
+
+      {hasStyleGuide && !generating && (
+        <span className="text-xs text-muted-foreground">
+          Using host style guide
+        </span>
+      )}
 
       {showPromptEditor && !generating && (
         <div className="space-y-1.5">
