@@ -8,17 +8,22 @@ import { ShowPlatformLinks } from "./platform-links";
 import { RefreshShowsButton } from "./refresh-shows-button";
 import { ShowHostsEditor } from "./show-hosts-editor";
 import { ShowLanguageEditor } from "./show-language-editor";
+import { ShowStyleGuide } from "./show-style-guide";
 import Link from "next/link";
 import { ArrowRightLeftIcon } from "lucide-react";
 
 export default async function AdminShowsPage() {
-  const [shows, allStakeholders, allPlatformLinks, allShowMetadata] = await Promise.all([
+  const [shows, allStakeholders, allPlatformLinks, allShowMetadata, editRecordCounts] = await Promise.all([
     getCachedShows().catch(() => []),
     db.showStakeholder.findMany({
       orderBy: { name: "asc" },
     }),
     db.showPlatformLink.findMany(),
     db.showMetadata.findMany(),
+    db.blogEditRecord.groupBy({
+      by: ["wpShowId"],
+      _count: { id: true },
+    }),
   ]);
 
   // Map show metadata by show ID
@@ -47,6 +52,10 @@ export default async function AdminShowsPage() {
     existing.push({ id: link.id, platform: link.platform, url: link.url });
     platformLinksByShow.set(link.wpShowId, existing);
   }
+
+  const editCountByShow = new Map(
+    editRecordCounts.map((r) => [r.wpShowId, r._count.id])
+  );
 
   // Network defaults use wpShowId = 0
   const networkDefaultLinks = platformLinksByShow.get(0) ?? [];
@@ -128,6 +137,14 @@ export default async function AdminShowsPage() {
                     wpShowId={show.id}
                     currentLanguage={showMeta?.language ?? "en"}
                     currentBilingual={showMeta?.bilingual ?? false}
+                  />
+                  <ShowStyleGuide
+                    wpShowId={show.id}
+                    currentStyleGuide={showMeta?.styleGuide ?? null}
+                    styleGuideUpdatedAt={
+                      showMeta?.styleGuideUpdatedAt?.toISOString() ?? null
+                    }
+                    editRecordCount={editCountByShow.get(show.id) ?? 0}
                   />
                   <div className="border-t pt-4" />
                   <ShowStakeholderManager
