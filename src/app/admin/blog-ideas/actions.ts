@@ -191,6 +191,7 @@ export async function generateBlogPost(
         excerpt: excerpt || null,
         seoDescription: seoDescription || null,
         seoKeyphrase: seoKeyphrase || null,
+        originalContent: postContent,
         status: "draft",
       },
     });
