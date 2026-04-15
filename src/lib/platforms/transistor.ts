@@ -4,6 +4,7 @@ import {
   parseTransistorShowId,
 } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl } from "@/lib/gcs";
+import { prepareTransistorImageUrl } from "@/lib/image";
 
 const BASE_URL = "https://api.transistor.fm/v1";
 
@@ -177,18 +178,16 @@ export async function uploadToTransistor(
   if (youtubeVideoUrl) episodeData.video_url = youtubeVideoUrl;
   if (isExplicit !== undefined) episodeData.explicit = isExplicit;
 
-  // Episode artwork — use a 4-hour signed URL so Transistor has time to
-  // fetch the image even if it processes the episode asynchronously.
+  // Episode artwork — crop to square (Transistor requires 1:1 aspect ratio,
+  // 1400×1400 min) and upload the processed version to GCS with a 4-hour
+  // signed URL so Transistor has time to fetch it asynchronously.
   if (thumbnailGcsPath) {
     try {
-      const thumbUrl = await generateSignedDownloadUrl(
-        thumbnailGcsPath,
-        4 * 60 * 60 * 1000 // 4 hours
-      );
-      episodeData.image_url = thumbUrl;
-      console.log("[transistor] Setting episode artwork from GCS:", thumbnailGcsPath);
+      const squareUrl = await prepareTransistorImageUrl(thumbnailGcsPath);
+      episodeData.image_url = squareUrl;
+      console.log("[transistor] Setting square episode artwork from GCS:", thumbnailGcsPath);
     } catch (e) {
-      console.warn("[transistor] Could not get thumbnail URL:", e);
+      console.warn("[transistor] Could not prepare thumbnail:", e);
     }
   }
 

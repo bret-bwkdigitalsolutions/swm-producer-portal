@@ -1,6 +1,6 @@
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
-import { generateSignedDownloadUrl } from "@/lib/gcs";
 import { ContentType } from "@/lib/constants";
+import { prepareForWordPress } from "@/lib/image";
 
 export interface WordPressPublishParams {
   wpShowId: number;
@@ -52,23 +52,18 @@ export async function publishToWordPress(
     content += `<br><br><h3>Chapters</h3>\n${formattedChapters}`;
   }
 
-  // Upload thumbnail as featured image if available
+  // Upload thumbnail as featured image if available (resized to 1200px wide)
   let featuredMediaId: number | undefined;
   if (thumbnailGcsPath) {
     try {
-      const thumbUrl = await generateSignedDownloadUrl(thumbnailGcsPath);
-      const thumbResponse = await fetch(thumbUrl);
-      if (thumbResponse.ok) {
-        const buffer = await thumbResponse.arrayBuffer();
-        const ext = thumbnailGcsPath.match(/\.(jpe?g|png|webp)$/i)?.[0] ?? ".jpg";
-        const filename = `${title.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 50)}${ext}`;
-        const file = new File([buffer], filename, {
-          type: ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg",
-        });
-        const media = await uploadMedia(file, filename);
-        featuredMediaId = media.id;
-        console.log(`[wordpress] Uploaded featured image: ${media.id}`);
-      }
+      const processed = await prepareForWordPress(thumbnailGcsPath);
+      const filename = `${title.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 50)}.jpg`;
+      const file = new File([new Uint8Array(processed.buffer)], filename, {
+        type: processed.contentType,
+      });
+      const media = await uploadMedia(file, filename);
+      featuredMediaId = media.id;
+      console.log(`[wordpress] Uploaded featured image: ${media.id} (${processed.width}×${processed.height})`);
     } catch (error) {
       console.error("[wordpress] Featured image upload failed (non-fatal):", error);
     }
