@@ -196,6 +196,8 @@ model ShowMetadata {
   blogReviewerEmails String? // Comma-separated emails for blog review notifications
   language          String  @default("en") // Primary content language (e.g. "en", "es")
   bilingual         Boolean @default(false) // Whether to auto-translate blog posts
+  styleGuide        String?  // Synthesized host voice/style profile
+  styleGuideUpdatedAt DateTime? // Last synthesis timestamp
 
   @@map("show_metadata")
 }
