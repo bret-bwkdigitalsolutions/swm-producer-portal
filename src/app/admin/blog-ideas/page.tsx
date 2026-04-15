@@ -30,7 +30,7 @@ export default async function BlogIdeasPage() {
     }),
     getCachedShows().catch(() => []),
     db.showMetadata.findMany({
-      select: { wpShowId: true, blogReviewerEmails: true, styleGuide: true },
+      select: { wpShowId: true, blogReviewerEmails: true, styleGuide: true, hosts: true },
     }),
   ]);
 
@@ -45,7 +45,7 @@ export default async function BlogIdeasPage() {
   const styleGuideMap = new Map(
     allShowMetadata
       .filter((sm) => sm.styleGuide)
-      .map((sm) => [sm.wpShowId, true])
+      .map((sm) => [sm.wpShowId, sm.hosts.split(",")[0]?.trim() || "host"])
   );
 
   return (
@@ -108,7 +108,7 @@ export default async function BlogIdeasPage() {
                       suggestionId={suggestion.id}
                       episodeTitle={suggestion.job.title}
                       generated={suggestion.accepted}
-                      hasStyleGuide={styleGuideMap.has(suggestion.job.wpShowId)}
+                      styleGuideHost={styleGuideMap.get(suggestion.job.wpShowId)}
                     />
                   )}
                 </CardContent>

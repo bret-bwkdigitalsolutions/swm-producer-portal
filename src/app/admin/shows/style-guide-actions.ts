@@ -4,6 +4,19 @@ import { requireAdmin } from "@/lib/auth-guard";
 import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 
+/** Truncate content to roughly `maxChars`, keeping start and end. */
+function truncateMiddle(content: string, maxChars: number): string {
+  if (content.length <= maxChars) return content;
+  const half = Math.floor(maxChars / 2);
+  return (
+    content.slice(0, half) +
+    "\n\n[... middle content trimmed for brevity ...]\n\n" +
+    content.slice(-half)
+  );
+}
+
+const MAX_EDIT_PAIRS = 15;
+
 interface ActionResult {
   success: boolean;
   message: string;
@@ -32,16 +45,17 @@ export async function synthesizeStyleGuide(
     return { success: false, message: "ANTHROPIC_API_KEY is not set." };
   }
 
-  // Build the analysis prompt with all before/after pairs
-  const pairs = editRecords.map((record, i) => {
+  // Build the analysis prompt with all before/after pairs (capped to avoid excessive token usage)
+  const records = editRecords.slice(0, MAX_EDIT_PAIRS);
+  const pairs = records.map((record, i) => {
     return [
       `## Edit ${i + 1}`,
       "",
       "### Original (AI-generated)",
-      record.originalContent,
+      truncateMiddle(record.originalContent, 3000),
       "",
       "### Host-Edited Version",
-      record.editedContent,
+      truncateMiddle(record.editedContent, 3000),
     ].join("\n");
   });
 

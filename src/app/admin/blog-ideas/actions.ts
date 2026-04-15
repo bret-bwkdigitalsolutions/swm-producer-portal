@@ -50,6 +50,14 @@ export async function generateBlogPost(
     return { success: false, message: "Suggestion not found." };
   }
 
+  if (suggestion.type !== "blog") {
+    return { success: false, message: "Not a blog suggestion." };
+  }
+
+  if (suggestion.accepted) {
+    return { success: false, message: "Blog post already generated." };
+  }
+
   const showMetadata = await db.showMetadata.findUnique({
     where: { wpShowId: suggestion.job.wpShowId },
   });
@@ -106,14 +114,6 @@ export async function generateBlogPost(
         examplePairs,
       ].join("\n");
     }
-  }
-
-  if (suggestion.type !== "blog") {
-    return { success: false, message: "Not a blog suggestion." };
-  }
-
-  if (suggestion.accepted) {
-    return { success: false, message: "Blog post already generated." };
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
