@@ -5,6 +5,17 @@ import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 import { createGoogleDoc } from "@/lib/google/docs";
 
+/** Truncate content to roughly `maxChars`, keeping start and end. */
+function truncateMiddle(content: string, maxChars: number): string {
+  if (content.length <= maxChars) return content;
+  const half = Math.floor(maxChars / 2);
+  return (
+    content.slice(0, half) +
+    "\n\n[... middle content trimmed for brevity ...]\n\n" +
+    content.slice(-half)
+  );
+}
+
 interface GenerateResult {
   success: boolean;
   message: string;
@@ -43,6 +54,59 @@ export async function generateBlogPost(
     where: { wpShowId: suggestion.job.wpShowId },
   });
   const showLanguage = showMetadata?.language ?? "en";
+
+  // Load style context for this show
+  const editRecords = await db.blogEditRecord.findMany({
+    where: { wpShowId: suggestion.job.wpShowId },
+    orderBy: { createdAt: "desc" },
+  });
+  const hasStyleGuide = !!showMetadata?.styleGuide;
+  const editCount = editRecords.length;
+
+  // Build style context for the prompt
+  let styleContext = "";
+  if (editCount > 0) {
+    if (editCount >= 5 && hasStyleGuide) {
+      // Mature: style guide + 1-2 recent examples
+      const recentExamples = editRecords.slice(0, 2);
+      const examplePairs = recentExamples
+        .map((r, i) => {
+          const orig = truncateMiddle(r.originalContent, 2000);
+          const edited = truncateMiddle(r.editedContent, 2000);
+          return `### Example ${i + 1}\n\n**Original:**\n${orig}\n\n**Host-edited:**\n${edited}`;
+        })
+        .join("\n\n");
+
+      styleContext = [
+        "## Host Style Guide",
+        "The host of this show has a specific writing style. Follow this style guide closely:",
+        "",
+        showMetadata!.styleGuide,
+        "",
+        "## Recent Edit Examples",
+        "Here are recent examples of the host's edits for reference:",
+        "",
+        examplePairs,
+      ].join("\n");
+    } else {
+      // Early: raw before/after pairs only
+      const examples = editRecords.slice(0, 4);
+      const examplePairs = examples
+        .map((r, i) => {
+          const orig = truncateMiddle(r.originalContent, 2000);
+          const edited = truncateMiddle(r.editedContent, 2000);
+          return `### Example ${i + 1}\n\n**Original AI version:**\n${orig}\n\n**Host-edited version:**\n${edited}`;
+        })
+        .join("\n\n");
+
+      styleContext = [
+        "## Host Edit Examples",
+        "The host of this show has edited previous AI-generated blog posts. Study these before/after examples and match their style, tone, and preferences in your writing:",
+        "",
+        examplePairs,
+      ].join("\n");
+    }
+  }
 
   if (suggestion.type !== "blog") {
     return { success: false, message: "Not a blog suggestion." };
@@ -94,6 +158,7 @@ export async function generateBlogPost(
     showLanguage === "es"
       ? "- IMPORTANT: Write the entire blog post in Spanish — headline, excerpt, SEO description, keyphrase, and HTML body must all be in Spanish"
       : "",
+    styleContext,
     customInstructions
       ? `\n## Additional Instructions from Editor\n${customInstructions}`
       : "",
