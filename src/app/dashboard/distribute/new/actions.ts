@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toISOWithTimezone } from "@/lib/timezone";
+import { getLatestEpisodeNumbers } from "@/lib/wordpress/client";
 
 interface FormState {
   success?: boolean;
@@ -272,4 +273,24 @@ export async function updateDistribution(
   });
 
   return { success: true, jobId };
+}
+
+/**
+ * Fetch the suggested next episode number and current season for a show.
+ */
+export async function getNextEpisodeNumber(
+  wpShowId: number
+): Promise<{ episodeNumber: number | null; seasonNumber: number | null }> {
+  const session = await auth();
+  if (!session?.user) {
+    return { episodeNumber: null, seasonNumber: null };
+  }
+
+  const { episodeNumber, seasonNumber } =
+    await getLatestEpisodeNumbers(wpShowId);
+
+  return {
+    episodeNumber: episodeNumber != null ? episodeNumber + 1 : null,
+    seasonNumber,
+  };
 }

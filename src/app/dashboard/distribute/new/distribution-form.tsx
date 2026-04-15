@@ -8,7 +8,7 @@ import {
   useCallback,
 } from "react";
 import { useRouter } from "next/navigation";
-import { submitDistribution, updateDistribution } from "./actions";
+import { submitDistribution, updateDistribution, getNextEpisodeNumber } from "./actions";
 import { ShowSelect } from "@/components/forms/show-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,6 +120,10 @@ export function DistributionForm({
   const [analysisStep, setAnalysisStep] = useState("");
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  // Episode/season number state (auto-populated from last episode)
+  const [episodeNumber, setEpisodeNumber] = useState("");
+  const [seasonNumber, setSeasonNumber] = useState("");
 
   // Tag chip state
   const [tags, setTags] = useState<string[]>([]);
@@ -616,6 +620,18 @@ export function DistributionForm({
               setShowId(newShowId);
               setTags(frequentTags[newShowId] ?? []);
               setSuggestedTags([]);
+              // Auto-populate episode/season numbers from last published episode
+              if (newShowId) {
+                getNextEpisodeNumber(parseInt(newShowId, 10)).then(
+                  ({ episodeNumber: ep, seasonNumber: sn }) => {
+                    setEpisodeNumber(ep != null ? String(ep) : "");
+                    setSeasonNumber(sn != null ? String(sn) : "");
+                  }
+                );
+              } else {
+                setEpisodeNumber("");
+                setSeasonNumber("");
+              }
             }}
           />
 
@@ -788,6 +804,8 @@ export function DistributionForm({
                 min={1}
                 placeholder="Optional"
                 disabled={isDisabled}
+                value={seasonNumber}
+                onChange={(e) => setSeasonNumber(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -799,6 +817,8 @@ export function DistributionForm({
                 min={1}
                 placeholder="Optional"
                 disabled={isDisabled}
+                value={episodeNumber}
+                onChange={(e) => setEpisodeNumber(e.target.value)}
               />
             </div>
           </div>

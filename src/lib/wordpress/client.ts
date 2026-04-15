@@ -109,6 +109,31 @@ export async function getRecentSubmissions(
   return posts;
 }
 
+/**
+ * Get the latest published episode for a show, returning its episode and season numbers.
+ */
+export async function getLatestEpisodeNumbers(
+  wpShowId: number
+): Promise<{ episodeNumber: number | null; seasonNumber: number | null }> {
+  try {
+    const posts = await wpFetch<WpPost[]>(
+      `/swm_episode?per_page=1&orderby=date&order=desc&status=publish&_fields=id,meta&meta_key=parent_show_id&meta_value=${wpShowId}`
+    );
+    if (posts.length === 0) {
+      return { episodeNumber: null, seasonNumber: null };
+    }
+    const meta = posts[0].meta;
+    const ep = Number(meta?.episode_number);
+    const sn = Number(meta?.season_number);
+    return {
+      episodeNumber: Number.isFinite(ep) && ep > 0 ? ep : null,
+      seasonNumber: Number.isFinite(sn) && sn > 0 ? sn : null,
+    };
+  } catch {
+    return { episodeNumber: null, seasonNumber: null };
+  }
+}
+
 export async function uploadMedia(
   file: File,
   filename?: string
