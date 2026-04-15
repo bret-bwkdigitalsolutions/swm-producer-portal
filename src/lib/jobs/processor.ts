@@ -7,7 +7,7 @@ import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification } from "@/lib/notifications";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
-import { generateSignedDownloadUrl } from "@/lib/gcs";
+import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { downloadYouTubeVideoToGcs } from "./youtube-video-downloader";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp } from "node:fs/promises";
@@ -417,6 +417,55 @@ async function processJobInner(
   // Clean up temp video file
   if (tempVideoPath) {
     await unlink(tempVideoPath).catch(() => {});
+  }
+
+  // Fallback: if no thumbnail was uploaded but we have a YouTube video ID,
+  // pull the thumbnail from YouTube and store it in GCS for Transistor/WordPress.
+  if (!updatedMetadata.thumbnailGcsPath && youtubeVideoId) {
+    try {
+      // Try maxresdefault first (1280x720), fall back to hqdefault (480x360)
+      let thumbResponse = await fetch(
+        `https://i.ytimg.com/vi/${youtubeVideoId}/maxresdefault.jpg`
+      );
+      if (!thumbResponse.ok) {
+        thumbResponse = await fetch(
+          `https://i.ytimg.com/vi/${youtubeVideoId}/hqdefault.jpg`
+        );
+      }
+
+      if (thumbResponse.ok) {
+        const buffer = Buffer.from(await thumbResponse.arrayBuffer());
+        const gcsPath = await uploadBuffer(
+          `yt-thumb-${youtubeVideoId}.jpg`,
+          buffer,
+          "image/jpeg"
+        );
+
+        updatedMetadata.thumbnailGcsPath = gcsPath;
+
+        // Persist to DB so retries and blog posts can also use it
+        const currentMeta =
+          (
+            await db.distributionJob.findUnique({
+              where: { id: job.id },
+              select: { metadata: true },
+            })
+          )?.metadata as Record<string, unknown> | null;
+        await db.distributionJob.update({
+          where: { id: job.id },
+          data: { metadata: { ...currentMeta, thumbnailGcsPath: gcsPath } },
+        });
+
+        console.log(
+          `[processor] YouTube thumbnail fallback saved to GCS: ${gcsPath}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[processor] YouTube thumbnail fallback failed (non-fatal):",
+        error
+      );
+    }
   }
 
   // --- Phase 2: Transistor (independent of YouTube) ---
