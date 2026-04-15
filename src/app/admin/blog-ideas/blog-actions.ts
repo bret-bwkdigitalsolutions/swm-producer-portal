@@ -216,6 +216,28 @@ export async function publishToWordPress(
     return { success: false, message: "Google Doc is empty." };
   }
 
+  // Capture edit record if host made changes
+  if (blogPost.originalContent && blogPost.originalContent !== docHtml) {
+    try {
+      await db.blogEditRecord.upsert({
+        where: { blogPostId: blogPost.id },
+        create: {
+          blogPostId: blogPost.id,
+          wpShowId: blogPost.job.wpShowId,
+          originalContent: blogPost.originalContent,
+          editedContent: docHtml,
+        },
+        update: {
+          originalContent: blogPost.originalContent,
+          editedContent: docHtml,
+        },
+      });
+    } catch (error) {
+      // Non-fatal — don't block publishing if edit capture fails
+      console.error("[blog] Edit record capture failed (non-fatal):", error);
+    }
+  }
+
   // Use the BlogPost title (admin may have edited it), fall back to doc title
   const title = blogPost.title || docTitle;
 
