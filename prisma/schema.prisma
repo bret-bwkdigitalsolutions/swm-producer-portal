@@ -327,6 +327,21 @@ model BlogPost {
 
   suggestion AiSuggestion    @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
   job        DistributionJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  editRecord BlogEditRecord?
 
   @@map("blog_posts")
+}
+
+model BlogEditRecord {
+  id              String   @id @default(cuid())
+  blogPostId      String   @unique
+  wpShowId        Int
+  originalContent String
+  editedContent   String
+  createdAt       DateTime @default(now())
+
+  blogPost BlogPost @relation(fields: [blogPostId], references: [id], onDelete: Cascade)
+
+  @@index([wpShowId])
+  @@map("blog_edit_records")
 }
