@@ -309,9 +309,11 @@ model ShowBlogFolder {
 
 model BlogPost {
   id               String   @id @default(cuid())
-  suggestionId     String   @unique
-  jobId            String
+  suggestionId     String?  @unique
+  jobId            String?
   wpShowId         Int
+  source           String   @default("suggestion")
+  customPrompt     String?  @db.Text
   title            String
   googleDocId      String
   googleDocUrl     String
@@ -327,8 +329,8 @@ model BlogPost {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  suggestion AiSuggestion    @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
-  job        DistributionJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  suggestion AiSuggestion?    @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  job        DistributionJob? @relation(fields: [jobId], references: [id], onDelete: Cascade)
   editRecord BlogEditRecord?
 
   @@map("blog_posts")
