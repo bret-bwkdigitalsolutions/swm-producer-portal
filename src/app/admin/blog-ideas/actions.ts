@@ -19,6 +19,64 @@ function truncateMiddle(content: string, maxChars: number): string {
   );
 }
 
+/**
+ * Build the style guide / edit examples block for a show's blog prompts.
+ * Returns "" if the show has no style guide and no edit records.
+ */
+export async function loadStyleContext(wpShowId: number): Promise<string> {
+  const [showMetadata, editRecords] = await Promise.all([
+    db.showMetadata.findUnique({ where: { wpShowId } }),
+    db.blogEditRecord.findMany({
+      where: { wpShowId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  const hasStyleGuide = !!showMetadata?.styleGuide;
+  const editCount = editRecords.length;
+
+  if (editCount === 0) return "";
+
+  if (editCount >= 5 && hasStyleGuide) {
+    const recentExamples = editRecords.slice(0, 2);
+    const examplePairs = recentExamples
+      .map((r, i) => {
+        const orig = truncateMiddle(r.originalContent, 2000);
+        const edited = truncateMiddle(r.editedContent, 2000);
+        return `### Example ${i + 1}\n\n**Original:**\n${orig}\n\n**Host-edited:**\n${edited}`;
+      })
+      .join("\n\n");
+
+    return [
+      "## Host Style Guide",
+      "The host of this show has a specific writing style. Follow this style guide closely:",
+      "",
+      showMetadata!.styleGuide,
+      "",
+      "## Recent Edit Examples",
+      "Here are recent examples of the host's edits for reference:",
+      "",
+      examplePairs,
+    ].join("\n");
+  }
+
+  const examples = editRecords.slice(0, 4);
+  const examplePairs = examples
+    .map((r, i) => {
+      const orig = truncateMiddle(r.originalContent, 2000);
+      const edited = truncateMiddle(r.editedContent, 2000);
+      return `### Example ${i + 1}\n\n**Original AI version:**\n${orig}\n\n**Host-edited version:**\n${edited}`;
+    })
+    .join("\n\n");
+
+  return [
+    "## Host Edit Examples",
+    "The host of this show has edited previous AI-generated blog posts. Study these before/after examples and match their style, tone, and preferences in your writing:",
+    "",
+    examplePairs,
+  ].join("\n");
+}
+
 interface GenerateResult {
   success: boolean;
   message: string;
