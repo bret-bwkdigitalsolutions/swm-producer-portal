@@ -129,7 +129,13 @@ export function CustomBlogForm({ shows, styleGuideMap }: CustomBlogFormProps) {
           </Label>
           <Select value={wpShowId} onValueChange={handleShowChange}>
             <SelectTrigger id="custom-blog-show" className="w-full sm:w-80">
-              <SelectValue placeholder="Select a show" />
+              <SelectValue placeholder="Select a show">
+                {(selected: string | null) => {
+                  if (!selected) return "Select a show";
+                  const show = shows.find((s) => String(s.id) === selected);
+                  return show?.title ?? selected;
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {shows.map((s) => (
@@ -159,7 +165,14 @@ export function CustomBlogForm({ shows, styleGuideMap }: CustomBlogFormProps) {
                       ? "No processed episodes with transcripts"
                       : "— No episode —"
                 }
-              />
+              >
+                {(selected: string | null) => {
+                  if (!selected) return null; // fall through to placeholder
+                  const episode = episodes.find((e) => e.id === selected);
+                  if (!episode) return selected;
+                  return `${episode.title} — ${new Date(episode.createdAt).toLocaleDateString()}`;
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {episodes.map((e) => (
