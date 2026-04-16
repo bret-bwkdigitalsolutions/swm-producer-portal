@@ -79,7 +79,7 @@ export async function sendToHost(
   const { getCachedShows } = await import("@/lib/wordpress/cache");
   const shows = await getCachedShows().catch(() => []);
   const showName =
-    shows.find((s) => s.id === blogPost.job.wpShowId)?.title.rendered ??
+    shows.find((s) => s.id === blogPost.wpShowId)?.title.rendered ??
     "your show";
 
   const apiKey = process.env.RESEND_API_KEY;
@@ -91,6 +91,13 @@ export async function sendToHost(
   const resend = new Resend(apiKey);
 
   const subject = `Blog draft ready for review: ${blogPost.title}`;
+  const episodeRow = blogPost.job
+    ? `<tr>
+        <td style="padding: 8px 0; color: #666;">Episode</td>
+        <td style="padding: 8px 0; color: #111;">${escapeHtml(blogPost.job.title)}</td>
+      </tr>`
+    : "";
+
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
       <h2 style="margin: 0 0 16px; font-size: 20px; color: #111;">
@@ -105,10 +112,7 @@ export async function sendToHost(
           <td style="padding: 8px 0; color: #666; width: 100px;">Title</td>
           <td style="padding: 8px 0; color: #111; font-weight: 600;">${escapeHtml(blogPost.title)}</td>
         </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #666;">Episode</td>
-          <td style="padding: 8px 0; color: #111;">${escapeHtml(blogPost.job.title)}</td>
-        </tr>
+        ${episodeRow}
         <tr>
           <td style="padding: 8px 0; color: #666;">Show</td>
           <td style="padding: 8px 0; color: #111;">${escapeHtml(showName)}</td>
@@ -147,10 +151,10 @@ export async function sendToHost(
 
   // Remember these emails for future blog reviews for this show
   await db.showMetadata.upsert({
-    where: { wpShowId: blogPost.job.wpShowId },
+    where: { wpShowId: blogPost.wpShowId },
     update: { blogReviewerEmails: emailsString },
     create: {
-      wpShowId: blogPost.job.wpShowId,
+      wpShowId: blogPost.wpShowId,
       hosts: "",
       blogReviewerEmails: emailsString,
     },
@@ -223,7 +227,7 @@ export async function publishToWordPress(
         where: { blogPostId: blogPost.id },
         create: {
           blogPostId: blogPost.id,
-          wpShowId: blogPost.job.wpShowId,
+          wpShowId: blogPost.wpShowId,
           originalContent: blogPost.originalContent,
           editedContent: docHtml,
         },
@@ -243,7 +247,7 @@ export async function publishToWordPress(
 
   // Look up show language settings
   const showMetadata = await db.showMetadata.findUnique({
-    where: { wpShowId: blogPost.job.wpShowId },
+    where: { wpShowId: blogPost.wpShowId },
   });
   const isBilingual = showMetadata?.bilingual ?? false;
   const primaryLanguage = showMetadata?.language ?? "en";
@@ -283,7 +287,7 @@ export async function publishToWordPress(
   // Upload the episode's thumbnail as the blog's featured image,
   // falling back to the show's featured image if no episode thumbnail exists
   let featuredMediaId: number | undefined;
-  const metadata = blogPost.job.metadata as Record<string, unknown> | null;
+  const metadata = blogPost.job?.metadata as Record<string, unknown> | null | undefined;
   const thumbnailGcsPath = metadata?.thumbnailGcsPath as string | undefined;
   if (thumbnailGcsPath) {
     try {
@@ -304,7 +308,7 @@ export async function publishToWordPress(
   if (!featuredMediaId) {
     try {
       const showRes = await fetch(
-        `${WP_API_URL()}/swm_show/${blogPost.job.wpShowId}?_fields=featured_media`,
+        `${WP_API_URL()}/swm_show/${blogPost.wpShowId}?_fields=featured_media`,
         { headers: { Authorization: WP_AUTH() } }
       );
       if (showRes.ok) {
@@ -334,10 +338,12 @@ export async function publishToWordPress(
         excerpt: blogPost.excerpt ?? "",
         ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
         meta: {
-          parent_show_id: blogPost.job.wpShowId,
+          parent_show_id: blogPost.wpShowId,
           _swm_blog_author: blogPost.author ?? "",
-          _swm_source_suggestion_id: blogPost.suggestion.id,
-          ...(blogPost.job.platforms[0]?.externalId
+          ...(blogPost.suggestion
+            ? { _swm_source_suggestion_id: blogPost.suggestion.id }
+            : {}),
+          ...(blogPost.job?.platforms[0]?.externalId
             ? { _swm_linked_episode: parseInt(blogPost.job.platforms[0].externalId, 10) }
             : {}),
           ...(blogPost.seoDescription
