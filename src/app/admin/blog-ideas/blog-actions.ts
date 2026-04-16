@@ -58,7 +58,7 @@ export async function sendToHost(
   const blogPost = await db.blogPost.findUnique({
     where: { id: blogPostId },
     include: {
-      job: { select: { title: true, wpShowId: true } },
+      job: { select: { title: true } },
     },
   });
 
@@ -98,13 +98,17 @@ export async function sendToHost(
       </tr>`
     : "";
 
+  const introSentence = blogPost.job
+    ? `A blog draft has been created based on your recent episode of <strong>${escapeHtml(showName)}</strong>.`
+    : `A blog draft has been created for <strong>${escapeHtml(showName)}</strong>.`;
+
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
       <h2 style="margin: 0 0 16px; font-size: 20px; color: #111;">
         Blog Draft Ready for Review
       </h2>
       <p style="color: #333; line-height: 1.6;">
-        A blog draft has been created based on your recent episode of <strong>${escapeHtml(showName)}</strong>.
+        ${introSentence}
         Please review and edit directly in the Google Doc.
       </p>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
