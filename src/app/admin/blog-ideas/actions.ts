@@ -6,7 +6,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createGoogleDoc } from "@/lib/google/docs";
 
 export type { ParsedBlogOutput } from "./parse-blog-output";
-export { parseBlogOutput } from "./parse-blog-output";
+import { parseBlogOutput } from "./parse-blog-output";
+export { parseBlogOutput };
 
 /** Truncate content to roughly `maxChars`, keeping start and end. */
 function truncateMiddle(content: string, maxChars: number): string {
@@ -201,71 +202,11 @@ export async function generateBlogPost(
   if (!suggestion) {
     return { success: false, message: "Suggestion not found." };
   }
-
   if (suggestion.type !== "blog") {
     return { success: false, message: "Not a blog suggestion." };
   }
-
   if (suggestion.accepted) {
     return { success: false, message: "Blog post already generated." };
-  }
-
-  const showMetadata = await db.showMetadata.findUnique({
-    where: { wpShowId: suggestion.job.wpShowId },
-  });
-  const showLanguage = showMetadata?.language ?? "en";
-
-  // Load style context for this show
-  const editRecords = await db.blogEditRecord.findMany({
-    where: { wpShowId: suggestion.job.wpShowId },
-    orderBy: { createdAt: "desc" },
-  });
-  const hasStyleGuide = !!showMetadata?.styleGuide;
-  const editCount = editRecords.length;
-
-  // Build style context for the prompt
-  let styleContext = "";
-  if (editCount > 0) {
-    if (editCount >= 5 && hasStyleGuide) {
-      // Mature: style guide + 1-2 recent examples
-      const recentExamples = editRecords.slice(0, 2);
-      const examplePairs = recentExamples
-        .map((r, i) => {
-          const orig = truncateMiddle(r.originalContent, 2000);
-          const edited = truncateMiddle(r.editedContent, 2000);
-          return `### Example ${i + 1}\n\n**Original:**\n${orig}\n\n**Host-edited:**\n${edited}`;
-        })
-        .join("\n\n");
-
-      styleContext = [
-        "## Host Style Guide",
-        "The host of this show has a specific writing style. Follow this style guide closely:",
-        "",
-        showMetadata!.styleGuide,
-        "",
-        "## Recent Edit Examples",
-        "Here are recent examples of the host's edits for reference:",
-        "",
-        examplePairs,
-      ].join("\n");
-    } else {
-      // Early: raw before/after pairs only
-      const examples = editRecords.slice(0, 4);
-      const examplePairs = examples
-        .map((r, i) => {
-          const orig = truncateMiddle(r.originalContent, 2000);
-          const edited = truncateMiddle(r.editedContent, 2000);
-          return `### Example ${i + 1}\n\n**Original AI version:**\n${orig}\n\n**Host-edited version:**\n${edited}`;
-        })
-        .join("\n\n");
-
-      styleContext = [
-        "## Host Edit Examples",
-        "The host of this show has edited previous AI-generated blog posts. Study these before/after examples and match their style, tone, and preferences in your writing:",
-        "",
-        examplePairs,
-      ].join("\n");
-    }
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -273,12 +214,15 @@ export async function generateBlogPost(
     return { success: false, message: "ANTHROPIC_API_KEY is not set." };
   }
 
+  const showMetadata = await db.showMetadata.findUnique({
+    where: { wpShowId: suggestion.job.wpShowId },
+  });
+  const showLanguage = showMetadata?.language ?? "en";
+  const styleContext = await loadStyleContext(suggestion.job.wpShowId);
+
   const metadata = suggestion.job.metadata as Record<string, unknown>;
   const transcript = (metadata.transcript as string) ?? "";
   const episodeDescription = (metadata.description as string) ?? "";
-
-  // Generate the full blog post
-  const client = new Anthropic({ apiKey });
 
   const prompt = [
     "You are a skilled blog writer for a podcast network. Write a complete, SEO-optimized blog post based on the topic idea below.",
@@ -318,116 +262,34 @@ export async function generateBlogPost(
     .filter(Boolean)
     .join("\n");
 
-  let postTitle: string;
-  let postContent: string;
-  let excerpt = "";
-  let seoDescription = "";
-  let seoKeyphrase = "";
-
+  let parsed;
   try {
+    const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     });
-
     const textBlock = response.content.find((b) => b.type === "text");
-    const fullText = textBlock?.text ?? "";
-
-    // Parse structured output: title, excerpt, SEO description, keyphrase, then HTML body
-    const lines = fullText.split("\n");
-    postTitle = lines[0].replace(/^#+\s*/, "").trim();
-
-    let bodyStartIndex = 1;
-
-    for (let i = 1; i < Math.min(lines.length, 10); i++) {
-      const line = lines[i].trim();
-      if (line.startsWith("EXCERPT:")) {
-        excerpt = line.replace("EXCERPT:", "").trim();
-        bodyStartIndex = i + 1;
-      } else if (line.startsWith("SEO:")) {
-        seoDescription = line.replace("SEO:", "").trim().slice(0, 160);
-        bodyStartIndex = i + 1;
-      } else if (line.startsWith("KEYPHRASE:")) {
-        seoKeyphrase = line.replace("KEYPHRASE:", "").trim();
-        bodyStartIndex = i + 1;
-      } else if (line.startsWith("<")) {
-        // HTML content started
-        bodyStartIndex = i;
-        break;
-      }
-    }
-
-    postContent = lines.slice(bodyStartIndex).join("\n").trim();
-
-    if (!postTitle || !postContent) {
-      return { success: false, message: "AI generated empty content." };
-    }
+    parsed = parseBlogOutput(textBlock?.text ?? "");
   } catch (error) {
     const msg = error instanceof Error ? error.message : "AI generation failed";
     return { success: false, message: msg };
   }
 
-  // Look up the show's Google Drive folder
-  const showFolder = await db.showBlogFolder.findUnique({
-    where: { wpShowId: suggestion.job.wpShowId },
-  });
-
-  if (!showFolder) {
-    return {
-      success: false,
-      message: "No Google Drive folder configured for this show. Add a ShowBlogFolder record first.",
-    };
+  if (!parsed.title || !parsed.content) {
+    return { success: false, message: "AI generated empty content." };
   }
 
-  // Look up the most recent author for this show (learned default)
-  const previousPost = await db.blogPost.findFirst({
-    where: { wpShowId: suggestion.job.wpShowId, status: "published" },
-    orderBy: { updatedAt: "desc" },
-    select: { author: true },
+  return createBlogDraftArtifacts({
+    wpShowId: suggestion.job.wpShowId,
+    title: parsed.title,
+    content: parsed.content,
+    excerpt: parsed.excerpt,
+    seoDescription: parsed.seoDescription,
+    seoKeyphrase: parsed.seoKeyphrase,
+    source: "suggestion",
+    suggestionId: suggestion.id,
+    jobId: suggestion.job.id,
   });
-
-  // Create Google Doc
-  try {
-    const { docId, docUrl } = await createGoogleDoc(
-      postTitle,
-      postContent,
-      showFolder.googleFolderId
-    );
-
-    // Create BlogPost record
-    const blogPost = await db.blogPost.create({
-      data: {
-        suggestionId: suggestion.id,
-        jobId: suggestion.job.id,
-        wpShowId: suggestion.job.wpShowId,
-        title: postTitle,
-        googleDocId: docId,
-        googleDocUrl: docUrl,
-        author: previousPost?.author ?? null,
-        excerpt: excerpt || null,
-        seoDescription: seoDescription || null,
-        seoKeyphrase: seoKeyphrase || null,
-        originalContent: postContent,
-        status: "draft",
-      },
-    });
-
-    // Mark suggestion as accepted
-    await db.aiSuggestion.update({
-      where: { id: suggestionId },
-      data: { accepted: true },
-    });
-
-    return {
-      success: true,
-      message: "Blog draft created in Google Docs.",
-      blogPostId: blogPost.id,
-      googleDocUrl: docUrl,
-    };
-  } catch (error) {
-    const msg =
-      error instanceof Error ? error.message : "Failed to create Google Doc";
-    return { success: false, message: msg };
-  }
 }
