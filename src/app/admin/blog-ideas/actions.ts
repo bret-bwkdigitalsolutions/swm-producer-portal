@@ -5,6 +5,9 @@ import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 import { createGoogleDoc } from "@/lib/google/docs";
 
+export type { ParsedBlogOutput } from "./parse-blog-output";
+export { parseBlogOutput } from "./parse-blog-output";
+
 /** Truncate content to roughly `maxChars`, keeping start and end. */
 function truncateMiddle(content: string, maxChars: number): string {
   if (content.length <= maxChars) return content;
