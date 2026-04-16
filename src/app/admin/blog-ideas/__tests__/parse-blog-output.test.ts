@@ -65,4 +65,19 @@ describe("parseBlogOutput", () => {
     expect(result.title).toBe("Just a Title");
     expect(result.content).toBe("");
   });
+
+  it("does not leave a leading newline in content when meta-block is separated by a blank line", () => {
+    const raw = [
+      "Headline",
+      "EXCERPT: short",
+      "SEO: short",
+      "KEYPHRASE: kp",
+      "",
+      "<h2>Body starts here</h2>",
+    ].join("\n");
+
+    const result = parseBlogOutput(raw);
+    expect(result.content.startsWith("\n")).toBe(false);
+    expect(result.content).toBe("<h2>Body starts here</h2>");
+  });
 });
