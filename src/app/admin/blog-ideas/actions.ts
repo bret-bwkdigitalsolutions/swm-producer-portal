@@ -173,6 +173,37 @@ export async function createBlogDraftArtifacts(
   }
 }
 
+export interface EpisodeOption {
+  id: string;
+  title: string;
+  createdAt: Date;
+}
+
+/**
+ * List DistributionJobs for a show that have a non-empty transcript.
+ * Returns the 50 most recent.
+ */
+export async function listEpisodeOptions(
+  wpShowId: number
+): Promise<EpisodeOption[]> {
+  await requireAdmin();
+
+  if (!Number.isInteger(wpShowId) || wpShowId <= 0) return [];
+
+  const jobs = await db.$queryRaw<
+    Array<{ id: string; title: string; createdAt: Date }>
+  >`
+    SELECT "id", "title", "createdAt"
+    FROM "distribution_jobs"
+    WHERE "wpShowId" = ${wpShowId}
+      AND COALESCE(NULLIF("metadata"->>'transcript', ''), '') <> ''
+    ORDER BY "createdAt" DESC
+    LIMIT 50
+  `;
+
+  return jobs;
+}
+
 interface GenerateResult {
   success: boolean;
   message: string;
