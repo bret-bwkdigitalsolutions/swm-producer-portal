@@ -9,6 +9,10 @@ export type { ParsedBlogOutput } from "./parse-blog-output";
 import { parseBlogOutput } from "./parse-blog-output";
 export { parseBlogOutput };
 
+import { validateCustomBlogInput } from "./validate-custom-blog-input";
+export { validateCustomBlogInput };
+export type { CustomBlogInput, ValidationResult } from "./validate-custom-blog-input";
+
 /** Truncate content to roughly `maxChars`, keeping start and end. */
 function truncateMiddle(content: string, maxChars: number): string {
   if (content.length <= maxChars) return content;
