@@ -77,6 +77,97 @@ export async function loadStyleContext(wpShowId: number): Promise<string> {
   ].join("\n");
 }
 
+interface CreateBlogDraftInput {
+  wpShowId: number;
+  title: string;
+  content: string;
+  excerpt: string;
+  seoDescription: string;
+  seoKeyphrase: string;
+  source: "suggestion" | "custom";
+  suggestionId?: string;
+  jobId?: string;
+  customPrompt?: string;
+}
+
+interface CreateBlogDraftResult {
+  success: boolean;
+  message: string;
+  blogPostId?: string;
+  googleDocUrl?: string;
+}
+
+/**
+ * Create the Google Doc and BlogPost row for a drafted blog post.
+ * For source="suggestion", also marks the AiSuggestion as accepted.
+ */
+export async function createBlogDraftArtifacts(
+  input: CreateBlogDraftInput
+): Promise<CreateBlogDraftResult> {
+  const showFolder = await db.showBlogFolder.findUnique({
+    where: { wpShowId: input.wpShowId },
+  });
+
+  if (!showFolder) {
+    return {
+      success: false,
+      message:
+        "No Google Drive folder configured for this show. Add a ShowBlogFolder record first.",
+    };
+  }
+
+  const previousPost = await db.blogPost.findFirst({
+    where: { wpShowId: input.wpShowId, status: "published" },
+    orderBy: { updatedAt: "desc" },
+    select: { author: true },
+  });
+
+  try {
+    const { docId, docUrl } = await createGoogleDoc(
+      input.title,
+      input.content,
+      showFolder.googleFolderId
+    );
+
+    const blogPost = await db.blogPost.create({
+      data: {
+        suggestionId: input.suggestionId ?? null,
+        jobId: input.jobId ?? null,
+        wpShowId: input.wpShowId,
+        source: input.source,
+        customPrompt: input.customPrompt ?? null,
+        title: input.title,
+        googleDocId: docId,
+        googleDocUrl: docUrl,
+        author: previousPost?.author ?? null,
+        excerpt: input.excerpt || null,
+        seoDescription: input.seoDescription || null,
+        seoKeyphrase: input.seoKeyphrase || null,
+        originalContent: input.content,
+        status: "draft",
+      },
+    });
+
+    if (input.source === "suggestion" && input.suggestionId) {
+      await db.aiSuggestion.update({
+        where: { id: input.suggestionId },
+        data: { accepted: true },
+      });
+    }
+
+    return {
+      success: true,
+      message: "Blog draft created in Google Docs.",
+      blogPostId: blogPost.id,
+      googleDocUrl: docUrl,
+    };
+  } catch (error) {
+    const msg =
+      error instanceof Error ? error.message : "Failed to create Google Doc";
+    return { success: false, message: msg };
+  }
+}
+
 interface GenerateResult {
   success: boolean;
   message: string;
