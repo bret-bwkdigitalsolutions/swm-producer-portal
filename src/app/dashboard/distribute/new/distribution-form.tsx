@@ -41,6 +41,7 @@ import {
   SparklesIcon,
   LinkIcon,
 } from "lucide-react";
+import { isValidYoutubeUrl } from "@/lib/youtube-url";
 
 interface Show {
   id: string;
@@ -511,7 +512,7 @@ export function DistributionForm({
   const videoSourceReady =
     videoSource === "upload"
       ? !!videoFileName
-      : youtubeUrlInput.trim().startsWith("https://www.youtube.com/watch?v=");
+      : isValidYoutubeUrl(youtubeUrlInput);
   const showModeChoice = videoSourceReady && !descriptionMode;
 
   const aiReady = descriptionMode === "ai" && suggestions.length > 0 && !analyzing;
@@ -773,7 +774,7 @@ export function DistributionForm({
               />
             </>
           )}
-          {videoSource === "youtube" && youtubeUrlInput.trim().startsWith("https://www.youtube.com/watch?v=") && (
+          {videoSource === "youtube" && isValidYoutubeUrl(youtubeUrlInput) && (
             <input type="hidden" name="existing_youtube_url" value={youtubeUrlInput} />
           )}
 

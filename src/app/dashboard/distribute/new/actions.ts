@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toISOWithTimezone } from "@/lib/timezone";
 import { getLatestEpisodeNumbers } from "@/lib/wordpress/client";
+import { extractYoutubeVideoId } from "@/lib/youtube-url";
 
 interface FormState {
   success?: boolean;
@@ -86,16 +87,10 @@ export async function submitDistribution(
   }
 
   if (existingYoutubeUrl) {
-    try {
-      const parsedUrl = new URL(existingYoutubeUrl);
-      const videoId = parsedUrl.searchParams.get("v");
-      if (!parsedUrl.hostname.includes("youtube.com") || !videoId) {
-        errors.video_file = [
-          "Please provide a valid YouTube watch URL (e.g. https://www.youtube.com/watch?v=VIDEO_ID).",
-        ];
-      }
-    } catch {
-      errors.video_file = ["Please provide a valid YouTube watch URL."];
+    if (!extractYoutubeVideoId(existingYoutubeUrl)) {
+      errors.video_file = [
+        "Please provide a valid YouTube URL (e.g. https://www.youtube.com/watch?v=VIDEO_ID or https://www.youtube.com/live/VIDEO_ID).",
+      ];
     }
   }
 

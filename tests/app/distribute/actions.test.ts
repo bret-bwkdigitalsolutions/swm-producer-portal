@@ -84,6 +84,19 @@ describe("submitDistribution", () => {
     expect(createdData.metadata.videoFileName).toBeNull();
   });
 
+  it("accepts a YouTube /live/ URL", async () => {
+    const fd = makeFormData({
+      ...BASE_FIELDS,
+      existing_youtube_url: "https://www.youtube.com/live/abc123",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(true);
+    const createdData = mockCreate.mock.calls[0][0].data;
+    expect(createdData.metadata.existingYoutubeUrl).toBe(
+      "https://www.youtube.com/live/abc123"
+    );
+  });
+
   it("fails validation when neither video file nor YouTube URL is provided", async () => {
     const fd = makeFormData(BASE_FIELDS);
     const result = await submitDistribution({}, fd);
