@@ -4,53 +4,54 @@
 A web portal enabling content producers to transform audio recordings into polished written content through AI-powered transcription and editing workflows. Producers upload audio files, receive automated transcriptions via Deepgram, and use Claude AI assistance within a rich text editor to refine and enhance their content for publication.
 
 ## Current Architecture
-Next.js 16 application with App Router serving a React 19 frontend, configured for standalone container deployment. PostgreSQL database managed through Prisma ORM with dedicated adapter for connection pooling. NextAuth provides authentication with Prisma-based session storage. External service integrations include Deepgram for speech-to-text processing, Anthropic Claude for AI content assistance, Google Cloud Storage for audio file persistence, Upstash Redis for caching, and Resend for email delivery. Frontend combines Base UI headless components with Tailwind CSS styling and Tiptap for rich text editing. The serverExternalPackages configuration isolates database drivers from the Next.js bundle to support containerized deployment.
+Next.js 16 application with App Router serving a React 19 frontend, configured for standalone container deployment. PostgreSQL database managed through Prisma ORM with dedicated adapter for connection pooling. NextAuth provides authentication with Prisma-based session storage. External service integrations include Deepgram for speech-to-text processing, Anthropic Claude for AI content assistance, Google Cloud Storage for audio file persistence, Upstash Redis for caching, and Resend for email delivery. Frontend combines Base UI headless components with Tailwind CSS styling and Tiptap for rich text editing. The serverExternalPackages configuration isolates database drivers and Sharp image processing from the Next.js bundle to support containerized deployment.
 
 ## What Works Today
-- User registration and session-based authentication
-- Audio file upload to Google Cloud Storage
+- User registration and session-based authentication through NextAuth
+- Audio file upload to Google Cloud Storage buckets
 - Speech-to-text transcription via Deepgram API integration
-- Rich text editing with link insertion, placeholder text, and content formatting
-- AI content enhancement requests to Anthropic Claude
+- Rich text editing with link insertion, placeholder text, and content formatting through Tiptap
+- AI content enhancement requests to Anthropic Claude API
 - Email notifications through Resend service
-- Data visualization components using Recharts
+- Data visualization components using Recharts library
 - Database seeding for development environments
 - Component testing framework with Vitest and React Testing Library
+- YouTube audio download capability via ytdl-core integration
 
 ## Known Gaps & Limitations
-- Application pages and routing structure not visible in repository root examination
-- Producer workflow states and content management patterns undefined from available code
-- Audio processing queue management and failure recovery mechanisms unclear
+- Application routing structure and page hierarchy not evident from configuration files
+- Producer workflow states and content management patterns undefined
+- Audio processing queue management and error recovery mechanisms unclear
 - File size limits and supported audio formats for transcription unspecified
-- User roles and content access controls implementation unknown
-- Real-time features absent despite collaborative portal positioning
-- Production environment configuration and secrets management patterns unclear
-- Limited test coverage beyond basic framework setup
+- User roles and content access controls implementation missing from visible codebase
+- Real-time collaboration features absent despite portal positioning
+- Production deployment configuration and environment variable management unclear
+- Limited test coverage beyond framework setup and smoke testing
 
 ## Next Meaningful Capabilities
 - Project workspace organization for managing multiple content pieces per producer
 - Transcription accuracy improvement through custom vocabulary and speaker identification
 - Content template system for consistent output formatting across different content types
-- Collaborative review workflow allowing multiple stakeholders to suggest edits
+- Collaborative review workflow allowing multiple stakeholders to suggest edits and approve content
 - Automated content distribution to publishing platforms and social media channels
 - Performance analytics showing transcription accuracy, editing time, and content engagement metrics
 
 ## Open Technical Questions
-- Whether Redis serves as session store, job queue, or real-time synchronization layer
-- How audio processing handles long-form content and maintains transcription state
+- Whether Upstash Redis serves as session store, job queue, or real-time synchronization layer
+- How audio processing handles long-form content and maintains transcription state across sessions
 - User permission model for shared content and multi-producer collaboration scenarios
-- AI prompt engineering strategy for maintaining consistent content enhancement quality
-- File storage retention policies and cost management for large audio libraries
-- Production deployment infrastructure requirements for standalone container builds
+- AI prompt engineering strategy for maintaining consistent content enhancement quality across different content types
+- File storage retention policies and cost management for large audio libraries in Google Cloud Storage
+- Production deployment infrastructure requirements and scaling strategy for standalone container builds
 - Integration approach for external publishing platforms and content management systems
 
 ## Key Files & Entry Points
-- `app/page.tsx` — Main application landing page and primary user interface
-- `next.config.ts` — Build configuration with standalone output and external package handling
-- `package.json` — Project dependencies and development workflow automation scripts
-- `prisma/seed.ts` — Database initialization script for development data setup
-- `scripts/smoke-test.ts` — Deployment verification and application health checks
-- `tsconfig.json` — TypeScript configuration with path mapping for source organization
+- `app/page.tsx` — Main application landing page and primary user interface entry point
+- `next.config.ts` — Build configuration with standalone output and external package isolation
+- `package.json` — Project dependencies, AI/transcription services, and development workflow scripts
+- `prisma/seed.ts` — Database initialization and development data setup script
+- `scripts/smoke-test.ts` — Deployment verification and application health monitoring
+- `tsconfig.json` — TypeScript configuration with path mapping and Next.js integration
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-13_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-17_
