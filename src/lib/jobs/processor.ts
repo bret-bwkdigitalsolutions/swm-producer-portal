@@ -263,7 +263,7 @@ async function processJobInner(
   // --- Phase 1: YouTube (must complete first for WordPress) ---
   let youtubeUrl: string | null = existingYoutubeUrl ?? null;
   let youtubeVideoId: string | null = youtubeUrl
-    ? new URL(youtubeUrl).searchParams.get("v")
+    ? extractYoutubeVideoId(youtubeUrl)
     : null;
   const youtubePlatform = job.platforms.find((p) => p.platform === "youtube");
 
