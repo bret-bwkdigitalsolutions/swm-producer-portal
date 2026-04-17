@@ -1,57 +1,58 @@
 # swm-producer-portal — Living State
 
 ## What This Is
-A web portal enabling content producers to transform audio recordings into polished written content through AI-powered transcription and editing workflows. Producers upload audio files, receive automated transcriptions via Deepgram, and use Claude AI assistance within a rich text editor to refine and enhance their content for publication.
+A web portal that transforms audio recordings into polished written content through AI-powered transcription and editing workflows. Content producers upload audio files, receive automated transcriptions via Deepgram, and refine content using Claude AI assistance within a rich text editor for publication.
+
+## How to Run & Access
+Development server runs with `npm run dev` on http://localhost:3000. Application builds as standalone Docker container with migration runner that executes pending database changes before starting the server. Production deployment configuration unclear from current codebase - no deployment URLs, CI/CD workflows, or environment-specific configurations present.
 
 ## Current Architecture
-Next.js 16 application with App Router serving a React 19 frontend, configured for standalone container deployment. PostgreSQL database managed through Prisma ORM with dedicated adapter for connection pooling. NextAuth provides authentication with Prisma-based session storage. External service integrations include Deepgram for speech-to-text processing, Anthropic Claude for AI content assistance, Google Cloud Storage for audio file persistence, Upstash Redis for caching, and Resend for email delivery. Frontend combines Base UI headless components with Tailwind CSS styling and Tiptap for rich text editing. The serverExternalPackages configuration isolates database drivers and Sharp image processing from the Next.js bundle to support containerized deployment.
+Next.js 16 with App Router and React 19 frontend, containerized for standalone deployment. PostgreSQL database with Prisma ORM and dedicated adapter for connection pooling. Authentication through NextAuth with Prisma session storage. External integrations: Deepgram for speech-to-text, Anthropic Claude for AI assistance, Google Cloud Storage for audio files, Upstash Redis for caching, and Resend for email. Frontend uses Base UI headless components, Tailwind CSS, and Tiptap rich text editor. The standalone output configuration with serverExternalPackages isolation supports containerized production deployment with FFmpeg for audio processing.
 
 ## What Works Today
-- User registration and session-based authentication through NextAuth
-- Audio file upload to Google Cloud Storage buckets
-- Speech-to-text transcription via Deepgram API integration
-- Rich text editing with link insertion, placeholder text, and content formatting through Tiptap
-- AI content enhancement requests to Anthropic Claude API
-- Email notifications through Resend service
-- Data visualization components using Recharts library
-- Database seeding for development environments
-- Component testing framework with Vitest and React Testing Library
-- YouTube audio download capability via ytdl-core integration
+- User authentication and session management via NextAuth
+- Audio file upload to Google Cloud Storage
+- Speech-to-text transcription through Deepgram API
+- Rich text editing with links, placeholders, and formatting via Tiptap
+- AI content enhancement requests to Claude API
+- Email delivery through Resend service
+- Data visualization components with Recharts
+- YouTube audio extraction using ytdl-core
+- Database migrations and seeding for development
+- Component testing with Vitest and React Testing Library
 
 ## Known Gaps & Limitations
-- Application routing structure and page hierarchy not evident from configuration files
-- Producer workflow states and content management patterns undefined
-- Audio processing queue management and error recovery mechanisms unclear
-- File size limits and supported audio formats for transcription unspecified
-- User roles and content access controls implementation missing from visible codebase
-- Real-time collaboration features absent despite portal positioning
-- Production deployment configuration and environment variable management unclear
-- Limited test coverage beyond framework setup and smoke testing
+- Application page structure and routing hierarchy not visible in provided files
+- Producer workflow states and content lifecycle management undefined
+- Audio processing error handling and retry logic unclear
+- File size limits and supported audio format restrictions unspecified
+- User permission model and content access controls missing
+- Production environment variables and deployment configuration absent
+- Test coverage limited to framework setup without functional tests
 
 ## Next Meaningful Capabilities
-- Project workspace organization for managing multiple content pieces per producer
-- Transcription accuracy improvement through custom vocabulary and speaker identification
-- Content template system for consistent output formatting across different content types
-- Collaborative review workflow allowing multiple stakeholders to suggest edits and approve content
-- Automated content distribution to publishing platforms and social media channels
-- Performance analytics showing transcription accuracy, editing time, and content engagement metrics
+- Project-based content organization for managing multiple pieces per producer
+- Batch audio processing with queue management and progress tracking
+- Content templates and formatting presets for consistent output styling
+- Multi-user collaboration with comment threads and approval workflows
+- Direct publishing integration to content platforms and social media
+- Analytics dashboard tracking transcription accuracy and content performance
 
 ## Open Technical Questions
-- Whether Upstash Redis serves as session store, job queue, or real-time synchronization layer
-- How audio processing handles long-form content and maintains transcription state across sessions
-- User permission model for shared content and multi-producer collaboration scenarios
-- AI prompt engineering strategy for maintaining consistent content enhancement quality across different content types
-- File storage retention policies and cost management for large audio libraries in Google Cloud Storage
-- Production deployment infrastructure requirements and scaling strategy for standalone container builds
-- Integration approach for external publishing platforms and content management systems
+- Redis usage pattern - session storage, job queuing, or real-time features
+- Long-form audio handling strategy and transcription session persistence
+- AI prompt engineering approach for consistent content enhancement quality
+- File retention policies and storage cost optimization in Google Cloud
+- Scaling architecture for concurrent transcription jobs and user sessions
+- Integration strategy for external publishing platforms and CMSs
 
 ## Key Files & Entry Points
-- `app/page.tsx` — Main application landing page and primary user interface entry point
-- `next.config.ts` — Build configuration with standalone output and external package isolation
-- `package.json` — Project dependencies, AI/transcription services, and development workflow scripts
-- `prisma/seed.ts` — Database initialization and development data setup script
-- `scripts/smoke-test.ts` — Deployment verification and application health monitoring
-- `tsconfig.json` — TypeScript configuration with path mapping and Next.js integration
+- `app/page.tsx` — Main application entry point and primary user interface
+- `Dockerfile` — Container build with migration runner and FFmpeg audio processing
+- `next.config.ts` — Standalone build configuration with external package isolation
+- `package.json` — Dependencies for AI services, transcription, and rich text editing
+- `scripts/migrate.mjs` — Database migration runner executed before container startup
+- `prisma/seed.ts` — Development database initialization and sample data
 
 ---
 _Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-17_
