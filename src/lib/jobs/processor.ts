@@ -8,6 +8,7 @@ import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification } from "@/lib/notifications";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
+import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { downloadYouTubeVideoToGcs } from "./youtube-video-downloader";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp } from "node:fs/promises";
@@ -278,7 +279,7 @@ async function processJobInner(
       where: { id: youtubePlatform.id },
       data: {
         status: "completed",
-        externalId: new URL(existingYoutubeUrl).searchParams.get("v") ?? "",
+        externalId: extractYoutubeVideoId(existingYoutubeUrl) ?? "",
         externalUrl: existingYoutubeUrl,
         completedAt: new Date(),
       },

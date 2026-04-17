@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Storage } from "@google-cloud/storage";
+import { extractYoutubeVideoId } from "@/lib/youtube-url";
 
 /**
  * Download a YouTube video to GCS.
@@ -12,7 +13,7 @@ import { Storage } from "@google-cloud/storage";
  * Downloads to a temp file using @distube/ytdl-core (combined audio+video stream),
  * uploads to GCS, cleans up temp file, and returns the GCS path.
  *
- * @param youtubeUrl - Full YouTube watch URL (e.g. https://www.youtube.com/watch?v=VIDEO_ID)
+ * @param youtubeUrl - Full YouTube URL (watch, live, or youtu.be format)
  * @param jobId - Used only for log context
  * @returns GCS path of the downloaded video
  */
@@ -20,22 +21,9 @@ export async function downloadYouTubeVideoToGcs(
   youtubeUrl: string,
   jobId: string
 ): Promise<string> {
-  // Validate and extract video ID
-  let videoId: string | null = null;
-  try {
-    const url = new URL(youtubeUrl);
-    if (!url.hostname.includes("youtube.com")) {
-      throw new Error(`Invalid YouTube URL: ${youtubeUrl}`);
-    }
-    videoId = url.searchParams.get("v");
-  } catch (err) {
-    if (err instanceof Error && err.message.startsWith("Invalid YouTube URL")) {
-      throw err;
-    }
-    throw new Error(`Invalid YouTube URL: ${youtubeUrl}`);
-  }
+  const videoId = extractYoutubeVideoId(youtubeUrl);
   if (!videoId) {
-    throw new Error(`Invalid YouTube URL: missing video ID (${youtubeUrl})`);
+    throw new Error(`Invalid YouTube URL: ${youtubeUrl}`);
   }
 
   // Build GCS destination path (same format as gcs.ts generateGcsPath)
