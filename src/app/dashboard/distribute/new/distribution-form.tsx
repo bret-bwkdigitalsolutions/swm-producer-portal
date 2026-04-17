@@ -593,7 +593,17 @@ export function DistributionForm({
           {state.success === false && state.message && (
             <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               <AlertCircleIcon className="size-4 shrink-0" />
-              {state.message}
+              {/sign in/i.test(state.message) ? (
+                <span>
+                  Your session has expired.{" "}
+                  <a href="/login" className="underline font-medium">
+                    Sign in again
+                  </a>{" "}
+                  to continue.
+                </span>
+              ) : (
+                state.message
+              )}
             </div>
           )}
 

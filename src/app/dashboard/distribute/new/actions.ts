@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { redirect } from "next/navigation";
 import { toISOWithTimezone } from "@/lib/timezone";
 import { getLatestEpisodeNumbers } from "@/lib/wordpress/client";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
@@ -27,11 +28,11 @@ export async function submitDistribution(
 ): Promise<FormState> {
   const session = await auth();
   if (!session?.user) {
-    return { success: false, message: "Please sign in to continue." };
+    redirect("/login");
   }
 
   if (!session.user.hasDistributionAccess && session.user.role !== "admin") {
-    return { success: false, message: "You do not have distribution access." };
+    redirect("/dashboard");
   }
 
   // Extract form fields
@@ -210,7 +211,7 @@ export async function updateDistribution(
 ): Promise<FormState> {
   const session = await auth();
   if (!session?.user) {
-    return { success: false, message: "Please sign in to continue." };
+    redirect("/login");
   }
 
   const job = await db.distributionJob.findUnique({
