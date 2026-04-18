@@ -5,7 +5,8 @@ import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
-import { sendDistributionErrorNotification } from "@/lib/notifications";
+import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
+import { verifyDistribution } from "./verify-distribution";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
@@ -711,6 +712,36 @@ async function processJobInner(
   }
 
   console.log(`[processor] Job ${job.id} ${finalStatus}.`);
+
+  // --- Post-distribution verification ---
+  // Wait a few seconds for platform APIs to be consistent, then verify
+  if (finalStatus === "completed" || (!allFailed && anyFailed)) {
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+      const verification = await verifyDistribution(job.id, job.wpShowId, job.title);
+      if (!verification.verified) {
+        let showName = `Show #${job.wpShowId}`;
+        try {
+          const { getShow } = await import("@/lib/wordpress/client");
+          const show = await getShow(job.wpShowId);
+          showName = show.title.rendered;
+        } catch {
+          // Fall back to ID
+        }
+
+        const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+
+        await sendVerificationFailureNotification({
+          jobTitle: job.title,
+          showName,
+          issues: verification.issues,
+          jobUrl: `${baseUrl}/dashboard/distribute/${job.id}`,
+        });
+      }
+    } catch (error) {
+      console.error("[processor] Post-distribution verification failed:", error);
+    }
+  }
 
   return { jobId: job.id, status: finalStatus, platformResults };
 }
