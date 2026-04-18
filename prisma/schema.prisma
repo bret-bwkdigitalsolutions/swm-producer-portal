@@ -326,6 +326,10 @@ model BlogPost {
   status           String   @default("draft") // "draft" | "reviewing" | "published"
   wpPostId         Int?
   wpPostUrl        String?
+  sentToHostAt         DateTime?
+  editCheckPercentage  Int?
+  editCheckLabel       String?
+  editCheckAt          DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
