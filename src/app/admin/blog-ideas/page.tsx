@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getCachedShows } from "@/lib/wordpress/cache";
+import { checkBlogEdits } from "@/lib/blog/edit-check";
 import {
   Card,
   CardContent,
@@ -20,6 +21,8 @@ type BlogPostWithControls = {
   hostEmail: string | null;
   status: string;
   wpPostUrl: string | null;
+  editCheckPercentage: number | null;
+  editCheckLabel: string | null;
 };
 
 interface DisplayCard {
@@ -71,6 +74,9 @@ export default async function BlogIdeasPage() {
         },
       }),
     ]);
+
+  // Check Google Docs for host edits on "reviewing" posts (cached, 1hr TTL)
+  await checkBlogEdits();
 
   const showNameMap = new Map(allShows.map((s) => [s.id, s.title.rendered]));
   const reviewerEmailMap = new Map(
@@ -126,6 +132,8 @@ export default async function BlogIdeasPage() {
       hostEmail: b.hostEmail,
       status: b.status,
       wpPostUrl: b.wpPostUrl,
+      editCheckPercentage: b.editCheckPercentage,
+      editCheckLabel: b.editCheckLabel,
     },
   }));
 

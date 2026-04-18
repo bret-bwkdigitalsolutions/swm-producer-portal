@@ -25,6 +25,8 @@ interface BlogPostControlsProps {
     hostEmail: string | null;
     status: string;
     wpPostUrl: string | null;
+    editCheckPercentage: number | null;
+    editCheckLabel: string | null;
   };
   defaultHostEmail?: string;
 }
@@ -87,7 +89,15 @@ export function BlogPostControls({
 
       {/* Status badge */}
       {status === "reviewing" && (
-        <Badge className="bg-amber-100 text-amber-800">With Host</Badge>
+        <div className="flex items-center gap-2">
+          <Badge className="bg-amber-100 text-amber-800">With Host</Badge>
+          {blogPost.editCheckLabel && (
+            <EditStatusBadge
+              label={blogPost.editCheckLabel}
+              percentage={blogPost.editCheckPercentage}
+            />
+          )}
+        </div>
       )}
       {status === "published" && (
         <Badge className="bg-green-100 text-green-800">Published</Badge>
@@ -171,4 +181,28 @@ export function BlogPostControls({
       )}
     </div>
   );
+}
+
+function EditStatusBadge({
+  label,
+  percentage,
+}: {
+  label: string;
+  percentage: number | null;
+}) {
+  const colorClass =
+    label === "No changes"
+      ? "bg-gray-100 text-gray-600"
+      : label === "Minor edits"
+        ? "bg-blue-100 text-blue-800"
+        : label === "Moderate edits"
+          ? "bg-amber-100 text-amber-800"
+          : "bg-green-100 text-green-800"; // Heavily rewritten
+
+  const displayText =
+    label === "No changes"
+      ? "No changes"
+      : `${label} (~${percentage}%)`;
+
+  return <Badge className={colorClass}>{displayText}</Badge>;
 }
