@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import type { DistributionJobPlatform } from "@prisma/client";
 import { generateAiSuggestions } from "./ai-processor";
 import { extractAudio } from "./audio-extractor";
 import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
@@ -129,7 +130,7 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
 }
 
 async function processJobInner(
-  job: Awaited<ReturnType<typeof db.distributionJob.findUnique>> & { platforms: any[] }
+  job: Awaited<ReturnType<typeof db.distributionJob.findUnique>> & { platforms: DistributionJobPlatform[] }
 ): Promise<ProcessingResult> {
 
   console.log(
@@ -144,7 +145,10 @@ async function processJobInner(
   // For live YouTube recordings: download audio from YouTube to GCS.
   // This gives us an mp3 directly — no need for the extractAudio step.
   let effectiveGcsPath: string | null = job.gcsPath;
-  let youtubeAudioPath: string | null = null;
+  // On retry, gcsPath is already set from the first run. If this is a live
+  // recording, that file is already an mp3 — skip extractAudio.
+  let youtubeAudioPath: string | null =
+    existingYoutubeUrl && effectiveGcsPath ? effectiveGcsPath : null;
   if (existingYoutubeUrl && !effectiveGcsPath) {
     console.log(`[processor] Live YouTube recording — downloading audio from ${existingYoutubeUrl}`);
     const downloadedPath = await downloadYouTubeVideoToGcs(existingYoutubeUrl, job.id);
@@ -718,8 +722,10 @@ async function processJobInner(
   // Wait a few seconds for platform APIs to be consistent, then verify
   if (finalStatus === "completed" || (!allFailed && anyFailed)) {
     try {
-      await new Promise((resolve) => setTimeout(resolve, 10_000));
-      const verification = await verifyDistribution(job.id, job.wpShowId, job.title);
+      await new Promise((resolve) => setTimeout(resolve, 60_000));
+      const verification = await verifyDistribution(
+        job.id, job.wpShowId, job.title, !!existingYoutubeUrl
+      );
       if (!verification.verified) {
         let showName = `Show #${job.wpShowId}`;
         try {

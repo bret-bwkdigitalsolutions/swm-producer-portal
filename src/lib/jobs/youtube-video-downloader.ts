@@ -35,7 +35,10 @@ export async function downloadYouTubeVideoToGcs(
   const timestamp = now.getTime();
   const gcsPath = `uploads/${year}/${month}/${timestamp}-youtube-${videoId}.mp3`;
 
-  const bucketName = process.env.GCS_BUCKET_NAME!;
+  const bucketName = process.env.GCS_BUCKET_NAME;
+  if (!bucketName) {
+    throw new Error("GCS_BUCKET_NAME is not set — cannot upload downloaded audio");
+  }
   const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
   let storage: Storage;
   if (credentialsJson) {
@@ -57,7 +60,7 @@ export async function downloadYouTubeVideoToGcs(
   let cookiesPath: string | null = null;
   if (process.env.YOUTUBE_COOKIES) {
     cookiesPath = join(tempDir, "cookies.txt");
-    await writeFile(cookiesPath, process.env.YOUTUBE_COOKIES, "utf-8");
+    await writeFile(cookiesPath, process.env.YOUTUBE_COOKIES, { encoding: "utf-8", mode: 0o600 });
   }
 
   try {
@@ -80,6 +83,7 @@ export async function downloadYouTubeVideoToGcs(
 
     const { stderr } = await execFileAsync("yt-dlp", args, {
       timeout: 10 * 60 * 1000, // 10 minute timeout
+      killSignal: "SIGKILL",   // Force-kill hung yt-dlp processes on timeout
     });
 
     if (stderr) {

@@ -74,6 +74,11 @@ export async function publishToWordPress(
   // all other shows → "The Sunset Lounge" (term 3)
   const brandTermId = wpShowId === 21 ? 2 : 3;
 
+  const videoId = extractYoutubeVideoId(youtubeUrl) ?? "";
+  if (!videoId) {
+    console.warn(`[wordpress] Could not extract video ID from YouTube URL: ${youtubeUrl}`);
+  }
+
   console.log(`[wordpress] Creating episode post: "${title}"`);
 
   const payload = {
@@ -88,8 +93,8 @@ export async function publishToWordPress(
       _swm_portal_submission: true,
       parent_show_id: wpShowId,
       youtube_video_url: youtubeUrl,
-      youtube_video_id: extractYoutubeVideoId(youtubeUrl) ?? "",
-      youtube_thumbnail_url: `https://i.ytimg.com/vi/${extractYoutubeVideoId(youtubeUrl) ?? ""}/hqdefault.jpg`,
+      youtube_video_id: videoId,
+      youtube_thumbnail_url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
       ...(episodeNumber !== undefined
         ? { episode_number: episodeNumber }
         : {}),

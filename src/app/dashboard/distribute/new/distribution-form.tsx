@@ -91,6 +91,7 @@ export function DistributionForm({
   );
   const formRef = useRef<HTMLFormElement>(null);
   const videoFileRef = useRef<File | null>(null);
+  const aiInFlightRef = useRef(false);
   const [showId, setShowId] = useState("");
   const [title, setTitle] = useState("");
   const [publishState, setPublishState] = useState<PublishState>({
@@ -266,6 +267,9 @@ export function DistributionForm({
    */
   const startAiAnalysis = useCallback(async () => {
     if (!formRef.current) return;
+    // Guard against double-click: ref is set synchronously before any await
+    if (aiInFlightRef.current) return;
+    aiInFlightRef.current = true;
 
     setAnalyzing(true);
     setAnalysisError(null);
@@ -374,6 +378,7 @@ export function DistributionForm({
     } finally {
       setAnalyzing(false);
       setUploading(false);
+      aiInFlightRef.current = false;
     }
   }, [
     showId,

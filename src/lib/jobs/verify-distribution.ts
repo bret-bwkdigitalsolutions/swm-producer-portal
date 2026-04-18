@@ -4,6 +4,35 @@ import { getTransistorApiKey, getYouTubeAccessToken } from "@/lib/analytics/cred
 const YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3";
 const TRANSISTOR_API_URL = "https://api.transistor.fm/v1";
 
+/** Abort signal with a 30-second timeout for platform API calls. */
+function fetchTimeout(): AbortSignal {
+  return AbortSignal.timeout(30_000);
+}
+
+/**
+ * Normalize a title for comparison by folding smart quotes, em-dashes,
+ * and other typographic substitutions that platforms apply automatically.
+ */
+function normalizeTitle(title: string): string {
+  return title
+    // Decode HTML numeric entities (WP returns &#8217; etc.)
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)))
+    // Decode named HTML entities
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    // Fold smart quotes to straight quotes
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    // Fold em/en dashes
+    .replace(/[\u2013\u2014]/g, "-")
+    // Collapse whitespace
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 interface VerificationIssue {
   platform: string;
   field: string;
@@ -23,86 +52,88 @@ interface VerificationResult {
  *
  * Called automatically after distribution completes. Non-fatal — logs issues
  * and sends a notification if anything is missing, but doesn't fail the job.
+ *
+ * @param isLiveRecording - When true, skip YouTube verification (video was
+ *   uploaded externally and our OAuth token may not have read access).
  */
 export async function verifyDistribution(
   jobId: string,
   wpShowId: number,
-  expectedTitle: string
+  expectedTitle: string,
+  isLiveRecording = false,
 ): Promise<VerificationResult> {
   const platforms = await db.distributionJobPlatform.findMany({
     where: { jobId, status: "completed" },
   });
 
-  const issues: VerificationIssue[] = [];
+  // Run checks in parallel and collect results as arrays (avoids shared mutable array)
+  const checkResults = await Promise.all(
+    platforms.map(async (platform): Promise<VerificationIssue[]> => {
+      try {
+        switch (platform.platform) {
+          case "youtube":
+            // Skip verification for live recordings — the video was uploaded
+            // externally and our OAuth token may not have read access.
+            if (isLiveRecording) return [];
+            if (platform.externalId) {
+              return verifyYouTube(wpShowId, platform.externalId, expectedTitle);
+            }
+            return [];
 
-  const checks = platforms.map(async (platform) => {
-    try {
-      switch (platform.platform) {
-        case "youtube":
-          if (platform.externalId) {
-            const ytIssues = await verifyYouTube(
-              wpShowId,
-              platform.externalId,
-              expectedTitle
-            );
-            issues.push(...ytIssues);
-          }
-          break;
+          case "transistor":
+            if (platform.externalId) {
+              return verifyTransistor(wpShowId, platform.externalId, expectedTitle);
+            }
+            return [];
 
-        case "transistor":
-          if (platform.externalId) {
-            const trIssues = await verifyTransistor(
-              wpShowId,
-              platform.externalId,
-              expectedTitle
-            );
-            issues.push(...trIssues);
-          }
-          break;
+          case "website":
+            if (platform.externalId) {
+              return verifyWordPress(platform.externalId, expectedTitle);
+            }
+            return [];
 
-        case "website":
-          if (platform.externalId) {
-            const wpIssues = await verifyWordPress(
-              platform.externalId,
-              expectedTitle
-            );
-            issues.push(...wpIssues);
-          }
-          break;
+          default:
+            return [];
+        }
+      } catch (error) {
+        console.error(
+          `[verify] Failed to verify ${platform.platform}:`,
+          error instanceof Error ? error.message : error
+        );
+        return [{
+          platform: platform.platform,
+          field: "api_check",
+          expected: "accessible",
+          actual: `verification failed: ${error instanceof Error ? error.message : "unknown error"}`,
+        }];
       }
-    } catch (error) {
-      console.error(
-        `[verify] Failed to verify ${platform.platform}:`,
-        error instanceof Error ? error.message : error
-      );
-      issues.push({
-        platform: platform.platform,
-        field: "api_check",
-        expected: "accessible",
-        actual: `verification failed: ${error instanceof Error ? error.message : "unknown error"}`,
-      });
-    }
-  });
+    })
+  );
 
-  await Promise.all(checks);
-
+  const issues = checkResults.flat();
   const verified = issues.length === 0;
 
-  // Store verification result on the job
-  const job = await db.distributionJob.findUnique({
-    where: { id: jobId },
-    select: { metadata: true },
-  });
-  const meta = (job?.metadata as Record<string, unknown>) ?? {};
-  meta.verification = {
-    verified,
-    verifiedAt: new Date().toISOString(),
-    issues,
-  };
-  await db.distributionJob.update({
-    where: { id: jobId },
-    data: { metadata: meta as any },
-  });
+  // Store verification result on the job (guard against deleted job)
+  try {
+    const job = await db.distributionJob.findUnique({
+      where: { id: jobId },
+      select: { metadata: true },
+    });
+    if (job) {
+      const meta = (job.metadata as Record<string, unknown>) ?? {};
+      meta.verification = {
+        verified,
+        verifiedAt: new Date().toISOString(),
+        issues: issues.map((i) => ({ ...i })),
+      };
+      await db.distributionJob.update({
+        where: { id: jobId },
+        data: { metadata: JSON.parse(JSON.stringify(meta)) },
+      });
+    }
+  } catch (error) {
+    console.warn("[verify] Could not persist verification result:", error);
+  }
 
   if (verified) {
     console.log(`[verify] Job ${jobId}: all platforms verified ✓`);
@@ -135,7 +166,10 @@ async function verifyYouTube(
 
   const res = await fetch(
     `${YOUTUBE_API_URL}/videos?id=${videoId}&part=snippet`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: fetchTimeout(),
+    }
   );
 
   if (!res.ok) {
@@ -168,7 +202,7 @@ async function verifyYouTube(
 
   const issues: VerificationIssue[] = [];
 
-  if (video.snippet.title !== expectedTitle) {
+  if (normalizeTitle(video.snippet.title) !== normalizeTitle(expectedTitle)) {
     issues.push({
       platform: "youtube",
       field: "title",
@@ -177,8 +211,6 @@ async function verifyYouTube(
     });
   }
 
-  // YouTube always has a default thumbnail, but check for maxres or high
-  // which indicates a custom thumbnail was set (or the video has been processed)
   const thumbs = video.snippet.thumbnails;
   if (!thumbs.maxres && !thumbs.high) {
     issues.push({
@@ -209,6 +241,7 @@ async function verifyTransistor(
 
   const res = await fetch(`${TRANSISTOR_API_URL}/episodes/${episodeId}`, {
     headers: { "x-api-key": apiKey },
+    signal: fetchTimeout(),
   });
 
   if (!res.ok) {
@@ -241,7 +274,7 @@ async function verifyTransistor(
 
   const issues: VerificationIssue[] = [];
 
-  if (episode.attributes.title !== expectedTitle) {
+  if (normalizeTitle(episode.attributes.title) !== normalizeTitle(expectedTitle)) {
     issues.push({
       platform: "transistor",
       field: "title",
@@ -284,7 +317,10 @@ async function verifyWordPress(
 
   const res = await fetch(
     `${wpApiUrl}/swm_episode/${postId}?_fields=id,title,featured_media`,
-    { headers: { Authorization: wpAuth } }
+    {
+      headers: { Authorization: wpAuth },
+      signal: fetchTimeout(),
+    }
   );
 
   if (!res.ok) {
@@ -304,21 +340,12 @@ async function verifyWordPress(
 
   const issues: VerificationIssue[] = [];
 
-  // Decode HTML entities for comparison (WP encodes & as &amp; etc.)
-  const actualTitle = post.title.rendered
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)))
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
-
-  if (actualTitle !== expectedTitle) {
+  if (normalizeTitle(post.title.rendered) !== normalizeTitle(expectedTitle)) {
     issues.push({
       platform: "website",
       field: "title",
       expected: expectedTitle,
-      actual: actualTitle,
+      actual: post.title.rendered,
     });
   }
 
