@@ -1,17 +1,19 @@
-import ytdl from "@distube/ytdl-core";
-import { createWriteStream } from "node:fs";
-import { unlink, mkdtemp, rmdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { unlink, mkdtemp, readdir, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
 import { Storage } from "@google-cloud/storage";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 
+const execFileAsync = promisify(execFile);
+
 /**
- * Download a YouTube video to GCS.
+ * Download a YouTube video to GCS using yt-dlp.
  *
- * Downloads to a temp file using @distube/ytdl-core (combined audio+video stream),
- * uploads to GCS, cleans up temp file, and returns the GCS path.
+ * Uses yt-dlp (installed in the Docker image) which handles YouTube's
+ * bot detection far better than ytdl-core. Downloads to a temp file,
+ * uploads to GCS, cleans up, and returns the GCS path.
  *
  * @param youtubeUrl - Full YouTube URL (watch, live, or youtu.be format)
  * @param jobId - Used only for log context
@@ -49,14 +51,27 @@ export async function downloadYouTubeVideoToGcs(
   }
 
   const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-dl-"));
-  const tempVideoPath = join(tempDir, "video.mp4");
+  const outputTemplate = join(tempDir, "video.%(ext)s");
 
   try {
-    console.log(`[yt-downloader] Job ${jobId}: downloading YouTube video ${videoId}`);
+    console.log(`[yt-downloader] Job ${jobId}: downloading YouTube video ${videoId} via yt-dlp`);
 
-    const videoStream = ytdl(youtubeUrl, { filter: "audioandvideo" });
-    const fileStream = createWriteStream(tempVideoPath);
-    await pipeline(videoStream, fileStream);
+    await execFileAsync("yt-dlp", [
+      "--no-playlist",
+      "--merge-output-format", "mp4",
+      "-o", outputTemplate,
+      "--no-warnings",
+      "--quiet",
+      youtubeUrl,
+    ], { timeout: 10 * 60 * 1000 }); // 10 minute timeout
+
+    // Find the downloaded file
+    const files = await readdir(tempDir);
+    const videoFile = files.find((f) => f.startsWith("video."));
+    if (!videoFile) {
+      throw new Error("yt-dlp completed but no output file found");
+    }
+    const tempVideoPath = join(tempDir, videoFile);
 
     console.log(`[yt-downloader] Job ${jobId}: uploading to GCS at ${gcsPath}`);
     await storage.bucket(bucketName).upload(tempVideoPath, {
@@ -67,7 +82,10 @@ export async function downloadYouTubeVideoToGcs(
     console.log(`[yt-downloader] Job ${jobId}: download complete`);
     return gcsPath;
   } finally {
-    await unlink(tempVideoPath).catch(() => {});
+    const files = await readdir(tempDir).catch(() => []);
+    for (const f of files) {
+      await unlink(join(tempDir, f)).catch(() => {});
+    }
     await rmdir(tempDir).catch(() => {});
   }
 }
