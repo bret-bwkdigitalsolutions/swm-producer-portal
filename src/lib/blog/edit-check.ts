@@ -1,3 +1,8 @@
+import "server-only";
+
+import { db } from "@/lib/db";
+import { getDocModifiedTime, readGoogleDocAsHtml } from "@/lib/google/docs";
+
 /**
  * Strip HTML tags to get plain text for diffing.
  * Block-level closing tags are replaced with spaces so adjacent words don't run together.
@@ -69,4 +74,70 @@ export function getEditLabel(percentage: number): string {
   if (percentage <= 10) return "Minor edits";
   if (percentage <= 30) return "Moderate edits";
   return "Heavily rewritten";
+}
+
+const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Check Google Docs for edits on all "reviewing" blog posts
+ * sent within the last 14 days. Caches results for 1 hour.
+ * Called from the blog ideas page on load.
+ */
+export async function checkBlogEdits(): Promise<void> {
+  const cutoff = new Date(Date.now() - FOURTEEN_DAYS_MS);
+  const staleAfter = new Date(Date.now() - ONE_HOUR_MS);
+
+  const posts = await db.blogPost.findMany({
+    where: {
+      status: "reviewing",
+      sentToHostAt: { gte: cutoff },
+      OR: [
+        { editCheckAt: null },
+        { editCheckAt: { lt: staleAfter } },
+      ],
+    },
+    select: {
+      id: true,
+      googleDocId: true,
+      originalContent: true,
+      sentToHostAt: true,
+    },
+  });
+
+  for (const post of posts) {
+    try {
+      const modifiedTime = await getDocModifiedTime(post.googleDocId);
+
+      if (post.sentToHostAt && modifiedTime < post.sentToHostAt) {
+        await db.blogPost.update({
+          where: { id: post.id },
+          data: {
+            editCheckPercentage: 0,
+            editCheckLabel: "No changes",
+            editCheckAt: new Date(),
+          },
+        });
+        continue;
+      }
+
+      const { html } = await readGoogleDocAsHtml(post.googleDocId);
+      const percentage = computeEditPercentage(post.originalContent, html);
+      const label = getEditLabel(percentage);
+
+      await db.blogPost.update({
+        where: { id: post.id },
+        data: {
+          editCheckPercentage: percentage,
+          editCheckLabel: label,
+          editCheckAt: new Date(),
+        },
+      });
+    } catch (error) {
+      console.error(
+        `[edit-check] Failed to check blog post ${post.id}:`,
+        error
+      );
+    }
+  }
 }
