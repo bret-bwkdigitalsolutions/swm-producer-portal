@@ -39,6 +39,10 @@ interface DisplayCard {
 }
 
 export default async function BlogIdeasPage() {
+  // Check Google Docs for host edits on "reviewing" posts (cached, 1hr TTL)
+  // Must run before data fetch so results are included in the query below
+  await checkBlogEdits();
+
   const [blogSuggestions, customBlogs, allShows, allShowMetadata] =
     await Promise.all([
       db.aiSuggestion.findMany({
@@ -74,9 +78,6 @@ export default async function BlogIdeasPage() {
         },
       }),
     ]);
-
-  // Check Google Docs for host edits on "reviewing" posts (cached, 1hr TTL)
-  await checkBlogEdits();
 
   const showNameMap = new Map(allShows.map((s) => [s.id, s.title.rendered]));
   const reviewerEmailMap = new Map(
