@@ -183,6 +183,21 @@ export async function readGoogleDocAsHtml(docId: string): Promise<{ title: strin
 }
 
 // ---------------------------------------------------------------------------
+// Google Drive API: Get Doc Modified Time
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the last modified time of a Google Doc via Drive API.
+ * Uses a metadata-only call (fast, low quota cost).
+ */
+export async function getDocModifiedTime(docId: string): Promise<Date> {
+  const data = await googleFetch(
+    `${DRIVE_API}/files/${docId}?fields=modifiedTime`
+  );
+  return new Date(data.modifiedTime);
+}
+
+// ---------------------------------------------------------------------------
 // Internal: Document-level styling (named styles for headings + body text)
 // ---------------------------------------------------------------------------
 
