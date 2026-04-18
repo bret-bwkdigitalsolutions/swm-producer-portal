@@ -65,7 +65,8 @@ export async function downloadYouTubeVideoToGcs(
 
     const args = [
       "--no-playlist",
-      "--merge-output-format", "mp4",
+      "-f", "bv*+ba/b",          // best video+audio, or best single stream
+      "--remux-video", "mp4",    // remux to mp4 (doesn't fail if already mp4)
       "-o", outputTemplate,
       "--no-warnings",
     ];
