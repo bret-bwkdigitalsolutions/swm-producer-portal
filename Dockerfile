@@ -34,9 +34,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-RUN apk add --no-cache ffmpeg python3 && \
+RUN apk add --no-cache ffmpeg python3 curl unzip && \
     wget -q https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
+    chmod a+rx /usr/local/bin/yt-dlp && \
+    curl -fsSL https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip && \
+    unzip -q /tmp/deno.zip -d /usr/local/bin && \
+    chmod a+rx /usr/local/bin/deno && \
+    rm /tmp/deno.zip && \
+    apk del curl unzip
 
 COPY --from=builder /app/public ./public
 
