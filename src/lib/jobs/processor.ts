@@ -141,19 +141,20 @@ async function processJobInner(
 
   const existingYoutubeUrl = metadata.existingYoutubeUrl as string | undefined;
 
-  // For live YouTube recordings: download the video to GCS if not already done.
-  // After this point, effectiveGcsPath is set and all downstream processing
-  // (audio extraction, Transistor, WordPress) runs identically to a normal upload.
+  // For live YouTube recordings: download audio from YouTube to GCS.
+  // This gives us an mp3 directly — no need for the extractAudio step.
   let effectiveGcsPath: string | null = job.gcsPath;
+  let youtubeAudioPath: string | null = null;
   if (existingYoutubeUrl && !effectiveGcsPath) {
-    console.log(`[processor] Live YouTube recording — downloading ${existingYoutubeUrl}`);
+    console.log(`[processor] Live YouTube recording — downloading audio from ${existingYoutubeUrl}`);
     const downloadedPath = await downloadYouTubeVideoToGcs(existingYoutubeUrl, job.id);
     await db.distributionJob.update({
       where: { id: job.id },
       data: { gcsPath: downloadedPath },
     });
     effectiveGcsPath = downloadedPath;
-    console.log(`[processor] YouTube video downloaded to GCS: ${downloadedPath}`);
+    youtubeAudioPath = downloadedPath; // Already audio — skip extractAudio later
+    console.log(`[processor] YouTube audio downloaded to GCS: ${downloadedPath}`);
   }
 
   // Look up show hosts for Transistor author field
@@ -163,11 +164,11 @@ async function processJobInner(
   const showHosts = showMeta?.hosts ?? undefined;
 
   // Extract audio if needed (for Transistor — skip if already completed)
-  let gcsAudioPath: string | null = null;
+  let gcsAudioPath: string | null = youtubeAudioPath; // Already set if downloaded from YouTube
   const transistorNeedsWork = job.platforms.some(
     (p) => p.platform === "transistor" && p.status !== "completed"
   );
-  if (transistorNeedsWork && effectiveGcsPath) {
+  if (transistorNeedsWork && effectiveGcsPath && !gcsAudioPath) {
     try {
       gcsAudioPath = await extractAudio(effectiveGcsPath);
     } catch (error) {

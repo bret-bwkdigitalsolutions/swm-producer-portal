@@ -33,7 +33,7 @@ export async function downloadYouTubeVideoToGcs(
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const timestamp = now.getTime();
-  const gcsPath = `uploads/${year}/${month}/${timestamp}-youtube-${videoId}.mp4`;
+  const gcsPath = `uploads/${year}/${month}/${timestamp}-youtube-${videoId}.mp3`;
 
   const bucketName = process.env.GCS_BUCKET_NAME!;
   const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
@@ -65,8 +65,9 @@ export async function downloadYouTubeVideoToGcs(
 
     const args = [
       "--no-playlist",
-      "-f", "bv*+ba/b",          // best video+audio, or best single stream
-      "--remux-video", "mp4",    // remux to mp4 (doesn't fail if already mp4)
+      "-x",                       // extract audio only (we only need audio for Transistor)
+      "--audio-format", "mp3",
+      "--audio-quality", "0",     // best quality
       "-o", outputTemplate,
       "--no-warnings",
     ];
@@ -96,7 +97,7 @@ export async function downloadYouTubeVideoToGcs(
     console.log(`[yt-downloader] Job ${jobId}: uploading to GCS at ${gcsPath}`);
     await storage.bucket(bucketName).upload(tempVideoPath, {
       destination: gcsPath,
-      metadata: { contentType: "video/mp4" },
+      metadata: { contentType: "audio/mpeg" },
     });
 
     console.log(`[yt-downloader] Job ${jobId}: download complete`);
