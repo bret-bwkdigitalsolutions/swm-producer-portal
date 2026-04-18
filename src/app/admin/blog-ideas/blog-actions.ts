@@ -150,6 +150,7 @@ export async function sendToHost(
     data: {
       status: "reviewing",
       hostEmail: emailsString,
+      sentToHostAt: new Date(),
     },
   });
 
