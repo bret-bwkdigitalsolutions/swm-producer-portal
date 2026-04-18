@@ -1,6 +1,7 @@
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
 import { ContentType } from "@/lib/constants";
 import { prepareForWordPress } from "@/lib/image";
+import { extractYoutubeVideoId } from "@/lib/youtube-url";
 
 export interface WordPressPublishParams {
   wpShowId: number;
@@ -82,8 +83,8 @@ export async function publishToWordPress(
       _swm_portal_submission: true,
       parent_show_id: wpShowId,
       youtube_video_url: youtubeUrl,
-      youtube_video_id: new URL(youtubeUrl).searchParams.get("v") ?? "",
-      youtube_thumbnail_url: `https://i.ytimg.com/vi/${new URL(youtubeUrl).searchParams.get("v") ?? ""}/hqdefault.jpg`,
+      youtube_video_id: extractYoutubeVideoId(youtubeUrl) ?? "",
+      youtube_thumbnail_url: `https://i.ytimg.com/vi/${extractYoutubeVideoId(youtubeUrl) ?? ""}/hqdefault.jpg`,
       ...(episodeNumber !== undefined
         ? { episode_number: episodeNumber }
         : {}),
