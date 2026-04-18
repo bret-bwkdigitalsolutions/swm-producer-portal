@@ -70,12 +70,17 @@ export async function publishToWordPress(
     }
   }
 
+  // Assign brand taxonomy: YDC (show 21) → "Your Dark Companion" (term 2),
+  // all other shows → "The Sunset Lounge" (term 3)
+  const brandTermId = wpShowId === 21 ? 2 : 3;
+
   console.log(`[wordpress] Creating episode post: "${title}"`);
 
   const payload = {
     title,
     content,
     status,
+    swm_brand: [brandTermId],
     ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
     ...(status === "future" && scheduledDate ? { date: scheduledDate } : {}),
     meta: {
