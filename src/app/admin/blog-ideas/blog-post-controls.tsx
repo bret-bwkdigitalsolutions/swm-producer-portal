@@ -193,16 +193,20 @@ function EditStatusBadge({
   const colorClass =
     label === "No changes"
       ? "bg-gray-100 text-gray-600"
-      : label === "Minor edits"
+      : label === "Edited"
         ? "bg-blue-100 text-blue-800"
-        : label === "Moderate edits"
-          ? "bg-amber-100 text-amber-800"
-          : "bg-green-100 text-green-800"; // Heavily rewritten
+        : label === "Minor edits"
+          ? "bg-blue-100 text-blue-800"
+          : label === "Moderate edits"
+            ? "bg-amber-100 text-amber-800"
+            : "bg-green-100 text-green-800"; // Heavily rewritten
 
   const displayText =
     label === "No changes"
       ? "No changes"
-      : `${label} (~${percentage}%)`;
+      : percentage != null
+        ? `${label} (~${percentage}%)`
+        : label;
 
   return <Badge className={colorClass}>{displayText}</Badge>;
 }

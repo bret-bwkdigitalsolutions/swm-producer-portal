@@ -121,6 +121,19 @@ export async function checkBlogEdits(): Promise<void> {
         continue;
       }
 
+      // If we don't have originalContent, we can't diff — but we know the doc was modified
+      if (!post.originalContent) {
+        await db.blogPost.update({
+          where: { id: post.id },
+          data: {
+            editCheckPercentage: null,
+            editCheckLabel: "Edited",
+            editCheckAt: new Date(),
+          },
+        });
+        continue;
+      }
+
       const { html } = await readGoogleDocAsHtml(post.googleDocId);
       const percentage = computeEditPercentage(post.originalContent, html);
       const label = getEditLabel(percentage);
