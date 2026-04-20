@@ -379,6 +379,15 @@ export async function generateBlogPost(
     return { success: false, message: "Blog post already generated." };
   }
 
+  // Atomically claim the suggestion to prevent duplicate generation from race conditions
+  const { count } = await db.aiSuggestion.updateMany({
+    where: { id: suggestionId, accepted: false },
+    data: { accepted: true },
+  });
+  if (count === 0) {
+    return { success: false, message: "Blog post already generated." };
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return { success: false, message: "ANTHROPIC_API_KEY is not set." };
@@ -443,11 +452,14 @@ export async function generateBlogPost(
     const textBlock = response.content.find((b) => b.type === "text");
     parsed = parseBlogOutput(textBlock?.text ?? "");
   } catch (error) {
+    // Revert the claim so the suggestion can be retried
+    await db.aiSuggestion.update({ where: { id: suggestionId }, data: { accepted: false } });
     const msg = error instanceof Error ? error.message : "AI generation failed";
     return { success: false, message: msg };
   }
 
   if (!parsed.title || !parsed.content) {
+    await db.aiSuggestion.update({ where: { id: suggestionId }, data: { accepted: false } });
     return { success: false, message: "AI generated empty content." };
   }
 
