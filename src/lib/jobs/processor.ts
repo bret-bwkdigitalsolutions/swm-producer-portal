@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import type { DistributionJobPlatform } from "@prisma/client";
 import { generateAiSuggestions } from "./ai-processor";
 import { extractAudio } from "./audio-extractor";
-import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
+import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay } from "@/lib/transcription";
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
@@ -204,7 +204,8 @@ async function processJobInner(
       console.log("[processor] Starting transcription...");
       const transcriptionResult = await transcribeAudio(gcsAudioPath);
       const formattedTranscript = formatTranscriptForAI(transcriptionResult.segments);
-      transcript = transcriptionResult.fullText;
+      const displayTranscript = formatTranscriptForDisplay(transcriptionResult.segments);
+      transcript = displayTranscript;
 
       // Store transcript in job metadata
       const currentMetadata = job.metadata as Record<string, unknown>;
@@ -214,6 +215,7 @@ async function processJobInner(
           metadata: {
             ...currentMetadata,
             transcript: transcriptionResult.fullText,
+            transcriptDisplay: displayTranscript,
             transcriptTimestamped: formattedTranscript,
             detectedLanguage: transcriptionResult.language,
             audioDuration: transcriptionResult.duration,
@@ -627,7 +629,7 @@ async function processJobInner(
         chapters: chapters || undefined,
         youtubeUrl,
         thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
-        transcript: (updatedMetadata.transcript as string) || undefined,
+        transcript: (updatedMetadata.transcriptDisplay as string) || (updatedMetadata.transcript as string) || undefined,
         status: wpStatus,
         scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
         portalUserId: job.userId,

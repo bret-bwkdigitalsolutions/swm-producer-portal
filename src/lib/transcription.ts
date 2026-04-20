@@ -110,3 +110,40 @@ function formatTimestamp(seconds: number): string {
   const s = Math.floor(seconds % 60);
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
+
+/**
+ * Format transcript segments as speaker-labeled plain text for WordPress display.
+ * Groups consecutive segments by the same speaker into single paragraphs.
+ * Separates speaker turns with blank lines.
+ */
+export function formatTranscriptForDisplay(segments: TranscriptSegment[]): string {
+  if (segments.length === 0) return "";
+
+  const turns: { speaker: string; text: string }[] = [];
+  let currentSpeaker: number | undefined;
+  let currentText = "";
+
+  for (const seg of segments) {
+    if (seg.speaker !== currentSpeaker && currentText) {
+      turns.push({
+        speaker: currentSpeaker !== undefined ? `Speaker ${currentSpeaker + 1}` : "",
+        text: currentText.trim(),
+      });
+      currentText = "";
+    }
+    currentSpeaker = seg.speaker;
+    currentText += (currentText ? " " : "") + seg.text;
+  }
+
+  // Push final turn
+  if (currentText) {
+    turns.push({
+      speaker: currentSpeaker !== undefined ? `Speaker ${currentSpeaker + 1}` : "",
+      text: currentText.trim(),
+    });
+  }
+
+  return turns
+    .map((t) => (t.speaker ? `${t.speaker}: ${t.text}` : t.text))
+    .join("\n\n");
+}
