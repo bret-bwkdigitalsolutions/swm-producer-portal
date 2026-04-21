@@ -5,6 +5,7 @@ export const ContentType = {
   EPISODE: "episode",
   CASE_DOCUMENT: "case_document",
   SHOW: "show",
+  REACTION: "reaction",
 } as const;
 
 export type ContentTypeValue = (typeof ContentType)[keyof typeof ContentType];
@@ -16,6 +17,7 @@ export const CONTENT_TYPE_LABELS: Record<ContentTypeValue, string> = {
   [ContentType.EPISODE]: "Episodes",
   [ContentType.CASE_DOCUMENT]: "Case Documents",
   [ContentType.SHOW]: "Shows",
+  [ContentType.REACTION]: "Reactions",
 };
 
 export const UserRole = {

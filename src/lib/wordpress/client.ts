@@ -36,6 +36,7 @@ const POST_TYPE_MAP: Record<string, string> = {
   [ContentType.EPISODE]: "swm_episode",
   [ContentType.CASE_DOCUMENT]: "swm_case_doc",
   [ContentType.SHOW]: "swm_show",
+  [ContentType.REACTION]: "swm_reaction",
 };
 
 async function wpFetch<T>(
