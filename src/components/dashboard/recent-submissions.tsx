@@ -33,6 +33,8 @@ const CONTENT_TYPE_COLORS: Record<ContentTypeValue, string> = {
   case_document:
     "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300",
   show: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300",
+  reaction:
+    "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
 };
 
 function statusColor(status: string) {
