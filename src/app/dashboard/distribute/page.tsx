@@ -36,9 +36,10 @@ export default async function DistributePage() {
     allowedShows.map((s) => [s.id, s.title.rendered])
   );
 
-  // Fetch recent distribution jobs for this user
+  // Fetch recent distribution jobs — admins see all, producers see their own
   const jobs = await db.distributionJob.findMany({
-    where: { userId: session.user.id },
+    where:
+      session.user.role === "admin" ? {} : { userId: session.user.id },
     include: {
       platforms: {
         select: {
