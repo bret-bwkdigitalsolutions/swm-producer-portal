@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import { getCachedShows } from "@/lib/wordpress/cache";
 import { Button } from "@/components/ui/button";
 import { PlusIcon } from "lucide-react";
+import type { DistributionJobSummary } from "@/components/distribution/job-card";
 import {
-  JobCard,
-  type DistributionJobSummary,
-} from "@/components/distribution/job-card";
+  GroupedJobList,
+  type DayGroup,
+} from "@/components/distribution/grouped-job-list";
 
 export default async function DistributePage() {
   const session = await requireAuth();
@@ -52,7 +53,7 @@ export default async function DistributePage() {
       },
     },
     orderBy: { createdAt: "desc" },
-    take: 20,
+    take: 50,
   });
 
   const jobSummaries: DistributionJobSummary[] = jobs.map((job) => ({
@@ -63,6 +64,22 @@ export default async function DistributePage() {
     createdAt: job.createdAt.toISOString(),
     platforms: job.platforms,
   }));
+
+  // Group jobs by day
+  const dayGroups: DayGroup[] = [];
+  const dayMap = new Map<string, DistributionJobSummary[]>();
+  for (const job of jobSummaries) {
+    const dayLabel = new Date(job.createdAt).toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+    if (!dayMap.has(dayLabel)) {
+      dayMap.set(dayLabel, []);
+      dayGroups.push({ date: dayLabel, jobs: dayMap.get(dayLabel)! });
+    }
+    dayMap.get(dayLabel)!.push(job);
+  }
 
   return (
     <div className="space-y-6">
@@ -81,7 +98,7 @@ export default async function DistributePage() {
         </Link>
       </div>
 
-      {jobSummaries.length === 0 ? (
+      {dayGroups.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed py-12 text-center">
           <p className="text-muted-foreground">
             No distribution jobs yet. Start by uploading an episode.
@@ -94,11 +111,7 @@ export default async function DistributePage() {
           </Link>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {jobSummaries.map((job) => (
-            <JobCard key={job.id} job={job} />
-          ))}
-        </div>
+        <GroupedJobList groups={dayGroups} />
       )}
     </div>
   );
