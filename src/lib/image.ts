@@ -90,6 +90,7 @@ export async function compressForWordPress(file: File): Promise<File> {
   const targetWidth = Math.min(srcWidth, 1200);
 
   const result = await sharp(buffer)
+    .rotate() // auto-rotate based on EXIF orientation
     .resize(targetWidth, undefined, {
       fit: "inside",
       withoutEnlargement: true,

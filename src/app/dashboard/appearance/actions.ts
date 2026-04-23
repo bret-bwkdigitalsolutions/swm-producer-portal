@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { createPost, uploadMedia, attachMediaToPost } from "@/lib/wordpress/client";
 import { compressForWordPress } from "@/lib/image";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
@@ -133,6 +133,11 @@ export async function submitAppearance(
         _swm_appearance_gallery: galleryIds.join(","),
       },
     });
+
+    // Attach gallery images to the post so WP associates them
+    if (galleryIds.length > 0) {
+      await attachMediaToPost(galleryIds, wpPost.id);
+    }
 
     // Log activity
     await db.activityLog.create({

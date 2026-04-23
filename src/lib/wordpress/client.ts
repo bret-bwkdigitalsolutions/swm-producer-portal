@@ -163,6 +163,24 @@ export async function uploadMedia(
   return response.json();
 }
 
+/**
+ * Attach media items to a post by setting their parent post ID.
+ */
+export async function attachMediaToPost(
+  mediaIds: number[],
+  postId: number
+): Promise<void> {
+  await Promise.all(
+    mediaIds.map((mediaId) =>
+      wpFetch(`/media/${mediaId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post: postId }),
+      })
+    )
+  );
+}
+
 export async function createPost(
   contentType: string,
   payload: WpCreatePostPayload
