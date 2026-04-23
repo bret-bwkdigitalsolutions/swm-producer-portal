@@ -226,40 +226,46 @@ export async function generateAiSuggestions(
   }
 
   // Generate blog ideas as separate records (one per idea)
+  // Skip if blog ideas already exist for this job to avoid overwriting
+  // ideas a user has already seen or accepted
   if (typesToGenerate.includes("blog")) {
-    try {
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2048,
-        messages: [{ role: "user", content: buildBlogPrompt(ctx) }],
-      });
+    const existingBlogs = await db.aiSuggestion.count({
+      where: { jobId, type: "blog" },
+    });
 
-      const textBlock = response.content.find((b) => b.type === "text");
-      const fullContent = textBlock?.text ?? "";
-
-      // Split into individual ideas by '---' separator
-      const ideas = fullContent
-        .split(/\n---\n/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      // Remove existing blog suggestions for this job
-      await db.aiSuggestion.deleteMany({
-        where: { jobId, type: "blog" },
-      });
-
-      // Create one record per idea
-      for (const idea of ideas) {
-        await db.aiSuggestion.create({
-          data: { jobId, type: "blog", content: idea, accepted: false },
-        });
-      }
-
+    if (existingBlogs > 0) {
       console.log(
-        `[ai-processor] Generated ${ideas.length} blog ideas for job ${jobId}`
+        `[ai-processor] Skipping blog ideas for job ${jobId} — ${existingBlogs} already exist`
       );
-    } catch (error) {
-      console.error("[ai-processor] Blog ideas failed:", error);
+    } else {
+      try {
+        const response = await client.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2048,
+          messages: [{ role: "user", content: buildBlogPrompt(ctx) }],
+        });
+
+        const textBlock = response.content.find((b) => b.type === "text");
+        const fullContent = textBlock?.text ?? "";
+
+        // Split into individual ideas by '---' separator
+        const ideas = fullContent
+          .split(/\n---\n/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        for (const idea of ideas) {
+          await db.aiSuggestion.create({
+            data: { jobId, type: "blog", content: idea, accepted: false },
+          });
+        }
+
+        console.log(
+          `[ai-processor] Generated ${ideas.length} blog ideas for job ${jobId}`
+        );
+      } catch (error) {
+        console.error("[ai-processor] Blog ideas failed:", error);
+      }
     }
   }
 }
