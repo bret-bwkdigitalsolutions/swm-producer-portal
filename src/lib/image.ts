@@ -79,6 +79,30 @@ export async function prepareTransistorImageUrl(
 }
 
 /**
+ * Compress a File for WordPress upload.
+ * Resizes to max 1200px wide, converts to JPEG at 85% quality.
+ * Returns a new File object ready for the WP REST API.
+ */
+export async function compressForWordPress(file: File): Promise<File> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const metadata = await sharp(buffer).metadata();
+  const srcWidth = metadata.width ?? 0;
+  const targetWidth = Math.min(srcWidth, 1200);
+
+  const result = await sharp(buffer)
+    .resize(targetWidth, undefined, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+  // Replace extension with .jpg
+  const name = file.name.replace(/\.[^.]+$/, ".jpg");
+  return new File([new Uint8Array(result)], name, { type: "image/jpeg" });
+}
+
+/**
  * Resize an image for WordPress featured images.
  * Maintains aspect ratio, scales to 1200px wide, outputs as JPEG.
  */

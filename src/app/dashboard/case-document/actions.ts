@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { compressForWordPress } from "@/lib/image";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
 import { verifyContentTypeAccess } from "@/lib/auth-guard";
@@ -86,8 +87,10 @@ export async function submitCaseDocumentBulk(
     }
 
     try {
-      // Upload file to WordPress media library
-      const uploaded = await uploadMedia(file);
+      // Upload file to WordPress media library (compress images first)
+      const isImage = file.type.startsWith("image/");
+      const fileToUpload = isImage ? await compressForWordPress(file) : file;
+      const uploaded = await uploadMedia(fileToUpload);
 
       // Use filename-derived title if none provided
       const postTitle = title || file.name.replace(/\.[^.]+$/, "");

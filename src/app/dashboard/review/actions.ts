@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { compressForWordPress } from "@/lib/image";
 import { getShow } from "@/lib/wordpress/client";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType, CONTENT_TYPE_LABELS } from "@/lib/constants";
@@ -88,7 +89,8 @@ export async function submitReview(
     let posterImageUrl: string | undefined;
 
     if (posterFile && posterFile.size > 0) {
-      const media = await uploadMedia(posterFile);
+      const compressed = await compressForWordPress(posterFile);
+      const media = await uploadMedia(compressed);
       featuredMediaId = media.id;
       posterImageUrl = media.source_url;
     } else if (posterUrl?.trim()) {

@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { compressForWordPress } from "@/lib/image";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
 import { verifyShowAccess, verifyContentTypeAccess } from "@/lib/auth-guard";
@@ -86,13 +87,14 @@ export async function submitAppearance(
   }
 
   try {
-    // Upload gallery images
+    // Upload gallery images (compress first to stay within WP limits)
     const galleryFiles = formData.getAll("gallery") as File[];
     const galleryIds: number[] = [];
 
     for (const file of galleryFiles) {
       if (file.size > 0) {
-        const uploaded = await uploadMedia(file);
+        const compressed = await compressForWordPress(file);
+        const uploaded = await uploadMedia(compressed);
         galleryIds.push(uploaded.id);
       }
     }

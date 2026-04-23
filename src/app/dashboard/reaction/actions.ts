@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPost, uploadMedia } from "@/lib/wordpress/client";
+import { compressForWordPress } from "@/lib/image";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
 import { verifyShowAccess, verifyContentTypeAccess } from "@/lib/auth-guard";
@@ -77,7 +78,8 @@ export async function submitReaction(
     // Upload thumbnail if a file was provided
     let featuredMedia: number | undefined;
     if (thumbnailFile && thumbnailFile.size > 0) {
-      const media = await uploadMedia(thumbnailFile);
+      const compressed = await compressForWordPress(thumbnailFile);
+      const media = await uploadMedia(compressed);
       featuredMedia = media.id;
     }
 
