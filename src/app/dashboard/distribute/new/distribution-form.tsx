@@ -283,6 +283,11 @@ export function DistributionForm({
       fd.set("description", "AI-generated description pending");
       fd.set("platform_youtube", "on");
       if (publishState.status === "draft") fd.set("status", "draft");
+      if (seasonNumber) fd.set("season_number", seasonNumber);
+      if (episodeNumber) fd.set("episode_number", episodeNumber);
+      // Read explicit checkbox from the form
+      const explicitCheckbox = formRef.current?.querySelector<HTMLInputElement>('#explicit');
+      if (explicitCheckbox?.checked) fd.set("explicit", "true");
 
       if (videoSource === "upload") {
         fd.set("video_file_name", videoFileName ?? "");
@@ -459,8 +464,12 @@ export function DistributionForm({
         ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
         : [];
 
+      // Read explicit checkbox from the form
+      const explicitChecked = fd.get("explicit") === "true";
+
       // Update job with final description, chapters, platforms
       const updateResult = await updateDistribution(aiUploadedJobId, {
+        title: title.trim(),
         description: description.trim(),
         chapters: chapters.trim() || undefined,
         tags,
@@ -469,6 +478,9 @@ export function DistributionForm({
         scheduleMode: publishState.status === "future" ? "schedule" : "now",
         scheduledAt: publishState.status === "future" ? publishState.date ?? null : null,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        seasonNumber: seasonNumber ? parseInt(seasonNumber, 10) : undefined,
+        episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
+        explicit: explicitChecked,
       });
 
       if (!updateResult.success) {
