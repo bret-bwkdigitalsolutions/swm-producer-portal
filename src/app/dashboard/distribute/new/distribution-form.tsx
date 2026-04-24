@@ -104,6 +104,7 @@ export function DistributionForm({
     null
   );
   const thumbnailFileRef = useRef<File | null>(null);
+  const thumbnailUploadedNameRef = useRef<string | null>(null);
   const [videoSource, setVideoSource] = useState<"upload" | "youtube">("upload");
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
 
@@ -314,6 +315,8 @@ export function DistributionForm({
       } else {
         await uploadThumbnailToGCS(jobId);
       }
+      // Track which thumbnail was uploaded so we can detect changes later
+      thumbnailUploadedNameRef.current = thumbnailFileRef.current?.name ?? null;
 
       setAnalysisStep("Preparing...");
       const confirmRes = await fetch("/api/upload/confirm", {
@@ -458,6 +461,12 @@ export function DistributionForm({
         throw new Error("Please select at least one target platform.");
       }
 
+      // Re-upload thumbnail if the user selected a new one after AI analysis
+      const currentThumbName = thumbnailFileRef.current?.name ?? null;
+      if (currentThumbName !== thumbnailUploadedNameRef.current) {
+        await uploadThumbnailToGCS(aiUploadedJobId);
+      }
+
       // Collect tags
       const tagsRaw = fd.get("tags") as string | null;
       const tags = tagsRaw
@@ -505,7 +514,7 @@ export function DistributionForm({
       setUploadError(message);
       setUploading(false);
     }
-  }, [aiUploadedJobId, description, chapters, publishState, router]);
+  }, [aiUploadedJobId, description, chapters, publishState, router, uploadThumbnailToGCS, title, seasonNumber, episodeNumber]);
 
   // Trigger upload after successful manual-path job creation
   useEffect(() => {
@@ -675,6 +684,7 @@ export function DistributionForm({
                   setDescriptionMode(null);
                   setSuggestions([]);
                   setAiUploadedJobId(null);
+                  thumbnailUploadedNameRef.current = null;
                   setTags(frequentTags[showId] ?? []);
                   setSuggestedTags([]);
                 }}
@@ -699,6 +709,7 @@ export function DistributionForm({
                   setDescriptionMode(null);
                   setSuggestions([]);
                   setAiUploadedJobId(null);
+                  thumbnailUploadedNameRef.current = null;
                   setTags(frequentTags[showId] ?? []);
                   setSuggestedTags([]);
                 }}
@@ -748,6 +759,7 @@ export function DistributionForm({
                     setDescriptionMode(null);
                     setSuggestions([]);
                     setAiUploadedJobId(null);
+                    thumbnailUploadedNameRef.current = null;
                     setTags(frequentTags[showId] ?? []);
                     setSuggestedTags([]);
                   }}
@@ -773,6 +785,7 @@ export function DistributionForm({
                     setDescriptionMode(null);
                     setSuggestions([]);
                     setAiUploadedJobId(null);
+                    thumbnailUploadedNameRef.current = null;
                     setTags(frequentTags[showId] ?? []);
                     setSuggestedTags([]);
                   }
