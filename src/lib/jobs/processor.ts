@@ -198,8 +198,14 @@ async function processJobInner(
   }
 
   // --- Transcription + AI Processing ---
+  // Skip if the AI analysis endpoint already transcribed (AI path).
   let transcript: string | null = null;
-  if (gcsAudioPath) {
+  const existingTranscript = (metadata.transcript as string) ?? null;
+
+  if (existingTranscript) {
+    console.log("[processor] Transcript already exists (AI path) — skipping re-transcription");
+    transcript = (metadata.transcriptDisplay as string) ?? existingTranscript;
+  } else if (gcsAudioPath) {
     try {
       console.log("[processor] Starting transcription...");
       const transcriptionResult = await transcribeAudio(gcsAudioPath);
@@ -229,8 +235,6 @@ async function processJobInner(
       console.log("[processor] AI suggestions complete.");
     } catch (error) {
       console.error("[processor] Transcription/AI processing failed (non-fatal):", error);
-      // Non-fatal: continue with platform uploads even if transcription fails
-      // Try AI suggestions without transcript (uses title/description)
       try {
         await generateAiSuggestions(job.id);
       } catch (aiErr) {
@@ -304,16 +308,16 @@ async function processJobInner(
         throw new Error("Video file not available for YouTube upload.");
       }
 
-      const description = (metadata.description as string) ?? "";
-      const chapters = (metadata.chapters as string) ?? "";
+      const description = (updatedMetadata.description as string) ?? "";
+      const chapters = (updatedMetadata.chapters as string) ?? "";
       const fullDescription = chapters
         ? `${description}\n\n${chapters}`
         : description;
-      const tags = (metadata.tags as string[]) ?? [];
-      const isDraft = (metadata.isDraft as boolean) ?? false;
-      const scheduleMode = (metadata.scheduleMode as string) ?? "now";
+      const tags = (updatedMetadata.tags as string[]) ?? [];
+      const isDraft = (updatedMetadata.isDraft as boolean) ?? false;
+      const scheduleMode = (updatedMetadata.scheduleMode as string) ?? "now";
       const scheduledAt = scheduleMode === "schedule"
-        ? (metadata.scheduledAt as string) ?? undefined
+        ? (updatedMetadata.scheduledAt as string) ?? undefined
         : undefined;
 
       const result = await uploadToYouTube({
@@ -340,7 +344,7 @@ async function processJobInner(
       });
 
       // Set custom thumbnail if one was uploaded
-      const thumbnailGcsPath = metadata.thumbnailGcsPath as string | undefined;
+      const thumbnailGcsPath = updatedMetadata.thumbnailGcsPath as string | undefined;
       if (thumbnailGcsPath && youtubeVideoId) {
         try {
           const ext = thumbnailGcsPath.match(/\.(jpe?g|png|webp)$/i)?.[0] ?? ".jpg";
