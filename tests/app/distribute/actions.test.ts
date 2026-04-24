@@ -1,12 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockCreate, mockCreateMany, mockActivityCreate, mockFindUnique } =
-  vi.hoisted(() => ({
-    mockCreate: vi.fn().mockResolvedValue({ id: "job-1" }),
-    mockCreateMany: vi.fn().mockResolvedValue({}),
-    mockActivityCreate: vi.fn().mockResolvedValue({}),
-    mockFindUnique: vi.fn(),
-  }));
+const {
+  mockCreate,
+  mockCreateMany,
+  mockActivityCreate,
+  mockFindUnique,
+  mockJobFindUnique,
+  mockJobUpdate,
+  mockPlatformDeleteMany,
+} = vi.hoisted(() => ({
+  mockCreate: vi.fn().mockResolvedValue({ id: "job-1" }),
+  mockCreateMany: vi.fn().mockResolvedValue({}),
+  mockActivityCreate: vi.fn().mockResolvedValue({}),
+  mockFindUnique: vi.fn(),
+  mockJobFindUnique: vi.fn(),
+  mockJobUpdate: vi.fn().mockResolvedValue({}),
+  mockPlatformDeleteMany: vi.fn().mockResolvedValue({}),
+}));
 
 // Mock auth and db
 vi.mock("@/lib/auth", () => ({
@@ -23,16 +33,23 @@ vi.mock("@/lib/db", () => ({
   db: {
     $transaction: vi.fn(async (fn: any) =>
       fn({
-        distributionJob: { create: mockCreate },
-        distributionJobPlatform: { createMany: mockCreateMany },
+        distributionJob: { create: mockCreate, update: mockJobUpdate },
+        distributionJobPlatform: {
+          createMany: mockCreateMany,
+          deleteMany: mockPlatformDeleteMany,
+        },
         activityLog: { create: mockActivityCreate },
       })
     ),
     userShowAccess: { findUnique: mockFindUnique },
+    distributionJob: { findUnique: mockJobFindUnique },
   },
 }));
 
-import { submitDistribution } from "@/app/dashboard/distribute/new/actions";
+import {
+  submitDistribution,
+  updateDistribution,
+} from "@/app/dashboard/distribute/new/actions";
 
 function makeFormData(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -122,5 +139,64 @@ describe("submitDistribution", () => {
     const result = await submitDistribution({}, fd);
     expect(result.success).toBe(false);
     expect(result.errors?.video_file).toBeDefined();
+  });
+});
+
+describe("updateDistribution", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockJobFindUnique.mockResolvedValue({
+      id: "job-1",
+      userId: "user-1",
+      metadata: { description: "old desc", thumbnailGcsPath: "thumb.jpg" },
+    });
+    mockJobUpdate.mockResolvedValue({});
+    mockPlatformDeleteMany.mockResolvedValue({});
+    mockCreateMany.mockResolvedValue({});
+  });
+
+  it("updates title on the job record", async () => {
+    const result = await updateDistribution("job-1", {
+      title: "Updated Title",
+      description: "Some description",
+      platforms: ["youtube"],
+    });
+    expect(result.success).toBe(true);
+    const updateCall = mockJobUpdate.mock.calls[0][0];
+    expect(updateCall.data.title).toBe("Updated Title");
+  });
+
+  it("updates seasonNumber and episodeNumber in metadata", async () => {
+    const result = await updateDistribution("job-1", {
+      description: "Some description",
+      platforms: ["youtube"],
+      seasonNumber: 3,
+      episodeNumber: 42,
+    });
+    expect(result.success).toBe(true);
+    const updateCall = mockJobUpdate.mock.calls[0][0];
+    expect(updateCall.data.metadata.seasonNumber).toBe(3);
+    expect(updateCall.data.metadata.episodeNumber).toBe(42);
+  });
+
+  it("updates explicit flag in metadata", async () => {
+    const result = await updateDistribution("job-1", {
+      description: "Some description",
+      platforms: ["youtube"],
+      explicit: true,
+    });
+    expect(result.success).toBe(true);
+    const updateCall = mockJobUpdate.mock.calls[0][0];
+    expect(updateCall.data.metadata.explicit).toBe(true);
+  });
+
+  it("preserves existing metadata fields not being updated", async () => {
+    const result = await updateDistribution("job-1", {
+      description: "New description",
+      platforms: ["youtube"],
+    });
+    expect(result.success).toBe(true);
+    const updateCall = mockJobUpdate.mock.calls[0][0];
+    expect(updateCall.data.metadata.thumbnailGcsPath).toBe("thumb.jpg");
   });
 });

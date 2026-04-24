@@ -199,6 +199,7 @@ export async function submitDistribution(
 export async function updateDistribution(
   jobId: string,
   data: {
+    title?: string;
     description: string;
     chapters?: string;
     tags?: string[];
@@ -207,6 +208,9 @@ export async function updateDistribution(
     scheduleMode?: string;
     scheduledAt?: string | null;
     timezone?: string | null;
+    seasonNumber?: number;
+    episodeNumber?: number;
+    explicit?: boolean;
   }
 ): Promise<FormState> {
   const session = await auth();
@@ -230,10 +234,11 @@ export async function updateDistribution(
   const existingMetadata = job.metadata as Record<string, unknown>;
 
   await db.$transaction(async (tx) => {
-    // Update job metadata with final description, chapters, tags
+    // Update job metadata with final description, chapters, tags, and optional fields
     await tx.distributionJob.update({
       where: { id: jobId },
       data: {
+        ...(data.title !== undefined ? { title: data.title } : {}),
         metadata: {
           ...existingMetadata,
           description: data.description,
@@ -245,6 +250,13 @@ export async function updateDistribution(
             data.scheduledAt && data.scheduleMode === "schedule"
               ? toISOWithTimezone(data.scheduledAt, data.timezone)
               : (data.scheduledAt ?? null),
+          ...(data.seasonNumber !== undefined
+            ? { seasonNumber: data.seasonNumber }
+            : {}),
+          ...(data.episodeNumber !== undefined
+            ? { episodeNumber: data.episodeNumber }
+            : {}),
+          ...(data.explicit !== undefined ? { explicit: data.explicit } : {}),
         },
       },
     });
