@@ -22,24 +22,18 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
   const jobId = formData.get("jobId") as string | null;
+  const youtubeVideoId = formData.get("youtubeVideoId") as string | null;
 
-  if (!file || !jobId) {
+  if (!jobId) {
     return NextResponse.json(
-      { error: "Missing file or jobId." },
+      { error: "Missing jobId." },
       { status: 400 }
     );
   }
 
-  if (!ALLOWED_TYPES.includes(file.type)) {
+  if (!file && !youtubeVideoId) {
     return NextResponse.json(
-      { error: `Unsupported image type: ${file.type}` },
-      { status: 400 }
-    );
-  }
-
-  if (file.size > MAX_SIZE) {
-    return NextResponse.json(
-      { error: "Image exceeds 15 MB limit." },
+      { error: "Missing file or youtubeVideoId." },
       { status: 400 }
     );
   }
@@ -65,8 +59,55 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const gcsPath = await uploadBuffer(file.name, buffer, file.type);
+    let buffer: Buffer;
+    let contentType: string;
+    let filename: string;
+
+    if (file) {
+      // Standard file upload path
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        return NextResponse.json(
+          { error: `Unsupported image type: ${file.type}` },
+          { status: 400 }
+        );
+      }
+      if (file.size > MAX_SIZE) {
+        return NextResponse.json(
+          { error: "Image exceeds 15 MB limit." },
+          { status: 400 }
+        );
+      }
+      buffer = Buffer.from(await file.arrayBuffer());
+      contentType = file.type;
+      filename = file.name;
+    } else {
+      // YouTube thumbnail fallback — fetch server-side to avoid CORS
+      const urls = [
+        `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
+        `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`,
+      ];
+
+      let fetched = false;
+      for (const url of urls) {
+        const res = await fetch(url);
+        if (res.ok) {
+          buffer = Buffer.from(await res.arrayBuffer());
+          contentType = "image/jpeg";
+          filename = `youtube-${youtubeVideoId}.jpg`;
+          fetched = true;
+          break;
+        }
+      }
+
+      if (!fetched) {
+        return NextResponse.json(
+          { error: "Could not fetch YouTube thumbnail." },
+          { status: 400 }
+        );
+      }
+    }
+
+    const gcsPath = await uploadBuffer(filename!, buffer!, contentType!);
 
     // Store thumbnail path in job metadata
     const existingMetadata = (job.metadata as Record<string, unknown>) ?? {};
