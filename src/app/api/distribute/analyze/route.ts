@@ -5,6 +5,7 @@ import { extractAudio } from "@/lib/jobs/audio-extractor";
 import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
 import { generateAiSuggestions } from "@/lib/jobs/ai-processor";
 import { downloadYouTubeVideoToGcs } from "@/lib/jobs/youtube-video-downloader";
+import { getRecentEpisodeTitles, getLatestEpisodeNumbers, getShow } from "@/lib/wordpress/client";
 
 /**
  * POST /api/distribute/analyze
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
 
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
-    select: { id: true, userId: true, gcsPath: true, title: true, metadata: true },
+    select: { id: true, userId: true, gcsPath: true, title: true, metadata: true, wpShowId: true },
   });
 
   if (!job) {
@@ -88,12 +89,25 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 3. Generate AI suggestions
+    // 3. Fetch show context for title generation
+    const [recentTitles, epNumbers, show] = await Promise.all([
+      getRecentEpisodeTitles(job.wpShowId),
+      getLatestEpisodeNumbers(job.wpShowId),
+      getShow(job.wpShowId).catch(() => null),
+    ]);
+    const nextEpisodeNumber = epNumbers.episodeNumber != null ? epNumbers.episodeNumber + 1 : null;
+    const seasonNumber = epNumbers.seasonNumber;
+    const showName = show?.title.rendered ?? undefined;
+
+    // 4. Generate AI suggestions (including title)
     console.log(`[analyze] Generating AI suggestions for job ${jobId}`);
     await generateAiSuggestions(
       jobId,
       formattedTranscript,
-      transcription.language
+      transcription.language,
+      undefined,
+      recentTitles,
+      showName
     );
 
     // Fetch the generated suggestions
@@ -108,6 +122,8 @@ export async function POST(request: NextRequest) {
       language: transcription.language,
       duration: transcription.duration,
       suggestions,
+      episodeNumber: nextEpisodeNumber,
+      seasonNumber,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Analysis failed";
