@@ -135,6 +135,23 @@ export async function getLatestEpisodeNumbers(
   }
 }
 
+/**
+ * Get recent published episode titles for a show, used for AI title style matching.
+ */
+export async function getRecentEpisodeTitles(
+  wpShowId: number,
+  count: number = 10
+): Promise<string[]> {
+  try {
+    const posts = await wpFetch<WpPost[]>(
+      `/swm_episode?per_page=${count}&orderby=date&order=desc&status=publish&_fields=id,title&meta_key=parent_show_id&meta_value=${wpShowId}`
+    );
+    return posts.map((p) => decodeHtmlEntities(p.title.rendered));
+  } catch {
+    return [];
+  }
+}
+
 export async function uploadMedia(
   file: File,
   filename?: string
