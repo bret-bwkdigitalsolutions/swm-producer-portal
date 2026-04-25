@@ -140,6 +140,20 @@ describe("submitDistribution", () => {
     expect(result.success).toBe(false);
     expect(result.errors?.video_file).toBeDefined();
   });
+
+  it("accepts a placeholder title for AI path (description not required)", async () => {
+    const fd = makeFormData({
+      show_id: "42",
+      title: "AI analysis in progress",
+      description: "AI-generated description pending",
+      platform_youtube: "on",
+      video_file_name: "episode.mp4",
+      video_file_size: "1000000",
+      video_content_type: "video/mp4",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("updateDistribution", () => {
