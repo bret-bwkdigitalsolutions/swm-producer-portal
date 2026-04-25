@@ -41,7 +41,7 @@ import {
   SparklesIcon,
   LinkIcon,
 } from "lucide-react";
-import { isValidYoutubeUrl } from "@/lib/youtube-url";
+import { isValidYoutubeUrl, extractYoutubeVideoId } from "@/lib/youtube-url";
 
 interface Show {
   id: string;
@@ -57,7 +57,7 @@ interface FormState {
 
 interface AiSuggestion {
   id: string;
-  type: "chapters" | "summary" | "blog" | "keywords";
+  type: "chapters" | "summary" | "blog" | "keywords" | "title";
   content: string;
   accepted: boolean;
 }
@@ -107,6 +107,7 @@ export function DistributionForm({
   const thumbnailUploadedNameRef = useRef<string | null>(null);
   const [videoSource, setVideoSource] = useState<"upload" | "youtube">("upload");
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
+  const [youtubeThumbUrl, setYoutubeThumbUrl] = useState<string | null>(null);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -140,11 +141,23 @@ export function DistributionForm({
    */
   const uploadThumbnailToGCS = useCallback(async (jobId: string) => {
     const file = thumbnailFileRef.current;
-    if (!file) return;
 
     const formData = new FormData();
-    formData.append("file", file);
     formData.append("jobId", jobId);
+
+    if (file) {
+      formData.append("file", file);
+    } else if (videoSource === "youtube" && youtubeUrlInput) {
+      // Fall back to YouTube thumbnail if no manual file uploaded
+      const videoId = extractYoutubeVideoId(youtubeUrlInput);
+      if (videoId) {
+        formData.append("youtubeVideoId", videoId);
+      } else {
+        return; // No thumbnail to upload
+      }
+    } else {
+      return; // No thumbnail to upload
+    }
 
     const res = await fetch("/api/upload/thumbnail", {
       method: "POST",
@@ -155,7 +168,7 @@ export function DistributionForm({
       const err = await res.json().catch(() => ({ error: "Upload failed" }));
       console.error("[thumbnail] Upload failed:", err.error);
     }
-  }, []);
+  }, [videoSource, youtubeUrlInput]);
 
   /**
    * Upload video to GCS via resumable upload. Returns when upload is complete.
@@ -278,17 +291,14 @@ export function DistributionForm({
     setAnalysisStep("Creating job...");
 
     try {
+      // Use placeholder title — real title comes from AI suggestions
+      const showName = shows.find((s) => s.id === showId)?.title ?? "Episode";
       const fd = new FormData();
       fd.set("show_id", showId);
-      fd.set("title", title);
+      fd.set("title", `AI analysis in progress — ${showName}`);
       fd.set("description", "AI-generated description pending");
       fd.set("platform_youtube", "on");
       if (publishState.status === "draft") fd.set("status", "draft");
-      if (seasonNumber) fd.set("season_number", seasonNumber);
-      if (episodeNumber) fd.set("episode_number", episodeNumber);
-      // Read explicit checkbox from the form
-      const explicitCheckbox = formRef.current?.querySelector<HTMLInputElement>('#explicit');
-      if (explicitCheckbox?.checked) fd.set("explicit", "true");
 
       if (videoSource === "upload") {
         fd.set("video_file_name", videoFileName ?? "");
@@ -377,6 +387,20 @@ export function DistributionForm({
         setSuggestedTags([...aiNew, ...freqRemaining]);
       }
 
+      // Populate AI-suggested title
+      const titleSuggestion = aiSuggestions.find((s) => s.type === "title");
+      if (titleSuggestion) {
+        setTitle(titleSuggestion.content);
+      }
+
+      // Populate episode/season from analyze response (deterministic: last + 1)
+      if (data.episodeNumber != null) {
+        setEpisodeNumber(String(data.episodeNumber));
+      }
+      if (data.seasonNumber != null) {
+        setSeasonNumber(String(data.seasonNumber));
+      }
+
       setAnalysisStep("");
     } catch (error) {
       const message =
@@ -390,7 +414,7 @@ export function DistributionForm({
     }
   }, [
     showId,
-    title,
+    shows,
     videoSource,
     videoFileName,
     videoFileSize,
@@ -780,7 +804,13 @@ export function DistributionForm({
                 placeholder="https://www.youtube.com/watch?v=..."
                 value={youtubeUrlInput}
                 onChange={(e) => {
-                  setYoutubeUrlInput(e.target.value);
+                  const url = e.target.value;
+                  setYoutubeUrlInput(url);
+                  // Show YouTube thumbnail preview
+                  const videoId = extractYoutubeVideoId(url);
+                  setYoutubeThumbUrl(
+                    videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null
+                  );
                   if (aiUploadedJobId) {
                     setDescriptionMode(null);
                     setSuggestions([]);
@@ -818,70 +848,30 @@ export function DistributionForm({
             <input type="hidden" name="existing_youtube_url" value={youtubeUrlInput} />
           )}
 
-          {/* Episode title */}
-          <div className="space-y-2">
-            <Label htmlFor="title">
-              Episode Title <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="title"
-              name="title"
-              placeholder="e.g., Episode 42: The Cold Case"
-              required
-              disabled={isDisabled}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-
-          {/* Season & Episode numbers */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="season_number">Season Number</Label>
-              <Input
-                id="season_number"
-                name="season_number"
-                type="number"
-                min={1}
-                placeholder="Optional"
-                disabled={isDisabled}
-                value={seasonNumber}
-                onChange={(e) => setSeasonNumber(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="episode_number">Episode Number</Label>
-              <Input
-                id="episode_number"
-                name="episode_number"
-                type="number"
-                min={1}
-                placeholder="Optional"
-                disabled={isDisabled}
-                value={episodeNumber}
-                onChange={(e) => setEpisodeNumber(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Content warning */}
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="explicit"
-              name="explicit"
-              value="true"
-              className="rounded border-gray-300"
-            />
-            <Label htmlFor="explicit" className="cursor-pointer text-sm">
-              Contains explicit/mature content
-            </Label>
-          </div>
-
-          {/* Thumbnail upload — visible once video source is ready */}
+          {/* Thumbnail upload + YouTube preview */}
           {videoSourceReady && (
             <div className="space-y-2">
               <Label htmlFor="thumbnail">Thumbnail</Label>
+              {/* YouTube thumbnail preview */}
+              {youtubeThumbUrl && !thumbnailFileName && (
+                <div className="space-y-1">
+                  <img
+                    src={youtubeThumbUrl}
+                    alt="YouTube thumbnail"
+                    className="w-full max-w-xs rounded-lg border"
+                    onError={(e) => {
+                      // Fall back to hqdefault if maxresdefault doesn't exist
+                      const img = e.currentTarget;
+                      if (img.src.includes("maxresdefault")) {
+                        img.src = img.src.replace("maxresdefault", "hqdefault");
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    YouTube thumbnail (auto-detected). Upload below to override.
+                  </p>
+                </div>
+              )}
               <label
                 htmlFor="thumbnail"
                 className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
@@ -893,7 +883,7 @@ export function DistributionForm({
                   </span>
                 ) : (
                   <span className="text-sm text-muted-foreground">
-                    Upload episode thumbnail image
+                    {youtubeThumbUrl ? "Upload to override YouTube thumbnail" : "Upload episode thumbnail image"}
                   </span>
                 )}
                 <input
@@ -924,10 +914,10 @@ export function DistributionForm({
                 >
                   <PenLineIcon className="size-6 text-muted-foreground" />
                   <span className="text-sm font-medium">
-                    I&apos;ll write my own description
+                    I&apos;ll fill in the details myself
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    Enter your description manually
+                    Enter title, description, and metadata manually
                   </span>
                 </button>
                 <button
@@ -943,7 +933,7 @@ export function DistributionForm({
                     Get AI recommendations
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    Upload video first, then get AI-generated suggestions
+                    AI suggests title, description, chapters &amp; tags
                   </span>
                 </button>
               </div>
@@ -967,9 +957,132 @@ export function DistributionForm({
             </div>
           )}
 
+          {/* Manual path — title, episode/season, explicit */}
+          {descriptionMode === "manual" && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="title">
+                  Episode Title <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="title"
+                  name="title"
+                  placeholder="e.g., Episode 42: The Cold Case"
+                  required
+                  disabled={isDisabled}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="season_number">Season Number</Label>
+                  <Input
+                    id="season_number"
+                    name="season_number"
+                    type="number"
+                    min={1}
+                    placeholder="Optional"
+                    disabled={isDisabled}
+                    value={seasonNumber}
+                    onChange={(e) => setSeasonNumber(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="episode_number">Episode Number</Label>
+                  <Input
+                    id="episode_number"
+                    name="episode_number"
+                    type="number"
+                    min={1}
+                    placeholder="Optional"
+                    disabled={isDisabled}
+                    value={episodeNumber}
+                    onChange={(e) => setEpisodeNumber(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="explicit"
+                  name="explicit"
+                  value="true"
+                  className="rounded border-gray-300"
+                />
+                <Label htmlFor="explicit" className="cursor-pointer text-sm">
+                  Contains explicit/mature content
+                </Label>
+              </div>
+            </>
+          )}
+
           {/* AI suggestions review */}
           {descriptionMode === "ai" && suggestions.length > 0 && (
             <div className="space-y-4">
+              {/* AI-suggested title */}
+              <div className="space-y-2">
+                <Label htmlFor="ai-title">
+                  Episode Title{" "}
+                  <span className="text-xs text-muted-foreground">
+                    (AI-suggested, edit as needed)
+                  </span>
+                </Label>
+                <Input
+                  id="ai-title"
+                  name="title"
+                  disabled={isDisabled}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </div>
+
+              {/* Season & Episode numbers */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="ai-season">Season Number</Label>
+                  <Input
+                    id="ai-season"
+                    name="season_number"
+                    type="number"
+                    min={1}
+                    placeholder="Optional"
+                    disabled={isDisabled}
+                    value={seasonNumber}
+                    onChange={(e) => setSeasonNumber(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-episode">Episode Number</Label>
+                  <Input
+                    id="ai-episode"
+                    name="episode_number"
+                    type="number"
+                    min={1}
+                    placeholder="Optional"
+                    disabled={isDisabled}
+                    value={episodeNumber}
+                    onChange={(e) => setEpisodeNumber(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Content warning */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="explicit"
+                  name="explicit"
+                  value="true"
+                  className="rounded border-gray-300"
+                />
+                <Label htmlFor="explicit" className="cursor-pointer text-sm">
+                  Contains explicit/mature content
+                </Label>
+              </div>
+
               {/* Summary / Description */}
               <div className="space-y-2">
                 <Label htmlFor="ai-description">
@@ -1072,7 +1185,7 @@ export function DistributionForm({
           <CardFooter>
             <Button
               type="submit"
-              disabled={isDisabled || !description.trim()}
+              disabled={isDisabled || !description.trim() || !title.trim()}
               size="lg"
               className="w-full"
             >
