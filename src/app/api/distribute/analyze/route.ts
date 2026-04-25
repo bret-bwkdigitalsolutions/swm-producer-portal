@@ -126,8 +126,21 @@ export async function POST(request: NextRequest) {
       seasonNumber,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Analysis failed";
+    const rawMessage = error instanceof Error ? error.message : "Analysis failed";
     console.error(`[analyze] Failed for job ${jobId}:`, error);
+
+    // Mark the job as failed so it shows correctly in the job list
+    await db.distributionJob.update({
+      where: { id: jobId },
+      data: { status: "failed" },
+    }).catch((e) => console.error(`[analyze] Failed to mark job ${jobId} as failed:`, e));
+
+    // Return a user-friendly error — don't expose raw yt-dlp output
+    const isYtdlpAuth = rawMessage.includes("Sign in to confirm") || rawMessage.includes("cookies");
+    const message = isYtdlpAuth
+      ? "YouTube download failed — authentication cookies have expired. Please contact an admin to refresh them."
+      : rawMessage;
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
