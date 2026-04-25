@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
 
-export type AiSuggestionType = "chapters" | "summary" | "blog" | "keywords";
+export type AiSuggestionType = "chapters" | "summary" | "blog" | "keywords" | "title";
 
 interface AnalysisContext {
   title: string;
@@ -130,6 +130,36 @@ function buildKeywordsPrompt(ctx: AnalysisContext): string {
     .join("\n");
 }
 
+function buildTitlePrompt(ctx: AnalysisContext, recentTitles: string[], showName?: string): string {
+  const source = ctx.transcript
+    ? `Transcript:\n${ctx.transcript}`
+    : `Description: ${ctx.description ?? "N/A"}`;
+
+  const titleExamples = recentTitles.length > 0
+    ? `\nRecent episode titles from this show (match this style and voice):\n${recentTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}`
+    : "";
+
+  return [
+    "You are helping a podcast producer title their new episode.",
+    showName ? `The show is called "${showName}".` : "",
+    "Generate a single episode title that:",
+    "- Reflects the main topic or theme discussed in the episode",
+    "- Matches the style, voice, and format of this show's previous titles",
+    "- Is compelling and would make a listener want to click",
+    "- Uses plain text only, no quotes or markdown",
+    ctx.language === "es"
+      ? "- Write the title in Spanish since the episode is in Spanish"
+      : "",
+    "",
+    "Output ONLY the title. No preamble, no explanation, no quotes — just the title text.",
+    titleExamples,
+    "",
+    source,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 /**
  * Generate AI suggestions for a distribution job.
  *
@@ -137,12 +167,16 @@ function buildKeywordsPrompt(ctx: AnalysisContext): string {
  * @param transcript - Optional timestamped transcript text
  * @param language - Optional detected language code
  * @param types - Which suggestion types to generate (defaults to all)
+ * @param recentTitles - Recent episode titles from the show for style matching
+ * @param showName - Name of the show for context
  */
 export async function generateAiSuggestions(
   jobId: string,
   transcript?: string | null,
   language?: string | null,
-  types?: AiSuggestionType[]
+  types?: AiSuggestionType[],
+  recentTitles?: string[],
+  showName?: string
 ): Promise<void> {
   const client = getClient();
 
@@ -174,7 +208,7 @@ export async function generateAiSuggestions(
     language: showLanguage,
   };
 
-  const typesToGenerate = types ?? ["chapters", "summary", "blog", "keywords"];
+  const typesToGenerate = types ?? ["chapters", "summary", "blog", "keywords", "title"];
 
   const suggestionConfigs: { type: AiSuggestionType; prompt: string }[] = [];
 
@@ -186,6 +220,12 @@ export async function generateAiSuggestions(
   }
   if (typesToGenerate.includes("keywords")) {
     suggestionConfigs.push({ type: "keywords", prompt: buildKeywordsPrompt(ctx) });
+  }
+  if (typesToGenerate.includes("title")) {
+    suggestionConfigs.push({
+      type: "title",
+      prompt: buildTitlePrompt(ctx, recentTitles ?? [], showName),
+    });
   }
 
   const results = await Promise.allSettled(
