@@ -971,6 +971,7 @@ export function DistributionForm({
                   required
                   disabled={isDisabled}
                   value={title}
+                  maxLength={100}
                   onChange={(e) => setTitle(e.target.value)}
                 />
               </div>
@@ -1035,8 +1036,14 @@ export function DistributionForm({
                   name="title"
                   disabled={isDisabled}
                   value={title}
+                  maxLength={100}
                   onChange={(e) => setTitle(e.target.value)}
                 />
+                {title.length > 80 && (
+                  <p className={`text-xs ${title.length > 100 ? "text-destructive" : "text-muted-foreground"}`}>
+                    {title.length}/100 characters
+                  </p>
+                )}
               </div>
 
               {/* Season & Episode numbers */}

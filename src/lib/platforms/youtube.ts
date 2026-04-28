@@ -36,7 +36,9 @@ export async function uploadToYouTube(
   }
 
   // 1. Initiate resumable upload session
-  console.log(`[youtube] Initiating upload for "${title}"`);
+  // YouTube API rejects titles that are empty or exceed 100 characters
+  const safeTitle = title.slice(0, 100);
+  console.log(`[youtube] Initiating upload for "${safeTitle}"`);
 
   const status: Record<string, unknown> = {
     privacyStatus: scheduledAt ? "private" : privacy,
@@ -49,7 +51,7 @@ export async function uploadToYouTube(
 
   const metadata = {
     snippet: {
-      title,
+      title: safeTitle,
       description,
       tags,
       categoryId: categoryId ?? "22",

@@ -146,6 +146,7 @@ function buildTitlePrompt(ctx: AnalysisContext, recentTitles: string[], showName
     "- Reflects the main topic or theme discussed in the episode",
     "- Matches the style, voice, and format of this show's previous titles",
     "- Is compelling and would make a listener want to click",
+    "- MUST be under 100 characters (YouTube's hard limit)",
     "- Uses plain text only, no quotes or markdown",
     ctx.language === "es"
       ? "- Write the title in Spanish since the episode is in Spanish"
