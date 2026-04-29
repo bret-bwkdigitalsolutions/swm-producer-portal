@@ -122,7 +122,12 @@ export function CredentialCard({
           </div>
         )}
 
-        {credential.tokenExpiresAt && (
+        {credential.tokenExpiresAt && credential.credentialType === "oauth" && (
+          <div className="text-sm text-muted-foreground">
+            Auto-renewing (refresh token long-lived)
+          </div>
+        )}
+        {credential.tokenExpiresAt && credential.credentialType !== "oauth" && (
           <div className="text-sm">
             <span className="text-muted-foreground">Expires:</span>{" "}
             <span>
