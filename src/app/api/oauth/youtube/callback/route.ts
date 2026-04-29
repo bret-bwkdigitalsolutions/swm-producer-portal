@@ -49,7 +49,28 @@ export async function GET(request: NextRequest) {
     // Exchange the authorization code for tokens
     const tokens = await exchangeCodeForTokens(code);
 
-    // Store the credential first (before any API calls that might fail)
+    // Verify the connected account actually has a YouTube channel before
+    // persisting anything. If we save without verifying, the credential will
+    // look "valid" in the UI but every upload will fail with
+    // youtubeSignupRequired (the picked Google account has no channel).
+    let channelInfo: Awaited<ReturnType<typeof getYouTubeChannelInfo>>;
+    try {
+      channelInfo = await getYouTubeChannelInfo(tokens.accessToken);
+    } catch (channelErr) {
+      console.error("YouTube OAuth: channel verification failed", channelErr);
+      const reason =
+        channelErr instanceof Error &&
+        channelErr.message.includes("No YouTube channel")
+          ? "The Google account you picked has no YouTube channel. Re-connect and choose a brand account that owns a channel (e.g. Sunset Lounge)."
+          : "Could not verify the YouTube channel for this account. Re-connect and try again.";
+      return NextResponse.redirect(
+        new URL(
+          `/admin/credentials/${wpShowId}?error=${encodeURIComponent(reason)}`,
+          baseUrl()
+        )
+      );
+    }
+
     await db.platformCredential.upsert({
       where: { wpShowId_platform: { wpShowId, platform: "youtube" } },
       create: {
@@ -60,6 +81,8 @@ export async function GET(request: NextRequest) {
         refreshToken: tokens.refreshToken,
         tokenExpiresAt: tokens.expiresAt,
         status: "valid",
+        channelId: channelInfo.channelId,
+        channelTitle: channelInfo.title,
       },
       update: {
         credentialType: "oauth",
@@ -67,21 +90,13 @@ export async function GET(request: NextRequest) {
         refreshToken: tokens.refreshToken,
         tokenExpiresAt: tokens.expiresAt,
         status: "valid",
+        channelId: channelInfo.channelId,
+        channelTitle: channelInfo.title,
       },
     });
 
-    // Try to get channel info for the success message (non-blocking)
-    let channelLabel = "YouTube account";
-    try {
-      const channelInfo = await getYouTubeChannelInfo(tokens.accessToken);
-      channelLabel = `${channelInfo.title} (${channelInfo.channelId})`;
-    } catch (channelErr) {
-      console.warn("Could not fetch YouTube channel info:", channelErr);
-    }
-
-    // Redirect back with success
     const successMsg = encodeURIComponent(
-      `YouTube connected: ${channelLabel}`
+      `YouTube connected: ${channelInfo.title} (${channelInfo.channelId})`
     );
     return NextResponse.redirect(
       new URL(

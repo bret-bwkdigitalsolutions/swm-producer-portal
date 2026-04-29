@@ -123,7 +123,9 @@ model PlatformCredential {
   refreshToken   String?  @db.Text
   apiKey         String?  @db.Text
   tokenExpiresAt DateTime?
-  status         String   @default("valid") // "valid" | "expiring_soon" | "expired"
+  status         String   @default("valid") // "valid" | "expiring_soon" | "expired" | "no_channel"
+  channelId      String?  // For YouTube: the connected channel ID (e.g. "UC...")
+  channelTitle   String?  // For YouTube: the connected channel display name
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

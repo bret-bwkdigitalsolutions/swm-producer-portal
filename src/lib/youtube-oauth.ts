@@ -34,7 +34,12 @@ export function getYouTubeAuthUrl(wpShowId: number): string {
     response_type: "code",
     scope: YOUTUBE_SCOPES,
     access_type: "offline", // get refresh token
-    prompt: "consent", // always show consent to get refresh token
+    // select_account: force the Google account picker so admins don't accidentally
+    //   reuse whichever Google account the browser is already signed in to.
+    //   The brand-account picker still appears after this if the chosen Google
+    //   account has multiple YouTube channels attached.
+    // consent: required to receive a refresh token on every connection.
+    prompt: "select_account consent",
     state: String(wpShowId),
   });
 

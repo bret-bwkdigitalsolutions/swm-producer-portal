@@ -137,6 +137,8 @@ export default async function ShowCredentialsPage({
                   status: cred.status,
                   tokenExpiresAt:
                     cred.tokenExpiresAt?.toISOString() ?? null,
+                  channelId: cred.channelId,
+                  channelTitle: cred.channelTitle,
                 }}
                 isOverride={!isNetworkDefaults}
               />
@@ -154,6 +156,8 @@ export default async function ShowCredentialsPage({
                   status: networkCred.status,
                   tokenExpiresAt:
                     networkCred.tokenExpiresAt?.toISOString() ?? null,
+                  channelId: networkCred.channelId,
+                  channelTitle: networkCred.channelTitle,
                 }}
                 isNetworkDefault
               />
