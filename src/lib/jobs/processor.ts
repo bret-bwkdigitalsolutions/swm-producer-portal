@@ -9,6 +9,7 @@ import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
 import { verifyDistribution } from "./verify-distribution";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
+import { showUsesSeasons } from "@/lib/constants";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { downloadYouTubeVideoToGcs } from "./youtube-video-downloader";
@@ -504,11 +505,18 @@ async function processJobInner(
         throw new Error("Audio file not available for Transistor upload.");
       }
 
+      // Only Clubhouse and Signal 51 use season numbers; for every other show
+      // in the network, season must be omitted regardless of what was set in
+      // the form/metadata.
+      const seasonForChild = showUsesSeasons(job.wpShowId)
+        ? ((updatedMetadata.seasonNumber as number) ?? undefined)
+        : undefined;
+
       const result = await uploadToTransistor({
         wpShowId: job.wpShowId,
         title: job.title,
         description: (updatedMetadata.description as string) ?? "",
-        seasonNumber: (updatedMetadata.seasonNumber as number) ?? undefined,
+        seasonNumber: seasonForChild,
         episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
         gcsAudioPath,
         chapters: (updatedMetadata.chapters as string) ?? undefined,
@@ -555,11 +563,14 @@ async function processJobInner(
             console.log(
               `[processor] Cross-posting to network Transistor feed: ${networkTransistorShow.url}`
             );
+            // Sunset Lounge (the network feed) is not Clubhouse or Signal 51,
+            // so the season must be cleared on the cross-post regardless of
+            // what the source show's metadata had set.
             await uploadToTransistor({
               wpShowId: 0, // Use network credentials
               title: job.title,
               description: (updatedMetadata.description as string) ?? "",
-              seasonNumber: (updatedMetadata.seasonNumber as number) ?? undefined,
+              seasonNumber: undefined,
               episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
               gcsAudioPath: gcsAudioPath!,
               chapters: (updatedMetadata.chapters as string) ?? undefined,

@@ -26,3 +26,16 @@ export const UserRole = {
 } as const;
 
 export type UserRoleValue = (typeof UserRole)[keyof typeof UserRole];
+
+// Shows that use season numbers on Transistor. Every other show in the network
+// must publish episodes with `season = null`. Each show appears twice because
+// of legacy duplicate ShowPlatformLink rows mapping multiple wpShowIds to the
+// same Transistor show. (The Clubhouse Podcast → 75953; Signal 51 → 75948.)
+export const WP_SHOW_IDS_WITH_SEASONS: ReadonlySet<number> = new Set([
+  27, 15, // The Clubhouse Podcast
+  24, 12, // Signal 51 Chronicles
+]);
+
+export function showUsesSeasons(wpShowId: number): boolean {
+  return WP_SHOW_IDS_WITH_SEASONS.has(wpShowId);
+}
