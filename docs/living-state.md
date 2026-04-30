@@ -7,24 +7,27 @@ A comprehensive podcast producer portal that automatically ingests episodes from
 Development server runs with `npm run dev` on http://localhost:3000. Application is containerized with Docker using standalone Next.js output, including FFmpeg for audio processing, yt-dlp for YouTube downloads, and Deno for JavaScript execution. The container runs automated database migrations on startup and serves on port 3000. No production deployment URLs or CI/CD pipelines are evident in the current codebase.
 
 ## Site Map / Content Structure
-- `/` — Public landing page (recently added, replacing admin redirect)
+- `/` — Public landing page with portal introduction
 - `/privacy` — Privacy policy page
-- `/terms` — Terms of service page  
+- `/terms` — Terms of service page
 - `/admin` — Main administrative dashboard with activity overview
 - `/admin/shows` — Show configuration, host management, language settings, and style guides
 - `/admin/shows/sync` — Episode synchronization from Transistor.fm and other platforms
-- `/admin/credentials` — API credential management with platform health checks
-- `/admin/blog-ideas` — AI-generated blog ideas organized by episode with collapsible grouping
+- `/admin/credentials/[showId]` — Individual show API credential management
+- `/admin/credentials` — Platform credential overview with health checks
+- `/admin/blog-ideas` — AI-generated blog ideas organized by episode with collapsible day grouping
+- `/admin/users/[id]` — Individual user profile management
 - `/admin/users` — User invitation and access management system
 - `/admin/activity` — System activity logs and monitoring
 - `/reaction` — Content reaction submission form with show filtering
 - `/api/auth/[...nextauth]` — NextAuth authentication endpoints
 - `/api/distribute/[id]` — Content distribution pipeline with AI analysis and multi-platform publishing
+- `/api/distribute/analyze/route.ts` — AI analysis endpoint for title suggestions and metadata extraction
 - `/api/upload/thumbnail` — Image upload with compression and EXIF rotation
 - `/api/scraper/trigger` — Transistor dashboard scraping automation
 
 ## Current Architecture
-Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi-tenant podcast data management. Authentication through NextAuth with Google OAuth and invite-based onboarding. Core integrations include Transistor.fm scraping for episode ingestion, Deepgram for transcription, Anthropic Claude for content generation, Google Drive for collaborative editing, WordPress REST API for publishing, YouTube Data API for video uploads, and Google Cloud Storage for media assets. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, atomic operations to prevent duplicate processing, and comprehensive edit tracking to measure human input on AI-generated content.
+Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi-tenant podcast data management. Authentication through NextAuth with Google OAuth and invite-based onboarding. Core integrations include Transistor.fm scraping for episode ingestion, Deepgram for transcription, Anthropic Claude for content generation, Google Drive for collaborative editing, WordPress REST API for publishing, YouTube Data API for video uploads with OAuth channel verification, and Google Cloud Storage for media assets. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, atomic operations to prevent duplicate processing, and comprehensive edit tracking to measure human input on AI-generated content.
 
 ## What Works Today
 - Automated episode ingestion from Transistor.fm with metadata extraction and thumbnail processing
@@ -37,12 +40,14 @@ Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi
 - Reaction content submission with content type categorization and show association
 - Image processing with EXIF rotation, compression, and WordPress gallery attachment
 - Bilingual content support with language-specific formatting and styling
+- YouTube OAuth verification with channel information display in admin interface
+- Enforced YouTube 100-character title limit to prevent upload failures
 
 ## Recent Activity
-Development over the past week has focused on **distribution workflow improvements** including AI-powered title suggestions with show history context, YouTube thumbnail fallback handling, and restructured forms that move metadata below path selection. **Content processing reliability** has been enhanced with fixes for redundant transcription, thumbnail re-upload after AI analysis, and prevention of blog idea overwrites during reprocessing. **User experience refinements** include the addition of a public landing page, privacy/terms pages, day-grouped job history with better visual organization, and auto-reload handling for stale server actions after deployments.
+Development over the past week has concentrated on **distribution workflow reliability** including fixes for redundant transcription, proper thumbnail re-upload after AI analysis completes, and comprehensive field handling (title, season/episode, explicit flag) in AI distribution paths. **User interface improvements** feature a restructured distribution form that moves metadata below path selection, adds AI title suggestions, and includes YouTube thumbnail previews. **Authentication and access control** has been enhanced with YouTube channel verification during OAuth, proper credential expiry display, and auto-reload handling for stale server actions after deployments. **Content management** improvements include prevention of blog idea overwrites during reprocessing and day-grouped job history with better visual organization.
 
 ## Known Gaps & Limitations
-- YouTube authentication relies on cookie-based authentication that requires manual refresh when expired
+- YouTube authentication relies on OAuth tokens that require manual refresh when expired
 - Distribution pipeline lacks automated retry mechanisms for failed platform uploads
 - Edit detection measures percentage changes but cannot assess semantic quality of modifications
 - Google Drive integration has minimal error handling for API quota limits and permission failures
@@ -60,7 +65,7 @@ Development over the past week has focused on **distribution workflow improvemen
 
 ## Open Technical Questions
 - Optimal job queuing strategy for handling concurrent episode processing without resource conflicts
-- Long-term media storage approach balancing cost efficiency with access performance requirements  
+- Long-term media storage approach balancing cost efficiency with access performance requirements
 - Architecture for expanding distribution beyond WordPress to additional CMS platforms and social networks
 - Error recovery mechanisms for partial distribution failures across multiple platforms simultaneously
 - Performance optimization strategy for processing long-form content and large transcript analysis
@@ -79,4 +84,4 @@ Development over the past week has focused on **distribution workflow improvemen
 - `src/app/admin/shows/sync/page.tsx` — Episode synchronization interface with platform integration
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-27_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-30_
