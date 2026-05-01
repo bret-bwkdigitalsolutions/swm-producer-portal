@@ -19,6 +19,7 @@ export async function GET(
       id: true,
       status: true,
       userId: true,
+      metadata: true,
       platforms: {
         select: {
           id: true,
@@ -42,8 +43,14 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Surface tiered verification results so the dashboard can refresh
+  // green/red checks live without a full page reload.
+  const meta = (job.metadata as Record<string, unknown>) ?? {};
+  const verifications = meta.verifications ?? null;
+
   return NextResponse.json({
     status: job.status,
+    verifications,
     platforms: job.platforms.map((p) => ({
       id: p.id,
       platform: p.platform,

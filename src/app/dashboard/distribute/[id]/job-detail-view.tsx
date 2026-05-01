@@ -256,8 +256,16 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const [deleting, setDeleting] = useState(false);
   const [liveStatus, setLiveStatus] = useState(job.status);
   const [livePlatforms, setLivePlatforms] = useState(job.platforms);
+  const [liveVerifications, setLiveVerifications] = useState<TierResult[] | null>(
+    (job.metadata.verifications as TierResult[] | undefined) ?? null
+  );
 
   const isTerminal = TERMINAL_STATUSES.includes(liveStatus);
+  // Verification fires up to 30 min after distribution completes, so keep
+  // polling until tier 4 has run (or 35 min from job creation as a backstop).
+  const verificationsComplete =
+    Array.isArray(liveVerifications) &&
+    [1, 2, 3, 4].every((t) => liveVerifications.some((v) => v.tier === t));
 
   const pollStatus = useCallback(async () => {
     try {
@@ -266,16 +274,17 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
       const data = await res.json();
       setLiveStatus(data.status);
       setLivePlatforms(data.platforms);
+      if (data.verifications !== undefined) setLiveVerifications(data.verifications);
     } catch {
       // Silently ignore — next poll will retry
     }
   }, [job.id]);
 
   useEffect(() => {
-    if (isTerminal) return;
+    if (isTerminal && verificationsComplete) return;
     const interval = setInterval(pollStatus, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [isTerminal, pollStatus]);
+  }, [isTerminal, verificationsComplete, pollStatus]);
 
   const metadata = job.metadata;
   const description = (metadata.description as string) ?? "";
@@ -398,9 +407,110 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         </CardContent>
       </Card>
 
+      {/* Post-distribution verification — tiered checks at 30s/2m/10m/30m */}
+      <VerificationPanel verifications={liveVerifications} platforms={livePlatforms} />
+
       {/* AI suggestions (description, chapters, blog) are reviewed during
           distribution and managed in Admin > Blog Ideas — no need to show
           them again on this status page. */}
     </div>
+  );
+}
+
+const TIER_LABELS: Record<number, { label: string; whenLabel: string }> = {
+  1: { label: "Smoke",      whenLabel: "30 sec" },
+  2: { label: "Metadata",   whenLabel: "2 min" },
+  3: { label: "Processing", whenLabel: "10 min" },
+  4: { label: "Public URL", whenLabel: "30 min" },
+};
+
+interface PlatformTierResult {
+  platform: string;
+  passed: boolean;
+  issues: Array<{ platform: string; field: string; expected: string; actual: string }>;
+}
+interface TierResult {
+  tier: 1 | 2 | 3 | 4;
+  ranAt: string;
+  platforms: PlatformTierResult[];
+}
+
+function VerificationPanel({
+  verifications,
+  platforms,
+}: {
+  verifications: TierResult[] | null;
+  platforms: Array<{ platform: string; status: string }>;
+}) {
+  const tierResults = verifications ?? [];
+  const completedPlatforms = platforms.filter((p) => p.status === "completed");
+
+  if (completedPlatforms.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Verification</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="pb-2 text-left font-medium">Platform</th>
+                {[1, 2, 3, 4].map((t) => (
+                  <th key={t} className="pb-2 text-center font-medium">
+                    {TIER_LABELS[t].label}
+                    <div className="text-[10px] font-normal opacity-70">
+                      ({TIER_LABELS[t].whenLabel})
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {completedPlatforms.map((p) => (
+                <tr key={p.platform} className="border-t">
+                  <td className="py-2 font-medium capitalize">{p.platform}</td>
+                  {[1, 2, 3, 4].map((tier) => {
+                    const tierEntry = tierResults.find((v) => v.tier === tier);
+                    const platRes = tierEntry?.platforms.find(
+                      (pl) => pl.platform === p.platform
+                    );
+                    let cell: React.ReactNode;
+                    if (!tierEntry) {
+                      cell = <span className="text-muted-foreground">—</span>;
+                    } else if (!platRes) {
+                      cell = <span className="text-muted-foreground">—</span>;
+                    } else if (platRes.passed) {
+                      cell = <span className="text-green-600">✓</span>;
+                    } else {
+                      cell = (
+                        <span
+                          className="text-red-600"
+                          title={platRes.issues
+                            .map((i) => `${i.field}: expected "${i.expected}", got "${i.actual}"`)
+                            .join("\n")}
+                        >
+                          ✗
+                        </span>
+                      );
+                    }
+                    return (
+                      <td key={tier} className="py-2 text-center">
+                        {cell}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          ✓ passed · ✗ failed (hover for details) · — not yet run
+        </p>
+      </CardContent>
+    </Card>
   );
 }

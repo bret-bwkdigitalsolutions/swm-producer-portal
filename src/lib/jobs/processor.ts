@@ -7,7 +7,7 @@ import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/yo
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
-import { verifyDistribution } from "./verify-distribution";
+import { runVerificationTier, TIER_LABELS, type TierResult } from "./verify-distribution";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
@@ -739,37 +739,68 @@ async function processJobInner(
 
   console.log(`[processor] Job ${job.id} ${finalStatus}.`);
 
-  // --- Post-distribution verification ---
-  // Wait a few seconds for platform APIs to be consistent, then verify
+  // --- Schedule tiered post-distribution verification (fire-and-forget) ---
+  // Each tier checks deeper: tier 1 = "did the resource land at all", tier 4 =
+  // "is the public URL actually serving". Scheduled via setTimeout so the
+  // processor returns immediately while verification runs in background.
+  // NOTE: setTimeout-based; if the container restarts mid-flight, in-progress
+  // verifications are lost. Acceptable for now — switch to DB-backed schedule
+  // if reliability becomes an issue.
   if (finalStatus === "completed" || (!allFailed && anyFailed)) {
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 60_000));
-      const verification = await verifyDistribution(
-        job.id, job.wpShowId, job.title, !!existingYoutubeUrl
-      );
-      if (!verification.verified) {
-        let showName = `Show #${job.wpShowId}`;
-        try {
-          const { getShow } = await import("@/lib/wordpress/client");
-          const show = await getShow(job.wpShowId);
-          showName = show.title.rendered;
-        } catch {
-          // Fall back to ID
-        }
-
-        const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-
-        await sendVerificationFailureNotification({
-          jobTitle: job.title,
-          showName,
-          issues: verification.issues,
-          jobUrl: `${baseUrl}/dashboard/distribute/${job.id}`,
-        });
-      }
-    } catch (error) {
-      console.error("[processor] Post-distribution verification failed:", error);
-    }
+    scheduleVerificationTiers(job.id, job.wpShowId, job.title, !!existingYoutubeUrl);
   }
 
   return { jobId: job.id, status: finalStatus, platformResults };
+}
+
+const VERIFICATION_TIER_DELAYS_MS: Record<1 | 2 | 3 | 4, number> = {
+  1: 30_000,        // 30 seconds — does the resource exist at all?
+  2: 2 * 60_000,    // 2 minutes — title + thumbnail are correct
+  3: 10 * 60_000,   // 10 minutes — uploaded/processed status, audio/post reachable
+  4: 30 * 60_000,   // 30 minutes — public URL HEAD check
+};
+
+function scheduleVerificationTiers(
+  jobId: string,
+  wpShowId: number,
+  title: string,
+  isLiveRecording: boolean,
+) {
+  const tiers: Array<1 | 2 | 3 | 4> = [1, 2, 3, 4];
+  for (const tier of tiers) {
+    const delay = VERIFICATION_TIER_DELAYS_MS[tier];
+    setTimeout(() => {
+      runVerificationTier(tier, jobId, wpShowId, title, isLiveRecording)
+        .then((result) => maybeNotifyTierFailure(jobId, wpShowId, title, result))
+        .catch((err) => {
+          console.error(`[verify] tier ${tier} failed for job ${jobId}:`, err);
+        });
+    }, delay).unref?.(); // don't keep the process alive past job completion
+  }
+}
+
+async function maybeNotifyTierFailure(
+  jobId: string,
+  wpShowId: number,
+  jobTitle: string,
+  result: TierResult,
+) {
+  const failed = result.platforms.filter((p) => !p.passed);
+  if (failed.length === 0) return;
+
+  const issues = failed.flatMap((p) => p.issues);
+  let showName = `Show #${wpShowId}`;
+  try {
+    const { getShow } = await import("@/lib/wordpress/client");
+    const show = await getShow(wpShowId);
+    showName = show.title.rendered;
+  } catch {}
+
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  await sendVerificationFailureNotification({
+    jobTitle: `${jobTitle} (verification tier ${result.tier} — ${TIER_LABELS[result.tier]})`,
+    showName,
+    issues,
+    jobUrl: `${baseUrl}/dashboard/distribute/${jobId}`,
+  });
 }
