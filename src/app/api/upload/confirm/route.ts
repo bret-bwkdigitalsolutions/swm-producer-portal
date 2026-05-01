@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { processJob } from "@/lib/jobs/processor";
+import { checkForDuplicates } from "@/lib/jobs/duplicate-check";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -10,7 +11,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { jobId?: string; skipProcessing?: boolean };
+  let body: { jobId?: string; skipProcessing?: boolean; forceDuplicates?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { jobId, skipProcessing } = body;
+  const { jobId, skipProcessing, forceDuplicates } = body;
   if (!jobId) {
     return NextResponse.json(
       { error: "Missing required field: jobId." },
@@ -30,7 +31,11 @@ export async function POST(request: NextRequest) {
 
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
-    select: { id: true, userId: true, status: true, gcsPath: true, metadata: true },
+    select: {
+      id: true, userId: true, status: true, gcsPath: true, metadata: true,
+      title: true, wpShowId: true,
+      platforms: { select: { platform: true } },
+    },
   });
 
   if (!job) {
@@ -79,6 +84,35 @@ export async function POST(request: NextRequest) {
   // (used by AI path to confirm upload before running analysis)
   if (skipProcessing) {
     return NextResponse.json({ success: true, status: "pending" });
+  }
+
+  // Pre-distribution duplicate check: refuse to publish to any platform that
+  // already has an episode with the same title for this show, unless the
+  // caller has explicitly confirmed by passing forceDuplicates=true. Catches
+  // accidental re-distribution of the same content.
+  if (!forceDuplicates && job.platforms.length > 0) {
+    try {
+      const dupResult = await checkForDuplicates(
+        job.wpShowId,
+        job.title,
+        job.platforms.map((p) => p.platform),
+      );
+      if (Object.keys(dupResult.matches).length > 0) {
+        return NextResponse.json(
+          {
+            error: "duplicate_detected",
+            message:
+              "An episode with this title already appears on one or more selected platforms. Confirm to distribute anyway.",
+            duplicates: dupResult.matches,
+          },
+          { status: 409 }
+        );
+      }
+    } catch (err) {
+      // Non-fatal — log and proceed. Better to ship than to block on a
+      // platform-API hiccup during the duplicate check.
+      console.warn(`[confirm] duplicate check failed for ${jobId}:`, err);
+    }
   }
 
   // Atomically transition to processing to prevent double invocation

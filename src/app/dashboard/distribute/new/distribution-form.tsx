@@ -131,6 +131,14 @@ export function DistributionForm({
   // Drives whether we render Season/Episode inputs and what to label them.
   const [seasonScheme, setSeasonScheme] = useState<"none" | "season" | "case">("none");
 
+  // Pre-distribution duplicate check state. Populated when /api/upload/confirm
+  // returns 409 with { duplicates }. The form renders an inline confirmation
+  // panel; clicking "Distribute anyway" re-fires confirm with forceDuplicates.
+  const [duplicateModal, setDuplicateModal] = useState<null | {
+    jobId: string;
+    duplicates: Record<string, Array<{ platform: string; externalId: string; externalUrl: string | null; title: string; publishedAt: string | null }>>;
+  }>(null);
+
   // Tag chip state
   const [tags, setTags] = useState<string[]>([]);
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
@@ -450,6 +458,15 @@ export function DistributionForm({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ jobId }),
         });
+        if (confirmRes.status === 409) {
+          const errBody = await confirmRes.json();
+          if (errBody.error === "duplicate_detected") {
+            setDuplicateModal({ jobId, duplicates: errBody.duplicates ?? {} });
+            setUploading(false);
+            return;
+          }
+          throw new Error(errBody.error ?? "Failed to confirm upload");
+        }
         if (!confirmRes.ok) {
           const err = await confirmRes.json();
           throw new Error(err.error ?? "Failed to confirm upload");
@@ -528,6 +545,15 @@ export function DistributionForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId: aiUploadedJobId }),
       });
+      if (confirmRes.status === 409) {
+        const errBody = await confirmRes.json();
+        if (errBody.error === "duplicate_detected") {
+          setDuplicateModal({ jobId: aiUploadedJobId, duplicates: errBody.duplicates ?? {} });
+          setUploading(false);
+          return;
+        }
+        throw new Error(errBody.error ?? "Failed to start distribution");
+      }
       if (!confirmRes.ok) {
         const err = await confirmRes.json();
         throw new Error(err.error ?? "Failed to start distribution");
@@ -541,6 +567,32 @@ export function DistributionForm({
       setUploading(false);
     }
   }, [aiUploadedJobId, description, chapters, publishState, router, uploadThumbnailToGCS, title, seasonNumber, episodeNumber]);
+
+  // Re-fire /api/upload/confirm with forceDuplicates=true after the user has
+  // chosen to override the duplicate-detection block.
+  const distributeAnyway = useCallback(async () => {
+    if (!duplicateModal) return;
+    const { jobId } = duplicateModal;
+    setDuplicateModal(null);
+    setUploading(true);
+    try {
+      const res = await fetch("/api/upload/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, forceDuplicates: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? "Failed to start distribution");
+      }
+      router.push(`/dashboard/distribute/${jobId}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Distribution failed";
+      setUploadError(message);
+      setUploading(false);
+    }
+  }, [duplicateModal, router]);
 
   // Trigger upload after successful manual-path job creation
   useEffect(() => {
@@ -618,6 +670,64 @@ export function DistributionForm({
             <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               <AlertCircleIcon className="size-4 shrink-0" />
               {uploadError}
+            </div>
+          )}
+
+          {/* Duplicate-detected confirmation panel */}
+          {duplicateModal && (
+            <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
+              <div className="flex items-center gap-2 font-medium text-amber-900">
+                <AlertCircleIcon className="size-4 shrink-0" />
+                This episode appears to already exist on:
+              </div>
+              <ul className="space-y-1 pl-2">
+                {Object.entries(duplicateModal.duplicates).map(([platform, matches]) => (
+                  <li key={platform} className="text-amber-900">
+                    <span className="font-medium capitalize">{platform}</span>
+                    {matches.map((m) => (
+                      <div key={m.externalId} className="ml-3 text-xs">
+                        →{" "}
+                        {m.externalUrl ? (
+                          <a
+                            href={m.externalUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline-offset-2 hover:underline"
+                          >
+                            {m.title}
+                          </a>
+                        ) : (
+                          m.title
+                        )}
+                        {m.publishedAt && (
+                          <span className="text-amber-700">
+                            {" "}
+                            (published {new Date(m.publishedAt).toLocaleDateString()})
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDuplicateModal(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={distributeAnyway}
+                >
+                  Distribute anyway
+                </Button>
+              </div>
             </div>
           )}
 

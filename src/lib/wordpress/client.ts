@@ -110,6 +110,31 @@ export async function getRecentSubmissions(
   return posts;
 }
 
+interface WpEpisodeSearchResult {
+  id: number;
+  title: { rendered: string };
+  link: string;
+  date: string;
+  meta?: { parent_show_id?: number };
+}
+
+/**
+ * Search published episodes by title fragment. Used by the pre-distribution
+ * duplicate check to flag re-runs of the same content.
+ */
+export async function searchEpisodesByTitle(
+  query: string,
+  perPage: number = 10,
+): Promise<WpEpisodeSearchResult[]> {
+  try {
+    return await wpFetch<WpEpisodeSearchResult[]>(
+      `/swm_episode?per_page=${perPage}&_fields=id,title,link,date,meta&search=${encodeURIComponent(query.slice(0, 50))}&status=publish`
+    );
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Get the latest published episode for a show, returning its episode and season numbers.
  */
