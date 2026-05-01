@@ -199,6 +199,81 @@ export async function updateShowLanguage(
   }
 }
 
+export async function updateShowSeasonScheme(
+  _prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, message: "Unauthorized." };
+  }
+
+  const wpShowId = parseInt(formData.get("wp_show_id") as string, 10);
+  const seasonScheme = (formData.get("season_scheme") as string)?.trim();
+  const currentSeasonRaw = (formData.get("current_season") as string)?.trim();
+
+  if (isNaN(wpShowId) || wpShowId <= 0) {
+    return { success: false, message: "Invalid show." };
+  }
+  if (seasonScheme !== "none" && seasonScheme !== "season" && seasonScheme !== "case") {
+    return { success: false, message: "Invalid season scheme." };
+  }
+
+  let currentSeason: number | null = null;
+  if (seasonScheme !== "none") {
+    const n = parseInt(currentSeasonRaw, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      return { success: false, message: "Current season/case must be a positive number." };
+    }
+    currentSeason = n;
+  }
+
+  try {
+    await db.showMetadata.upsert({
+      where: { wpShowId },
+      create: { wpShowId, hosts: "", seasonScheme, currentSeason },
+      update: { seasonScheme, currentSeason },
+    });
+    revalidatePath("/admin/shows");
+    return { success: true, message: "Season scheme saved." };
+  } catch (error) {
+    console.error("Failed to update season scheme:", error);
+    return { success: false, message: "Failed to save season scheme." };
+  }
+}
+
+export async function bumpCurrentSeason(
+  _prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, message: "Unauthorized." };
+  }
+
+  const wpShowId = parseInt(formData.get("wp_show_id") as string, 10);
+  if (isNaN(wpShowId) || wpShowId <= 0) {
+    return { success: false, message: "Invalid show." };
+  }
+
+  try {
+    const meta = await db.showMetadata.findUnique({ where: { wpShowId } });
+    if (!meta || meta.seasonScheme === "none" || meta.currentSeason == null) {
+      return { success: false, message: "Show is not configured to use seasons." };
+    }
+    const next = meta.currentSeason + 1;
+    await db.showMetadata.update({
+      where: { wpShowId },
+      data: { currentSeason: next },
+    });
+    revalidatePath("/admin/shows");
+    return { success: true, message: `Bumped to ${meta.seasonScheme === "case" ? "Case" : "Season"} ${next}.` };
+  } catch (error) {
+    console.error("Failed to bump season:", error);
+    return { success: false, message: "Failed to bump." };
+  }
+}
+
 export async function refreshShowCache(): Promise<FormState> {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {

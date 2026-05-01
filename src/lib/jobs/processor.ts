@@ -9,7 +9,6 @@ import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
 import { verifyDistribution } from "./verify-distribution";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
-import { showUsesSeasons } from "@/lib/constants";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { downloadYouTubeVideoToGcs } from "./youtube-video-downloader";
@@ -505,10 +504,15 @@ async function processJobInner(
         throw new Error("Audio file not available for Transistor upload.");
       }
 
-      // Only Clubhouse and Signal 51 use season numbers; for every other show
-      // in the network, season must be omitted regardless of what was set in
-      // the form/metadata.
-      const seasonForChild = showUsesSeasons(job.wpShowId)
+      // Only shows with seasonScheme != "none" can carry a season number
+      // through to Transistor. Read from ShowMetadata so the rule lives in
+      // one place (DB) and admins can configure new shows without a deploy.
+      const showMeta = await db.showMetadata.findUnique({
+        where: { wpShowId: job.wpShowId },
+      });
+      const showUsesSeasons =
+        showMeta?.seasonScheme === "season" || showMeta?.seasonScheme === "case";
+      const seasonForChild = showUsesSeasons
         ? ((updatedMetadata.seasonNumber as number) ?? undefined)
         : undefined;
 

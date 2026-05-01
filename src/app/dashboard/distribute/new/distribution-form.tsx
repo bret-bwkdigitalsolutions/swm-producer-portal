@@ -128,6 +128,8 @@ export function DistributionForm({
   // Episode/season number state (auto-populated from last episode)
   const [episodeNumber, setEpisodeNumber] = useState("");
   const [seasonNumber, setSeasonNumber] = useState("");
+  // Drives whether we render Season/Episode inputs and what to label them.
+  const [seasonScheme, setSeasonScheme] = useState<"none" | "season" | "case">("none");
 
   // Tag chip state
   const [tags, setTags] = useState<string[]>([]);
@@ -681,15 +683,18 @@ export function DistributionForm({
               setShowId(newShowId);
               setTags(frequentTags[newShowId] ?? []);
               setSuggestedTags([]);
-              // Auto-populate episode/season numbers from last published episode
+              // Auto-populate episode/season numbers from the show's
+              // seasonScheme + currentSeason in admin metadata.
               if (newShowId) {
                 getNextEpisodeNumber(parseInt(newShowId, 10)).then(
-                  ({ episodeNumber: ep, seasonNumber: sn }) => {
+                  ({ episodeNumber: ep, seasonNumber: sn, seasonScheme: scheme }) => {
+                    setSeasonScheme(scheme);
                     setEpisodeNumber(ep != null ? String(ep) : "");
                     setSeasonNumber(sn != null ? String(sn) : "");
                   }
                 );
               } else {
+                setSeasonScheme("none");
                 setEpisodeNumber("");
                 setSeasonNumber("");
               }
@@ -976,34 +981,38 @@ export function DistributionForm({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="season_number">Season Number</Label>
-                  <Input
-                    id="season_number"
-                    name="season_number"
-                    type="number"
-                    min={1}
-                    placeholder="Optional"
-                    disabled={isDisabled}
-                    value={seasonNumber}
-                    onChange={(e) => setSeasonNumber(e.target.value)}
-                  />
+              {seasonScheme !== "none" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="season_number">
+                      {seasonScheme === "case" ? "Case Number" : "Season Number"}
+                    </Label>
+                    <Input
+                      id="season_number"
+                      name="season_number"
+                      type="number"
+                      min={1}
+                      disabled={isDisabled}
+                      value={seasonNumber}
+                      onChange={(e) => setSeasonNumber(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="episode_number">
+                      {seasonScheme === "case" ? "Part Number" : "Episode Number"}
+                    </Label>
+                    <Input
+                      id="episode_number"
+                      name="episode_number"
+                      type="number"
+                      min={1}
+                      disabled={isDisabled}
+                      value={episodeNumber}
+                      onChange={(e) => setEpisodeNumber(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="episode_number">Episode Number</Label>
-                  <Input
-                    id="episode_number"
-                    name="episode_number"
-                    type="number"
-                    min={1}
-                    placeholder="Optional"
-                    disabled={isDisabled}
-                    value={episodeNumber}
-                    onChange={(e) => setEpisodeNumber(e.target.value)}
-                  />
-                </div>
-              </div>
+              )}
 
               <div className="flex items-center gap-2">
                 <input
@@ -1046,35 +1055,39 @@ export function DistributionForm({
                 )}
               </div>
 
-              {/* Season & Episode numbers */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="ai-season">Season Number</Label>
-                  <Input
-                    id="ai-season"
-                    name="season_number"
-                    type="number"
-                    min={1}
-                    placeholder="Optional"
-                    disabled={isDisabled}
-                    value={seasonNumber}
-                    onChange={(e) => setSeasonNumber(e.target.value)}
-                  />
+              {/* Season & Episode numbers — only for shows that use them */}
+              {seasonScheme !== "none" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="ai-season">
+                      {seasonScheme === "case" ? "Case Number" : "Season Number"}
+                    </Label>
+                    <Input
+                      id="ai-season"
+                      name="season_number"
+                      type="number"
+                      min={1}
+                      disabled={isDisabled}
+                      value={seasonNumber}
+                      onChange={(e) => setSeasonNumber(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ai-episode">
+                      {seasonScheme === "case" ? "Part Number" : "Episode Number"}
+                    </Label>
+                    <Input
+                      id="ai-episode"
+                      name="episode_number"
+                      type="number"
+                      min={1}
+                      disabled={isDisabled}
+                      value={episodeNumber}
+                      onChange={(e) => setEpisodeNumber(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ai-episode">Episode Number</Label>
-                  <Input
-                    id="ai-episode"
-                    name="episode_number"
-                    type="number"
-                    min={1}
-                    placeholder="Optional"
-                    disabled={isDisabled}
-                    value={episodeNumber}
-                    onChange={(e) => setEpisodeNumber(e.target.value)}
-                  />
-                </div>
-              </div>
+              )}
 
               {/* Content warning */}
               <div className="flex items-center gap-2">

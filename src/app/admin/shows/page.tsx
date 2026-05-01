@@ -8,6 +8,7 @@ import { ShowPlatformLinks } from "./platform-links";
 import { RefreshShowsButton } from "./refresh-shows-button";
 import { ShowHostsEditor } from "./show-hosts-editor";
 import { ShowLanguageEditor } from "./show-language-editor";
+import { ShowSeasonSchemeEditor } from "./show-season-scheme-editor";
 import { ShowStyleGuide } from "./show-style-guide";
 import Link from "next/link";
 import { ArrowRightLeftIcon } from "lucide-react";
@@ -137,6 +138,15 @@ export default async function AdminShowsPage() {
                     wpShowId={show.id}
                     currentLanguage={showMeta?.language ?? "en"}
                     currentBilingual={showMeta?.bilingual ?? false}
+                  />
+                  <ShowSeasonSchemeEditor
+                    wpShowId={show.id}
+                    currentScheme={
+                      (showMeta?.seasonScheme === "season" || showMeta?.seasonScheme === "case")
+                        ? showMeta.seasonScheme
+                        : "none"
+                    }
+                    currentSeason={showMeta?.currentSeason ?? null}
                   />
                   <ShowStyleGuide
                     wpShowId={show.id}

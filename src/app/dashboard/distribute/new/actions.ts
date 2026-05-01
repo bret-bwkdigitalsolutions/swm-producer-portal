@@ -284,21 +284,49 @@ export async function updateDistribution(
 }
 
 /**
- * Fetch the suggested next episode number and current season for a show.
+ * Fetch the suggested next episode number and season for a show, plus the
+ * show's seasonScheme so the form can render correctly:
+ *   - "none"   — caller should hide season + episode inputs
+ *   - "season" — caller shows "Season" + "Episode" labels
+ *   - "case"   — caller shows "Case" + "Part" labels
  */
 export async function getNextEpisodeNumber(
   wpShowId: number
-): Promise<{ episodeNumber: number | null; seasonNumber: number | null }> {
+): Promise<{
+  episodeNumber: number | null;
+  seasonNumber: number | null;
+  seasonScheme: "none" | "season" | "case";
+}> {
   const session = await auth();
   if (!session?.user) {
-    return { episodeNumber: null, seasonNumber: null };
+    return { episodeNumber: null, seasonNumber: null, seasonScheme: "none" };
   }
 
-  const { episodeNumber, seasonNumber } =
-    await getLatestEpisodeNumbers(wpShowId);
+  const meta = await db.showMetadata.findUnique({ where: { wpShowId } });
+  const seasonScheme =
+    (meta?.seasonScheme === "season" || meta?.seasonScheme === "case")
+      ? meta.seasonScheme
+      : "none";
+
+  // For shows with no season scheme, never populate either field.
+  if (seasonScheme === "none") {
+    return { episodeNumber: null, seasonNumber: null, seasonScheme };
+  }
+
+  const currentSeason = meta?.currentSeason ?? null;
+  const { episodeNumber, seasonNumber } = await getLatestEpisodeNumbers(wpShowId);
+
+  // If the latest WP episode is in the same season we're currently on,
+  // suggest its number + 1. Otherwise (current season is fresh, no episodes
+  // in it yet), suggest E=1.
+  const inCurrentSeason = currentSeason != null && seasonNumber === currentSeason;
+  const nextEp = inCurrentSeason
+    ? (episodeNumber != null ? episodeNumber + 1 : 1)
+    : 1;
 
   return {
-    episodeNumber: episodeNumber != null ? episodeNumber + 1 : null,
-    seasonNumber,
+    episodeNumber: nextEp,
+    seasonNumber: currentSeason,
+    seasonScheme,
   };
 }
