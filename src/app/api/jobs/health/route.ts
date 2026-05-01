@@ -49,7 +49,13 @@ export async function GET(request: NextRequest) {
     for (const cred of credentials) {
       let newStatus: "valid" | "expiring_soon" | "expired" = "valid";
 
-      if (cred.tokenExpiresAt) {
+      if (cred.credentialType === "oauth" && cred.refreshToken) {
+        // OAuth access tokens are short-lived (~1h) but auto-refresh on next
+        // use via the long-lived refresh token. Don't flip to "expired" from
+        // access-token expiry alone — only a real refresh failure (recorded
+        // in src/lib/analytics/credentials.ts) should mark these expired.
+        newStatus = cred.status === "expired" ? "expired" : "valid";
+      } else if (cred.tokenExpiresAt) {
         const expiresAt = new Date(cred.tokenExpiresAt);
 
         if (expiresAt <= now) {
