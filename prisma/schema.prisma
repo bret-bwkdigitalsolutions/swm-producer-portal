@@ -126,6 +126,7 @@ model PlatformCredential {
   status         String   @default("valid") // "valid" | "expiring_soon" | "expired" | "no_channel"
   channelId      String?  // For YouTube: the connected channel ID (e.g. "UC...")
   channelTitle   String?  // For YouTube: the connected channel display name
+  connectedEmail String?  // For YouTube: the Google account email that granted the OAuth
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -200,6 +201,15 @@ model ShowMetadata {
   bilingual         Boolean @default(false) // Whether to auto-translate blog posts
   styleGuide        String?  // Synthesized host voice/style profile
   styleGuideUpdatedAt DateTime? // Last synthesis timestamp
+
+  // Season/episode numbering scheme:
+  //   "none"   — show doesn't use season numbers (most shows)
+  //   "season" — annual-ish seasons (e.g. The Clubhouse, currently S16)
+  //   "case"   — case-based seasons (e.g. Signal 51, where each Case is a Season)
+  seasonScheme      String  @default("none")
+  // The currently-active season/case number; auto-fills the form. Null when
+  // seasonScheme = "none". Bumped manually when starting a new season/case.
+  currentSeason     Int?
 
   @@map("show_metadata")
 }
