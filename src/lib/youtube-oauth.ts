@@ -3,6 +3,11 @@ import "server-only";
 const YOUTUBE_SCOPES = [
   "https://www.googleapis.com/auth/youtube",
   "https://www.googleapis.com/auth/yt-analytics.readonly",
+  // userinfo + openid let us identify which Google account the OAuth was
+  // granted by — surfaced on the admin credential card so misconnections
+  // (wrong personal vs channel-owner login) are obvious.
+  "https://www.googleapis.com/auth/userinfo.email",
+  "openid",
 ].join(" ");
 
 function getClientId(): string {
@@ -111,6 +116,22 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
     refreshToken: data.refresh_token ?? null,
     expiresAt: new Date(Date.now() + data.expires_in * 1000),
   };
+}
+
+/**
+ * Get the email address of the Google account that granted the OAuth.
+ * Returns null if the userinfo scope wasn't granted (older credentials).
+ */
+export async function getGoogleAccountEmail(
+  accessToken: string
+): Promise<string | null> {
+  const response = await fetch(
+    "https://www.googleapis.com/oauth2/v3/userinfo",
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!response.ok) return null;
+  const data = (await response.json()) as { email?: string };
+  return data.email ?? null;
 }
 
 /**

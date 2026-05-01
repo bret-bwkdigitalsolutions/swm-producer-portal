@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import {
   exchangeCodeForTokens,
   getYouTubeChannelInfo,
+  getGoogleAccountEmail,
 } from "@/lib/youtube-oauth";
 
 function baseUrl(): string {
@@ -71,6 +72,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Capture which Google account granted this OAuth. Non-fatal if it fails
+    // (older credentials may not have userinfo scope granted).
+    const connectedEmail = await getGoogleAccountEmail(tokens.accessToken);
+
     await db.platformCredential.upsert({
       where: { wpShowId_platform: { wpShowId, platform: "youtube" } },
       create: {
@@ -83,6 +88,7 @@ export async function GET(request: NextRequest) {
         status: "valid",
         channelId: channelInfo.channelId,
         channelTitle: channelInfo.title,
+        connectedEmail,
       },
       update: {
         credentialType: "oauth",
@@ -92,11 +98,13 @@ export async function GET(request: NextRequest) {
         status: "valid",
         channelId: channelInfo.channelId,
         channelTitle: channelInfo.title,
+        connectedEmail,
       },
     });
 
+    const emailSuffix = connectedEmail ? ` via ${connectedEmail}` : "";
     const successMsg = encodeURIComponent(
-      `YouTube connected: ${channelInfo.title} (${channelInfo.channelId})`
+      `YouTube connected: ${channelInfo.title} (${channelInfo.channelId})${emailSuffix}`
     );
     return NextResponse.redirect(
       new URL(

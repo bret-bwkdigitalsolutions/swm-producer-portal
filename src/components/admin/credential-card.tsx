@@ -54,6 +54,7 @@ interface CredentialCardProps {
     tokenExpiresAt: string | null;
     channelId?: string | null;
     channelTitle?: string | null;
+    connectedEmail?: string | null;
   };
   onEdit?: () => void;
   isOverride?: boolean;
@@ -103,23 +104,33 @@ export function CredentialCard({
         </div>
 
         {credential.platform === "youtube" && (
-          <div className="text-sm">
-            <span className="text-muted-foreground">Channel:</span>{" "}
-            {credential.channelTitle ? (
-              <a
-                href={`https://www.youtube.com/channel/${credential.channelId}`}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium underline-offset-2 hover:underline"
-              >
-                {credential.channelTitle}
-              </a>
-            ) : (
-              <span className="text-yellow-700">
-                Unknown — reconnect to verify
-              </span>
+          <>
+            <div className="text-sm">
+              <span className="text-muted-foreground">Channel:</span>{" "}
+              {credential.channelTitle ? (
+                <a
+                  href={`https://www.youtube.com/channel/${credential.channelId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium underline-offset-2 hover:underline"
+                >
+                  {credential.channelTitle}
+                </a>
+              ) : (
+                <span className="text-yellow-700">
+                  Unknown — reconnect to verify
+                </span>
+              )}
+            </div>
+            {credential.connectedEmail && (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Signed in as:</span>{" "}
+                <span className="font-mono text-xs">
+                  {credential.connectedEmail}
+                </span>
+              </div>
             )}
-          </div>
+          </>
         )}
 
         {credential.tokenExpiresAt && credential.credentialType === "oauth" && (
