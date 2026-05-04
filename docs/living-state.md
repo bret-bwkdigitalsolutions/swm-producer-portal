@@ -27,24 +27,24 @@ Development server runs with `npm run dev` on http://localhost:3000. Application
 - `/api/scraper/trigger` — Transistor dashboard scraping automation
 
 ## Current Architecture
-Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi-tenant podcast data management. Authentication through NextAuth with Google OAuth and invite-based onboarding. Core integrations include Transistor.fm scraping for episode ingestion, Deepgram for transcription, Anthropic Claude for content generation, Google Drive for collaborative editing, WordPress REST API for publishing, YouTube Data API for video uploads with OAuth channel verification, and Google Cloud Storage for media assets. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, atomic operations to prevent duplicate processing, and comprehensive edit tracking to measure human input on AI-generated content.
+Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi-tenant podcast data management. Authentication through NextAuth with Google OAuth and invite-based onboarding. Core integrations include Transistor.fm scraping for episode ingestion, Deepgram for transcription, Anthropic Claude for content generation, Google Drive for collaborative editing, WordPress REST API for publishing, YouTube Data API for video uploads with OAuth channel verification, and Google Cloud Storage for media assets. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, per-show season numbering schemes, and comprehensive edit tracking to measure human input on AI-generated content.
 
 ## What Works Today
 - Automated episode ingestion from Transistor.fm with metadata extraction and thumbnail processing
 - AI blog post generation from episode transcripts using Claude with custom prompts and show-specific style guides
 - Google Docs integration for collaborative editing with real-time change detection and edit percentage tracking
 - Multi-platform distribution to WordPress with SEO fields, taxonomy assignment, and speaker-labeled transcripts
-- YouTube video publishing with thumbnail upload, metadata sync, and AI-suggested titles based on show history
-- Day-grouped distribution job interface with collapsible sections and comprehensive status tracking
+- YouTube video publishing with AI-suggested titles based on show history and enforced 100-character limits
+- Season and episode number handling driven by per-show metadata configuration
+- Pre-distribution duplicate checks across YouTube, Transistor, and WordPress platforms
+- Tiered post-distribution verification at 30 second, 2 minute, 10 minute, and 30 minute intervals
 - User management with invitation tokens, role-based access, and last login tracking
-- Reaction content submission with content type categorization and show association
 - Image processing with EXIF rotation, compression, and WordPress gallery attachment
-- Bilingual content support with language-specific formatting and styling
-- YouTube OAuth verification with channel information display in admin interface
-- Enforced YouTube 100-character title limit to prevent upload failures
+- YouTube OAuth with channel verification and connected email display
+- Reaction content submission with content type categorization and show association
 
 ## Recent Activity
-Development over the past week has concentrated on **distribution workflow reliability** including fixes for redundant transcription, proper thumbnail re-upload after AI analysis completes, and comprehensive field handling (title, season/episode, explicit flag) in AI distribution paths. **User interface improvements** feature a restructured distribution form that moves metadata below path selection, adds AI title suggestions, and includes YouTube thumbnail previews. **Authentication and access control** has been enhanced with YouTube channel verification during OAuth, proper credential expiry display, and auto-reload handling for stale server actions after deployments. **Content management** improvements include prevention of blog idea overwrites during reprocessing and day-grouped job history with better visual organization.
+Development over the past week has concentrated on **distribution reliability and verification** including pre-distribution duplicate detection across all platforms, tiered post-distribution verification at multiple intervals, and proper handling of OAuth credential refresh cycles. **Season and episode management** has been enhanced with per-show season schemes, current season tracking, and conditional season number inclusion based on show preferences. **YouTube integration improvements** include AI-suggested titles based on show history, enforced character limits, channel verification during OAuth, and proper access token handling. **User experience refinements** feature restructured distribution forms with AI title suggestions, YouTube thumbnail previews, and auto-reload functionality for stale server actions after deployments.
 
 ## Known Gaps & Limitations
 - YouTube authentication relies on OAuth tokens that require manual refresh when expired
@@ -53,7 +53,6 @@ Development over the past week has concentrated on **distribution workflow relia
 - Google Drive integration has minimal error handling for API quota limits and permission failures
 - Content validation for reaction submissions lacks quality control and duplicate detection
 - Multi-show processing can create resource contention without proper job queuing
-- Blog post regeneration can overwrite existing ideas despite atomic claim attempts
 
 ## Next Meaningful Capabilities
 - Cross-platform analytics dashboard combining podcast metrics, blog performance, and engagement data
@@ -84,4 +83,4 @@ Development over the past week has concentrated on **distribution workflow relia
 - `src/app/admin/shows/sync/page.tsx` — Episode synchronization interface with platform integration
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-04-30_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-04_
