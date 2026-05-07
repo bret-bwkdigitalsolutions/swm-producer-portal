@@ -22,12 +22,12 @@ Development server runs with `npm run dev` on http://localhost:3000. Application
 - `/reaction` — Content reaction submission form with show filtering
 - `/api/auth/[...nextauth]` — NextAuth authentication endpoints
 - `/api/distribute/[id]` — Content distribution pipeline with AI analysis and multi-platform publishing
-- `/api/distribute/analyze/route.ts` — AI analysis endpoint for title suggestions and metadata extraction
+- `/api/distribute/analyze` — AI analysis endpoint for title suggestions and metadata extraction
 - `/api/upload/thumbnail` — Image upload with compression and EXIF rotation
 - `/api/scraper/trigger` — Transistor dashboard scraping automation
 
 ## Current Architecture
-Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi-tenant podcast data management. Authentication through NextAuth with Google OAuth and invite-based onboarding. Core integrations include Transistor.fm scraping for episode ingestion, Deepgram for transcription, Anthropic Claude for content generation, Google Drive for collaborative editing, WordPress REST API for publishing, YouTube Data API for video uploads with OAuth channel verification, and Google Cloud Storage for media assets. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, per-show season numbering schemes, and comprehensive edit tracking to measure human input on AI-generated content.
+Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi-tenant podcast data management. Authentication through NextAuth with Google OAuth and invite-based onboarding. Core integrations include Transistor.fm scraping for episode ingestion, Deepgram for transcription, Anthropic Claude for content generation, Google Drive for collaborative editing, WordPress REST API for publishing, YouTube Data API for video uploads with OAuth channel verification, and Google Cloud Storage for media assets. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, per-show season numbering schemes, and comprehensive edit tracking to measure human input on AI-generated content. TipTap provides rich text editing capabilities for blog content management.
 
 ## What Works Today
 - Automated episode ingestion from Transistor.fm with metadata extraction and thumbnail processing
@@ -42,9 +42,10 @@ Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi
 - Image processing with EXIF rotation, compression, and WordPress gallery attachment
 - YouTube OAuth with channel verification and connected email display
 - Reaction content submission with content type categorization and show association
+- Auto-reload functionality when server actions become stale after deployments
 
 ## Recent Activity
-Development over the past week has concentrated on **distribution reliability and verification** including pre-distribution duplicate detection across all platforms, tiered post-distribution verification at multiple intervals, and proper handling of OAuth credential refresh cycles. **Season and episode management** has been enhanced with per-show season schemes, current season tracking, and conditional season number inclusion based on show preferences. **YouTube integration improvements** include AI-suggested titles based on show history, enforced character limits, channel verification during OAuth, and proper access token handling. **User experience refinements** feature restructured distribution forms with AI title suggestions, YouTube thumbnail previews, and auto-reload functionality for stale server actions after deployments.
+Development over the past week has concentrated on **distribution reliability and verification** including pre-distribution duplicate detection across all platforms, tiered post-distribution verification at multiple intervals, and proper handling of OAuth credential refresh cycles to prevent false expiry warnings. **Season and episode management** has been enhanced with per-show season schemes, current season tracking, and conditional season number inclusion based on show preferences. **YouTube integration improvements** include AI-suggested titles based on show history with enforced character limits, channel verification during OAuth, connected account email display, and proper access token handling. **User experience refinements** feature restructured distribution forms moving metadata below path selection, AI title suggestions with show context, YouTube thumbnail previews, and enhanced error handling for analysis failures.
 
 ## Known Gaps & Limitations
 - YouTube authentication relies on OAuth tokens that require manual refresh when expired
@@ -53,6 +54,7 @@ Development over the past week has concentrated on **distribution reliability an
 - Google Drive integration has minimal error handling for API quota limits and permission failures
 - Content validation for reaction submissions lacks quality control and duplicate detection
 - Multi-show processing can create resource contention without proper job queuing
+- Job failure handling marks entire jobs as failed when individual analysis steps error
 
 ## Next Meaningful Capabilities
 - Cross-platform analytics dashboard combining podcast metrics, blog performance, and engagement data
@@ -83,4 +85,4 @@ Development over the past week has concentrated on **distribution reliability an
 - `src/app/admin/shows/sync/page.tsx` — Episode synchronization interface with platform integration
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-04_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-07_
