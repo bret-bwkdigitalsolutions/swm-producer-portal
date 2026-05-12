@@ -365,3 +365,58 @@ model BlogEditRecord {
   @@index([wpShowId])
   @@map("blog_edit_records")
 }
+
+// Social analytics: follower-count tracking for show and host accounts on
+// Facebook Pages, Instagram Business/Creator, TikTok, and X. Separate from
+// PlatformCredential because (a) shows can have multiple handles on a single
+// platform, (b) host accounts have no wpShowId, and (c) X uses an app-level
+// bearer token rather than per-account OAuth.
+model SocialAccount {
+  id                String                   @id @default(cuid())
+  platform          String                   // "facebook_page" | "instagram" | "tiktok" | "x"
+  kind              String                   // "show" | "host" | "network"
+  wpShowId          Int?                     // populated when kind = "show"
+  hostName          String?                  // populated when kind = "host"
+  handle            String                   // human-readable handle, e.g. "@stolenwatermedia"
+  displayName       String?                  // platform-reported display name
+  externalId        String?                  // Page ID, IG user ID, TikTok openId, X user ID
+  status            String                   @default("active") // "active" | "needs_reauth" | "removed"
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  credential        SocialAccountCredential?
+  snapshots         SocialFollowerSnapshot[]
+
+  @@unique([platform, externalId])
+  @@index([wpShowId])
+  @@index([kind])
+  @@map("social_accounts")
+}
+
+model SocialAccountCredential {
+  socialAccountId   String    @id
+  accessToken       String    @db.Text
+  refreshToken      String?   @db.Text
+  tokenExpiresAt    DateTime?
+  connectedByUserId String?   // user.id of the admin who completed the OAuth
+  connectedEmail    String?   // FB / TikTok account email that authorized
+  scopes            String?   // space-separated OAuth scopes granted
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  account           SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@map("social_account_credentials")
+}
+
+model SocialFollowerSnapshot {
+  id               String   @id @default(cuid())
+  socialAccountId  String
+  followerCount    Int
+  capturedAt       DateTime @default(now())
+
+  account          SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@index([socialAccountId, capturedAt])
+  @@map("social_follower_snapshots")
+}
