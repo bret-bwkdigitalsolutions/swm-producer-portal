@@ -4,85 +4,86 @@
 A comprehensive podcast producer portal that automatically ingests episodes from podcast platforms, generates AI-powered blog content from transcripts, and distributes finished posts across WordPress, YouTube, and other channels. Podcast producers use this to transform their audio content into written materials while maintaining brand consistency and editorial control through collaborative editing workflows.
 
 ## How to Run & Access
-Development server runs with `npm run dev` on http://localhost:3000. Application is containerized with Docker using standalone Next.js output, including FFmpeg for audio processing, yt-dlp for YouTube downloads, and Deno for JavaScript execution. The container runs automated database migrations on startup and serves on port 3000. No production deployment URLs or CI/CD pipelines are evident in the current codebase.
+Development server runs with `npm run dev` on http://localhost:3000. Application is containerized with Docker using standalone Next.js output, including FFmpeg, yt-dlp, and Deno for media processing. The container runs automated database migrations on startup via `scripts/migrate.mjs` and serves on port 3000. No production deployment URLs are evident, though the Dockerfile suggests deployment readiness with health checks and proper user permissions.
 
 ## Site Map / Content Structure
 - `/` — Public landing page with portal introduction
 - `/privacy` — Privacy policy page
 - `/terms` — Terms of service page
-- `/admin` — Main administrative dashboard with activity overview
-- `/admin/shows` — Show configuration, host management, language settings, and style guides
+- `/admin` — Administrative dashboard with activity overview and navigation
+- `/admin/shows` — Show configuration with platform links, host management, and style guides
 - `/admin/shows/sync` — Episode synchronization from Transistor.fm and other platforms
-- `/admin/credentials/[showId]` — Individual show API credential management
-- `/admin/credentials` — Platform credential overview with health checks
-- `/admin/blog-ideas` — AI-generated blog ideas organized by episode with collapsible day grouping
-- `/admin/users/[id]` — Individual user profile management
+- `/admin/credentials` — Platform credential overview with OAuth health checks
+- `/admin/credentials/[showId]` — Individual show API credential management and channel verification
+- `/admin/blog-ideas` — AI-generated blog ideas organized by episode with collapsible grouping
 - `/admin/users` — User invitation and access management system
+- `/admin/users/[id]` — Individual user profile management
 - `/admin/activity` — System activity logs and monitoring
+- `/admin/social-accounts` — Social media platform integration management
 - `/reaction` — Content reaction submission form with show filtering
-- `/api/auth/[...nextauth]` — NextAuth authentication endpoints
-- `/api/distribute/[id]` — Content distribution pipeline with AI analysis and multi-platform publishing
-- `/api/distribute/analyze` — AI analysis endpoint for title suggestions and metadata extraction
-- `/api/upload/thumbnail` — Image upload with compression and EXIF rotation
+- `/api/distribute/analyze` — AI analysis endpoint for title suggestions and metadata
+- `/api/distribute/[id]` — Multi-platform content distribution pipeline
+- `/api/upload/thumbnail` — Image processing with compression and EXIF handling
 - `/api/scraper/trigger` — Transistor dashboard scraping automation
 
 ## Current Architecture
-Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi-tenant podcast data management. Authentication through NextAuth with Google OAuth and invite-based onboarding. Core integrations include Transistor.fm scraping for episode ingestion, Deepgram for transcription, Anthropic Claude for content generation, Google Drive for collaborative editing, WordPress REST API for publishing, YouTube Data API for video uploads with OAuth channel verification, and Google Cloud Storage for media assets. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, per-show season numbering schemes, and comprehensive edit tracking to measure human input on AI-generated content. TipTap provides rich text editing capabilities for blog content management.
+Next.js 16 application with App Router using PostgreSQL via Prisma ORM for multi-tenant podcast data management. Authentication flows through NextAuth with Google OAuth and invite-based user onboarding. Core integrations include Transistor.fm scraping for episode ingestion, Deepgram for transcription services, Anthropic Claude for content generation with custom prompts, Google Drive for collaborative editing workflows, WordPress REST API for content publishing, YouTube Data API for video uploads with OAuth verification, and Google Cloud Storage for media assets. Upstash Redis handles caching and rate limiting. The architecture emphasizes automated content workflows with human review checkpoints, per-show customization including season schemes and style guides, and comprehensive edit tracking to measure human input on AI-generated content.
 
 ## What Works Today
 - Automated episode ingestion from Transistor.fm with metadata extraction and thumbnail processing
-- AI blog post generation from episode transcripts using Claude with custom prompts and show-specific style guides
-- Google Docs integration for collaborative editing with real-time change detection and edit percentage tracking
-- Multi-platform distribution to WordPress with SEO fields, taxonomy assignment, and speaker-labeled transcripts
-- YouTube video publishing with AI-suggested titles based on show history and enforced 100-character limits
-- Season and episode number handling driven by per-show metadata configuration
-- Pre-distribution duplicate checks across YouTube, Transistor, and WordPress platforms
-- Tiered post-distribution verification at 30 second, 2 minute, 10 minute, and 30 minute intervals
-- User management with invitation tokens, role-based access, and last login tracking
-- Image processing with EXIF rotation, compression, and WordPress gallery attachment
-- YouTube OAuth with channel verification and connected email display
-- Reaction content submission with content type categorization and show association
-- Auto-reload functionality when server actions become stale after deployments
+- AI blog post generation from episode transcripts using Claude with show-specific style guides and custom prompts
+- Google Docs collaborative editing integration with change detection and edit percentage tracking
+- Multi-platform distribution to WordPress with SEO optimization, taxonomy assignment, and formatted transcripts
+- YouTube video publishing with AI-suggested titles, thumbnail previews, and enforced character limits
+- Season and episode numbering driven by configurable per-show metadata schemes
+- Pre-distribution duplicate detection across YouTube, Transistor, and WordPress platforms
+- Tiered post-distribution verification at 30-second, 2-minute, 10-minute, and 30-minute intervals
+- User management with invitation tokens, role-based access control, and activity tracking
+- Image processing with EXIF rotation, compression, and WordPress media library integration
+- YouTube OAuth with channel verification and connected account email display
+- Content reaction submission system with categorization and show association
+- Auto-reload functionality for stale server actions after deployments
+- Style guide auto-synthesis as blog edits accumulate to capture voice and preferences
 
 ## Recent Activity
-Development over the past week has concentrated on **distribution reliability and verification** including pre-distribution duplicate detection across all platforms, tiered post-distribution verification at multiple intervals, and proper handling of OAuth credential refresh cycles to prevent false expiry warnings. **Season and episode management** has been enhanced with per-show season schemes, current season tracking, and conditional season number inclusion based on show preferences. **YouTube integration improvements** include AI-suggested titles based on show history with enforced character limits, channel verification during OAuth, connected account email display, and proper access token handling. **User experience refinements** feature restructured distribution forms moving metadata below path selection, AI title suggestions with show context, YouTube thumbnail previews, and enhanced error handling for analysis failures.
+Development over the past two weeks has focused on **social media analytics foundation** with new SocialAccount, SocialAccountCredential, and SocialFollowerSnapshot database models plus administrative interfaces. **Authentication improvements** include auto-linking Google sign-in to existing credential accounts by email and proper OAuth token refresh handling to prevent false expiry warnings. **Content distribution reliability** has been enhanced with comprehensive duplicate checking, tiered verification workflows, and improved error handling for analysis failures. **Show management features** now include configurable season schemes, current season tracking, and conditional season number handling. **Style guide automation** automatically synthesizes writing guidelines as human edits accumulate on AI-generated content.
 
 ## Known Gaps & Limitations
-- YouTube authentication relies on OAuth tokens that require manual refresh when expired
-- Distribution pipeline lacks automated retry mechanisms for failed platform uploads
-- Edit detection measures percentage changes but cannot assess semantic quality of modifications
-- Google Drive integration has minimal error handling for API quota limits and permission failures
-- Content validation for reaction submissions lacks quality control and duplicate detection
+- Social media analytics models exist but lack data collection and visualization implementations
+- YouTube OAuth tokens require manual refresh cycles when expired without automated renewal
+- Distribution pipeline lacks automated retry mechanisms for partial platform upload failures
+- Edit tracking measures percentage changes but cannot assess semantic quality improvements
+- Google Drive integration has minimal error handling for API quota limits and permission issues
 - Multi-show processing can create resource contention without proper job queuing
-- Job failure handling marks entire jobs as failed when individual analysis steps error
+- Content validation for reaction submissions lacks quality control and spam prevention
 
 ## Next Meaningful Capabilities
-- Cross-platform analytics dashboard combining podcast metrics, blog performance, and engagement data
+- Social media follower analytics dashboard with historical tracking and growth insights
+- Cross-platform content performance analytics combining podcast metrics with blog and video engagement
+- Automated social media snippet generation optimized for platform-specific requirements
 - Advanced content calendar with strategic scheduling based on audience behavior patterns
-- Template-driven blog generation allowing custom post structures beyond simple prompts
-- Automated social media snippet creation optimized for different platform requirements
-- Enhanced collaborative workflows with approval chains and detailed reviewer assignment
-- Intelligent content recommendation engine suggesting topics based on episode performance and trends
+- Template-driven blog structures allowing custom post formats beyond simple prompt variations
+- Enhanced collaborative workflows with approval chains and granular reviewer permissions
 
 ## Open Technical Questions
-- Optimal job queuing strategy for handling concurrent episode processing without resource conflicts
-- Long-term media storage approach balancing cost efficiency with access performance requirements
-- Architecture for expanding distribution beyond WordPress to additional CMS platforms and social networks
-- Error recovery mechanisms for partial distribution failures across multiple platforms simultaneously
-- Performance optimization strategy for processing long-form content and large transcript analysis
-- Content quality validation framework for user-submitted reactions and custom blog inputs
+- Optimal job queuing architecture for concurrent episode processing without resource conflicts
+- Long-term media storage strategy balancing cost efficiency with performance requirements
+- Social media API integration approach for follower data collection across multiple platforms
+- Error recovery mechanisms for handling partial distribution failures gracefully
+- Content quality assessment framework for measuring AI output improvements over time
+- Performance optimization strategy for processing long-form transcripts and large media files
 
 ## Key Files & Entry Points
-- `src/app/admin/blog-ideas/page.tsx` — Main blog content management interface with episode grouping
-- `src/app/api/distribute/analyze/route.ts` — AI analysis endpoint for title suggestions and metadata extraction
-- `src/app/admin/shows/page.tsx` — Show configuration with platform links and style guide management
-- `scripts/transistor-scraper/` — Automated episode ingestion system with authentication and data collection
-- `src/app/admin/blog-ideas/actions.ts` — Blog generation workflows with atomic claim processing
-- `prisma/schema.prisma` — Complete data model covering shows, episodes, users, and content relationships
-- `src/app/reaction/page.tsx` — Reaction content submission interface with show filtering
-- `Dockerfile` — Production container setup with media processing tools and migration automation
-- `src/app/admin/blog-ideas/parse-blog-output.ts` — Content parsing with edit detection and validation logic
-- `src/app/admin/shows/sync/page.tsx` — Episode synchronization interface with platform integration
+- `src/app/admin/blog-ideas/page.tsx` — Primary blog content management with episode organization
+- `src/app/api/distribute/analyze/route.ts` — AI analysis for title suggestions and metadata extraction
+- `scripts/transistor-scraper/index.ts` — Episode ingestion automation with authentication
+- `src/app/admin/shows/page.tsx` — Show configuration with platform integration and style guides
+- `prisma/schema.prisma` — Complete data model for shows, episodes, users, and social accounts
+- `src/app/admin/blog-ideas/actions.ts` — Blog generation workflows with atomic processing
+- `Dockerfile` — Production container with media tools and migration automation
+- `src/app/admin/credentials/[showId]/page.tsx` — Platform credential management with OAuth verification
+- `src/app/admin/blog-ideas/parse-blog-output.ts` — Content parsing with edit detection logic
+- `scripts/sync-style-guide.ts` — Automated style guide synthesis from accumulated edits
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-11_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-14_
