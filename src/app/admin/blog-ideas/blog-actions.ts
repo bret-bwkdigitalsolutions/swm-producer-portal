@@ -1,6 +1,7 @@
 "use server";
 
 import { requireAdmin } from "@/lib/auth-guard";
+import { maybeAutoSynthesize } from "@/lib/style-guide/synthesis";
 
 function escapeHtml(str: string): string {
   return str
@@ -241,6 +242,11 @@ export async function publishToWordPress(
           editedContent: docHtml,
         },
       });
+
+      // Fire-and-forget: refresh the show's voice profile when enough new
+      // edit signal has accumulated. Never await — synthesis is a multi-second
+      // Claude call and must not slow the publish flow.
+      void maybeAutoSynthesize(blogPost.wpShowId);
     } catch (error) {
       // Non-fatal — don't block publishing if edit capture fails
       console.error("[blog] Edit record capture failed (non-fatal):", error);

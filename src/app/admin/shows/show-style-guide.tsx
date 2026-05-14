@@ -52,6 +52,7 @@ export function ShowStyleGuide({
       {editRecordCount === 0 && !styleGuide ? (
         <p className="text-xs text-muted-foreground">
           No style guide yet — publish edited blog posts to start building one.
+          Auto-syncs after 5 edited posts, then refreshes every 3 new edits.
         </p>
       ) : (
         <>
@@ -69,6 +70,8 @@ export function ShowStyleGuide({
                 })}
               </>
             )}
+            {" · "}
+            <span className="text-green-600">Auto-syncs on publish</span>
           </p>
 
           {styleGuide && (
@@ -91,8 +94,8 @@ export function ShowStyleGuide({
             {synthesizing
               ? "Synthesizing..."
               : styleGuide
-                ? "Update Style Guide"
-                : "Generate Style Guide"}
+                ? "Re-sync Now"
+                : "Sync Now"}
           </Button>
 
           {message && (
