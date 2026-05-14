@@ -8,7 +8,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { BookOpenIcon } from "lucide-react";
+import Link from "next/link";
 import { GenerateBlogButton } from "./generate-blog-button";
 import { BlogPostControls } from "./blog-post-controls";
 import { CustomBlogForm } from "./custom-blog-form";
@@ -229,6 +231,11 @@ export default async function BlogIdeasPage() {
             to WordPress.
           </p>
         </div>
+        <Link href="/admin/blog-ideas/import">
+          <Button variant="outline" size="sm">
+            Import from Google Doc
+          </Button>
+        </Link>
       </div>
 
       <CustomBlogForm shows={showsForForm} styleGuideMap={styleGuideRecord} />
