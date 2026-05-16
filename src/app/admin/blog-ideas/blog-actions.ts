@@ -261,11 +261,18 @@ export async function publishToWordPress(
     where: { wpShowId: blogPost.wpShowId },
   });
   const isBilingual = showMetadata?.bilingual ?? false;
-  const primaryLanguage = showMetadata?.language ?? "en";
+  // Per-post primaryLanguage override wins over show default. Used for
+  // host-authored imports that may be written in the show's secondary
+  // language. Imports always get translated so the other language is also
+  // available, even on shows that aren't flagged bilingual.
+  const primaryLanguage =
+    blogPost.primaryLanguage ?? showMetadata?.language ?? "en";
+  const isImport = blogPost.source === "import";
+  const shouldTranslate = isBilingual || isImport;
 
-  // Translate if bilingual
+  // Translate if needed
   let translationMeta: Record<string, string> = {};
-  if (isBilingual) {
+  if (shouldTranslate) {
     const secondaryLanguage = primaryLanguage === "es" ? "en" : "es";
     const translation = await translateBlogPost(
       {
@@ -351,6 +358,7 @@ export async function publishToWordPress(
         meta: {
           parent_show_id: blogPost.wpShowId,
           _swm_blog_author: blogPost.author ?? "",
+          _swm_blog_primary_language: primaryLanguage,
           ...(blogPost.suggestion
             ? { _swm_source_suggestion_id: blogPost.suggestion.id }
             : {}),

@@ -31,9 +31,13 @@ interface ImportBlogFormProps {
   shows: Show[];
 }
 
+type SourceMode = "url" | "upload";
+
 export function ImportBlogForm({ shows }: ImportBlogFormProps) {
   const router = useRouter();
+  const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [wpShowId, setWpShowId] = useState<string>("");
+  const [primaryLanguage, setPrimaryLanguage] = useState<string>("en");
   const [publishLive, setPublishLive] = useState(false);
 
   const [state, action, isPending] = useActionState(
@@ -41,34 +45,69 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
     {}
   );
 
-  // If the action succeeded, refresh the blog-ideas page to show the new draft
   if (state?.success && state.blogPostId) {
-    // setTimeout to avoid router.refresh during render
     setTimeout(() => router.refresh(), 0);
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Import from Google Doc</CardTitle>
+        <CardTitle>Import Blog</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Publish a host-authored post directly. The doc must be shared with
-          the portal&apos;s Google service account. Spanish translation runs
-          automatically if the show is set to bilingual.
+          Publish a host-authored post directly. Paste a Google Doc URL, or
+          upload a .docx / .md / .txt file. Words are imported verbatim;
+          formatting is cleaned. Translation to the other language runs
+          automatically.
         </p>
       </CardHeader>
       <CardContent>
-        <form action={action} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="docUrl">Google Doc URL</Label>
-            <Input
-              id="docUrl"
-              name="docUrl"
-              placeholder="https://docs.google.com/document/d/..."
-              required
-              disabled={isPending}
-            />
+        <form action={action} className="space-y-4" encType="multipart/form-data">
+          {/* Source toggle */}
+          <div className="flex gap-2 rounded-md border p-1 w-fit">
+            <SourceTab
+              active={sourceMode === "url"}
+              onClick={() => setSourceMode("url")}
+            >
+              Google Doc URL
+            </SourceTab>
+            <SourceTab
+              active={sourceMode === "upload"}
+              onClick={() => setSourceMode("upload")}
+            >
+              Upload file
+            </SourceTab>
           </div>
+          <input type="hidden" name="sourceMode" value={sourceMode} />
+
+          {sourceMode === "url" ? (
+            <div className="space-y-2">
+              <Label htmlFor="docUrl">Google Doc URL</Label>
+              <Input
+                id="docUrl"
+                name="docUrl"
+                placeholder="https://docs.google.com/document/d/..."
+                disabled={isPending}
+              />
+              <p className="text-xs text-muted-foreground">
+                The Doc must be shared with the portal&apos;s Google service
+                account.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="file">File</Label>
+              <Input
+                id="file"
+                name="file"
+                type="file"
+                accept=".docx,.md,.markdown,.txt"
+                disabled={isPending}
+              />
+              <p className="text-xs text-muted-foreground">
+                Accepted: .docx, .md, .txt. Max 5 MB.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -76,7 +115,6 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
               <Select
                 value={wpShowId}
                 onValueChange={(v) => setWpShowId(v ?? "")}
-                name="wpShowId"
                 disabled={isPending}
               >
                 <SelectTrigger id="wpShowId">
@@ -94,30 +132,51 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="author">Author</Label>
-              <Input
-                id="author"
-                name="author"
-                placeholder="Tyler Kern"
-                required
+              <Label htmlFor="primaryLanguage">Primary language</Label>
+              <Select
+                value={primaryLanguage}
+                onValueChange={(v) => setPrimaryLanguage(v ?? "en")}
                 disabled={isPending}
+              >
+                <SelectTrigger id="primaryLanguage">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="es">Spanish</SelectItem>
+                </SelectContent>
+              </Select>
+              <input
+                type="hidden"
+                name="primaryLanguage"
+                value={primaryLanguage}
               />
+              <p className="text-xs text-muted-foreground">
+                The language of the imported text. The other language is
+                auto-translated.
+              </p>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="author">Author</Label>
+            <Input
+              id="author"
+              name="author"
+              placeholder="Tyler Kern"
+              required
+              disabled={isPending}
+            />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="title">
               Title override{" "}
               <span className="text-xs text-muted-foreground">
-                (leave blank to use the Doc&apos;s title)
+                (leave blank to use the doc/file title)
               </span>
             </Label>
-            <Input
-              id="title"
-              name="title"
-              placeholder="Players to Watch at the 2026 World Cup"
-              disabled={isPending}
-            />
+            <Input id="title" name="title" disabled={isPending} />
           </div>
 
           <div className="space-y-2">
@@ -220,5 +279,30 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+function SourceTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "rounded px-3 py-1.5 text-sm font-medium transition-colors " +
+        (active
+          ? "bg-foreground text-background"
+          : "text-muted-foreground hover:text-foreground")
+      }
+    >
+      {children}
+    </button>
   );
 }

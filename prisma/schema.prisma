@@ -335,6 +335,7 @@ model BlogPost {
   seoDescription   String?
   seoKeyphrase     String?
   originalContent  String?  // AI-generated HTML body, saved at generation time
+  primaryLanguage  String?  // Per-post override (e.g. "es"). Null = use ShowMetadata.language. Useful for imports where one post is in the show's secondary language.
   status           String   @default("draft") // "draft" | "reviewing" | "published"
   wpPostId         Int?
   wpPostUrl        String?
