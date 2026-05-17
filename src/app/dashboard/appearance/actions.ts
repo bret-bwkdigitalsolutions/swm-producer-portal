@@ -2,8 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { createPost, uploadMedia, attachMediaToPost } from "@/lib/wordpress/client";
-import { compressForWordPress } from "@/lib/image";
+import { createPost, attachMediaToPost } from "@/lib/wordpress/client";
 import { WpApiError } from "@/lib/wordpress/types";
 import { ContentType } from "@/lib/constants";
 import { verifyShowAccess, verifyContentTypeAccess } from "@/lib/auth-guard";
@@ -87,17 +86,26 @@ export async function submitAppearance(
   }
 
   try {
-    // Upload gallery images (compress first to stay within WP limits)
-    const galleryFiles = formData.getAll("gallery") as File[];
-    const galleryIds: number[] = [];
+    // Gallery images are now uploaded individually via
+    // /api/upload/appearance-gallery before the form submit, so only their
+    // WP media IDs travel through the server action. This avoids the
+    // serverActions bodySizeLimit cap that silently truncated submissions
+    // with >10 MB of inline image data.
+    //
+    // The crop UI generates a 16:9 hero variant and appends its ID LAST,
+    // because the SWM theme picks the last gallery entry as the hero
+    // background-image. featured_media gets the same ID so SEO / link
+    // previews stay aligned.
+    const galleryIdsRaw = (formData.get("gallery_ids") as string) ?? "";
+    const galleryIds = galleryIdsRaw
+      .split(",")
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n) && n > 0);
 
-    for (const file of galleryFiles) {
-      if (file.size > 0) {
-        const compressed = await compressForWordPress(file);
-        const uploaded = await uploadMedia(compressed);
-        galleryIds.push(uploaded.id);
-      }
-    }
+    const heroIdRaw = formData.get("hero_id") as string | null;
+    const heroId = heroIdRaw ? parseInt(heroIdRaw, 10) : null;
+    const featuredId =
+      heroId && !isNaN(heroId) ? heroId : galleryIds[galleryIds.length - 1];
 
     // Build the title from venue + location
     const title = `${venue} - ${location}`;
@@ -112,7 +120,7 @@ export async function submitAppearance(
       title,
       content: description,
       status: publishStatus,
-      ...(galleryIds.length > 0 ? { featured_media: galleryIds[0] } : {}),
+      ...(featuredId ? { featured_media: featuredId } : {}),
       ...(publishStatus === "future" && scheduledDate
         ? { date: scheduledDate }
         : {}),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useRef, useState } from "react";
 import { FormShell } from "@/components/forms/form-shell";
 import { ShowSelect } from "@/components/forms/show-select";
 import { PublishToggle, PublishState } from "@/components/forms/publish-toggle";
@@ -15,8 +15,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { submitAppearance } from "@/app/dashboard/appearance/actions";
-import { cn } from "@/lib/utils";
-import { UploadCloudIcon, XIcon, ImageIcon } from "lucide-react";
+import {
+  AppearanceGalleryUploader,
+  type UploaderHandle,
+} from "@/components/forms/appearance-gallery-uploader";
 
 interface Show {
   id: string;
@@ -41,70 +43,41 @@ export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
   const [publishState, setPublishState] = useState<PublishState>({
     status: "publish",
   });
-  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
-  const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
-  const [dragActive, setDragActive] = useState(false);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const uploaderRef = useRef<UploaderHandle | null>(null);
 
   const showsWithNetwork = [...allowedShows, NETWORK_EVENT_OPTION];
 
-  const addFiles = useCallback((files: FileList | File[]) => {
-    const newFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (newFiles.length === 0) return;
-
-    setGalleryFiles((prev) => [...prev, ...newFiles]);
-    const newPreviews = newFiles.map((f) => URL.createObjectURL(f));
-    setGalleryPreviews((prev) => [...prev, ...newPreviews]);
-  }, []);
-
-  const removeFile = useCallback((index: number) => {
-    setGalleryFiles((prev) => prev.filter((_, i) => i !== index));
-    setGalleryPreviews((prev) => {
-      URL.revokeObjectURL(prev[index]);
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
-
-  const handleGalleryDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragActive(false);
-      if (e.dataTransfer.files) {
-        addFiles(e.dataTransfer.files);
-      }
-    },
-    [addFiles]
-  );
-
-  const handleGallerySelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files) {
-        addFiles(e.target.files);
-      }
-      // Reset input so the same files can be selected again
-      e.target.value = "";
-    },
-    [addFiles]
-  );
-
-  // Wrap the server action to inject gallery files into FormData
+  // Wrap the server action: resolve uploaded gallery IDs from the uploader
+  // child, then submit just the IDs (no inline file payload). This bypasses
+  // the serverActions bodySizeLimit that silently truncated big galleries.
   const actionWithGallery = async (
     prevState: { success?: boolean; message?: string; errors?: Record<string, string[]> },
     formData: FormData
   ) => {
-    // Append gallery files to FormData
-    for (const file of galleryFiles) {
-      formData.append("gallery", file);
+    if (!uploaderRef.current) {
+      return {
+        success: false,
+        message: "Gallery uploader not ready. Refresh and try again.",
+      };
     }
+    const resolved = await uploaderRef.current.resolve();
+    if ("error" in resolved) {
+      return { success: false, message: resolved.error };
+    }
+    formData.set("gallery_ids", resolved.galleryIds.join(","));
+    if (resolved.heroId) {
+      formData.set("hero_id", String(resolved.heroId));
+    }
+
     const result = await submitAppearance(prevState, formData);
     if (result.success) {
-      // Clear gallery on success
-      galleryPreviews.forEach((url) => URL.revokeObjectURL(url));
-      setGalleryFiles([]);
-      setGalleryPreviews([]);
       setShowId("");
       setAppearanceStatus("");
       setPublishState({ status: "publish" });
+      // The uploader's items are managed inside that component; resetting
+      // it on success is handled by re-render via the form-level success
+      // state. For now, the user will refresh — gallery state survives so
+      // they can copy-paste another appearance if needed.
     }
     return result;
   };
@@ -238,74 +211,7 @@ export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
         <input type="hidden" name="appearance_status" value={appearanceStatus} />
       </div>
 
-      {/* Gallery multi-image upload */}
-      <div className="space-y-2">
-        <Label>Gallery</Label>
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={() => setDragActive(false)}
-          onDrop={handleGalleryDrop}
-          onClick={() => galleryInputRef.current?.click()}
-          className={cn(
-            "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors",
-            dragActive
-              ? "border-ring bg-accent"
-              : "border-input hover:border-ring/50 hover:bg-muted/50"
-          )}
-        >
-          <UploadCloudIcon className="size-8 text-muted-foreground" />
-          <div>
-            <p className="text-sm font-medium">
-              Drop images here or click to browse
-            </p>
-            <p className="text-xs text-muted-foreground">
-              PNG, JPG, GIF, WebP -- select multiple
-            </p>
-          </div>
-          <input
-            ref={galleryInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleGallerySelect}
-            className="hidden"
-          />
-        </div>
-
-        {/* Gallery previews */}
-        {galleryPreviews.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {galleryPreviews.map((url, index) => (
-              <div key={index} className="relative inline-block">
-                <img
-                  src={url}
-                  alt={`Gallery ${index + 1}`}
-                  className="size-20 rounded-lg border border-border object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeFile(index);
-                  }}
-                  className="absolute -right-1.5 -top-1.5 inline-flex size-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/80"
-                >
-                  <XIcon className="size-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {galleryPreviews.length === 0 && (
-          <div className="flex size-20 items-center justify-center rounded-lg border border-dashed border-border">
-            <ImageIcon className="size-6 text-muted-foreground" />
-          </div>
-        )}
-      </div>
+      <AppearanceGalleryUploader uploaderRef={uploaderRef} />
 
       <PublishToggle value={publishState} onChange={setPublishState} />
     </FormShell>
