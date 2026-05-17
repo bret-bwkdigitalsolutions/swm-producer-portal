@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SparklesIcon } from "lucide-react";
 import { importBlogFromGoogleDoc } from "./actions";
+import { proposeBlogMetadata } from "./propose-actions";
 
 interface Show {
   id: number;
@@ -35,11 +37,27 @@ type SourceMode = "url" | "upload";
 
 export function ImportBlogForm({ shows }: ImportBlogFormProps) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
+
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [wpShowId, setWpShowId] = useState<string>("");
   const [primaryLanguage, setPrimaryLanguage] = useState<string>("en");
   const [publishLive, setPublishLive] = useState(false);
 
+  // Controlled so the Analyze button can populate them
+  const [title, setTitle] = useState("");
+  const [excerpt, setExcerpt] = useState("");
+  const [seoDescription, setSeoDescription] = useState("");
+  const [seoKeyphrase, setSeoKeyphrase] = useState("");
+
+  // Analyze flow
+  const [analyzing, startAnalyze] = useTransition();
+  const [analyzeMessage, setAnalyzeMessage] = useState<{
+    text: string;
+    success: boolean;
+  } | null>(null);
+
+  // Main submit
   const [state, action, isPending] = useActionState(
     importBlogFromGoogleDoc,
     {}
@@ -48,6 +66,32 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
   if (state?.success && state.blogPostId) {
     setTimeout(() => router.refresh(), 0);
   }
+
+  function handleAnalyze() {
+    if (!formRef.current) return;
+    setAnalyzeMessage(null);
+    startAnalyze(async () => {
+      const formData = new FormData(formRef.current!);
+      const result = await proposeBlogMetadata({}, formData);
+      if (result.success && result.metadata) {
+        setTitle(result.metadata.title);
+        setExcerpt(result.metadata.excerpt);
+        setSeoDescription(result.metadata.seoDescription);
+        setSeoKeyphrase(result.metadata.seoKeyphrase);
+        setAnalyzeMessage({
+          text: "Metadata filled. Review and edit before submitting.",
+          success: true,
+        });
+      } else {
+        setAnalyzeMessage({
+          text: result.message ?? "Analysis failed.",
+          success: false,
+        });
+      }
+    });
+  }
+
+  const busy = isPending || analyzing;
 
   return (
     <Card>
@@ -61,7 +105,12 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
         </p>
       </CardHeader>
       <CardContent>
-        <form action={action} className="space-y-4" encType="multipart/form-data">
+        <form
+          ref={formRef}
+          action={action}
+          className="space-y-4"
+          encType="multipart/form-data"
+        >
           {/* Source toggle */}
           <div className="flex gap-2 rounded-md border p-1 w-fit">
             <SourceTab
@@ -86,7 +135,7 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
                 id="docUrl"
                 name="docUrl"
                 placeholder="https://docs.google.com/document/d/..."
-                disabled={isPending}
+                disabled={busy}
               />
               <p className="text-xs text-muted-foreground">
                 The Doc must be shared with the portal&apos;s Google service
@@ -101,7 +150,7 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
                 name="file"
                 type="file"
                 accept=".docx,.md,.markdown,.txt"
-                disabled={isPending}
+                disabled={busy}
               />
               <p className="text-xs text-muted-foreground">
                 Accepted: .docx, .md, .txt. Max 5 MB.
@@ -115,7 +164,7 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
               <Select
                 value={wpShowId}
                 onValueChange={(v) => setWpShowId(v ?? "")}
-                disabled={isPending}
+                disabled={busy}
               >
                 <SelectTrigger id="wpShowId">
                   <SelectValue placeholder="Pick a show" />
@@ -136,7 +185,7 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
               <Select
                 value={primaryLanguage}
                 onValueChange={(v) => setPrimaryLanguage(v ?? "en")}
-                disabled={isPending}
+                disabled={busy}
               >
                 <SelectTrigger id="primaryLanguage">
                   <SelectValue />
@@ -165,18 +214,53 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
               name="author"
               placeholder="Tyler Kern"
               required
-              disabled={isPending}
+              disabled={busy}
             />
+          </div>
+
+          {/* Analyze button — proposes title/excerpt/SEO desc/keyphrase from content */}
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed p-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAnalyze}
+              disabled={busy}
+            >
+              <SparklesIcon className="mr-2 size-3.5" />
+              {analyzing ? "Analyzing…" : "Auto-fill metadata from content"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Reads the doc/file and proposes title, excerpt, SEO description,
+              and keyphrase. Review and tweak before submitting.
+            </p>
+            {analyzeMessage && (
+              <p
+                className={
+                  analyzeMessage.success
+                    ? "text-xs text-green-600 basis-full"
+                    : "text-xs text-destructive basis-full"
+                }
+              >
+                {analyzeMessage.text}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="title">
-              Title override{" "}
+              Title{" "}
               <span className="text-xs text-muted-foreground">
                 (leave blank to use the doc/file title)
               </span>
             </Label>
-            <Input id="title" name="title" disabled={isPending} />
+            <Input
+              id="title"
+              name="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              disabled={busy}
+            />
           </div>
 
           <div className="space-y-2">
@@ -190,8 +274,10 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
               id="excerpt"
               name="excerpt"
               rows={2}
+              value={excerpt}
+              onChange={(e) => setExcerpt(e.target.value)}
               required
-              disabled={isPending}
+              disabled={busy}
             />
           </div>
 
@@ -199,7 +285,7 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
             <Label htmlFor="seoDescription">
               SEO description{" "}
               <span className="text-xs text-muted-foreground">
-                (≤160 characters)
+                ({seoDescription.length}/160 characters)
               </span>
             </Label>
             <Textarea
@@ -207,8 +293,10 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
               name="seoDescription"
               rows={2}
               maxLength={160}
+              value={seoDescription}
+              onChange={(e) => setSeoDescription(e.target.value)}
               required
-              disabled={isPending}
+              disabled={busy}
             />
           </div>
 
@@ -222,8 +310,10 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
             <Input
               id="seoKeyphrase"
               name="seoKeyphrase"
+              value={seoKeyphrase}
+              onChange={(e) => setSeoKeyphrase(e.target.value)}
               required
-              disabled={isPending}
+              disabled={busy}
             />
           </div>
 
@@ -233,7 +323,7 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
               name="publishLive"
               checked={publishLive}
               onCheckedChange={(v) => setPublishLive(v === true)}
-              disabled={isPending}
+              disabled={busy}
             />
             <Label
               htmlFor="publishLive"
@@ -247,7 +337,7 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={busy}>
               {isPending
                 ? "Importing…"
                 : publishLive
