@@ -24,6 +24,7 @@ model User {
   allowedContentTypes   UserContentTypeAccess[]
   preferences           UserPreference?
   activityLogs          ActivityLog[]
+  liveRecordings        LiveRecording[]
   lastLoginAt           DateTime?
   inviteSentAt          DateTime?
   inviteToken           InviteToken?
@@ -420,4 +421,41 @@ model SocialFollowerSnapshot {
 
   @@index([socialAccountId, capturedAt])
   @@map("social_follower_snapshots")
+}
+
+// Live recordings broadcast via Vimeo Live + simulcast to YouTube. The portal
+// publishes a swm_episode WP post immediately in "scheduled" state and a
+// polling cron drives state transitions (scheduled → live → ended_pending →
+// archived) based on YouTube Data API state. Once the YouTube archive is
+// downloadable, the portal uploads the audio to Transistor and the existing
+// Transistor pipeline takes over; the pipeline's update-in-place branch
+// writes its output to this row's wpPostId rather than creating a new post.
+model LiveRecording {
+  id                  String    @id @default(cuid())
+  wpShowId            Int
+  wpPostId            Int?      // populated after WP post creation
+  youtubeVideoId      String    @unique  // extracted from the live URL
+  youtubeLiveUrl      String    // canonical URL as entered by admin
+  title               String
+  description         String?   @db.Text
+  scheduledStartAt    DateTime
+  state               String    @default("scheduled")
+  // scheduled | live | ended_pending | archived | cancelled | stuck
+  transistorEpisodeId String?   @unique  // populated after handoff to Transistor
+  actualStartedAt     DateTime? // from YouTube liveStreamingDetails.actualStartTime
+  actualEndedAt       DateTime? // from YouTube liveStreamingDetails.actualEndTime
+  archivedAt          DateTime? // when the pipeline finished and state flipped to archived
+  lastPolledAt        DateTime?
+  pollAttempts        Int       @default(0)
+  downloadAttempts    Int       @default(0)
+  errorMessage        String?   @db.Text  // last error when state = stuck
+  createdByUserId     String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  createdBy User @relation(fields: [createdByUserId], references: [id])
+
+  @@index([state, scheduledStartAt])
+  @@index([wpShowId])
+  @@map("live_recordings")
 }
