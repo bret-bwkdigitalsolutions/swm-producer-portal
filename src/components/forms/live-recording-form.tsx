@@ -14,6 +14,7 @@ function detectTimezone(): string {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
@@ -28,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ShieldAlertIcon } from "lucide-react";
 import { createLiveRecording } from "@/app/dashboard/live-recordings/new/actions";
 
 interface Show {
@@ -42,6 +44,7 @@ interface LiveRecordingFormProps {
 export function LiveRecordingForm({ allowedShows }: LiveRecordingFormProps) {
   const router = useRouter();
   const [wpShowId, setWpShowId] = useState("");
+  const [premiumOnly, setPremiumOnly] = useState(false);
   const [timezone] = useState(detectTimezone);
 
   const [state, action, isPending] = useActionState(createLiveRecording, {});
@@ -170,6 +173,26 @@ export function LiveRecordingForm({ allowedShows }: LiveRecordingFormProps) {
               rows={3}
               placeholder="Brief description shown on the scheduled-state page."
               disabled={isPending}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3">
+            <div className="flex items-center gap-2">
+              <ShieldAlertIcon className="size-4 text-muted-foreground" />
+              <Label htmlFor="premium-toggle" className="cursor-pointer">
+                Premium only
+              </Label>
+            </div>
+            <Switch
+              id="premium-toggle"
+              checked={premiumOnly}
+              onCheckedChange={setPremiumOnly}
+              disabled={isPending}
+            />
+            <input
+              type="hidden"
+              name="premium_only"
+              value={String(premiumOnly)}
             />
           </div>
 

@@ -67,6 +67,10 @@ export default async function LiveRecordingDetailPage({ params }: PageProps) {
         <CardContent className="space-y-3 text-sm">
           <Field label="Show (wpShowId)" value={String(recording.wpShowId)} />
           <Field
+            label="Premium only"
+            value={recording.isPremiumOnly ? "Yes" : "No"}
+          />
+          <Field
             label="Scheduled start"
             value={recording.scheduledStartAt.toLocaleString()}
           />

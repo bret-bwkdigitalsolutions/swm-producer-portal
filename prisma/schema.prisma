@@ -449,6 +449,7 @@ model LiveRecording {
   pollAttempts        Int       @default(0)
   downloadAttempts    Int       @default(0)
   errorMessage        String?   @db.Text  // last error when state = stuck
+  isPremiumOnly       Boolean   @default(false) // mirrors swm_episode is_premium_only on the WP post
   createdByUserId     String
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

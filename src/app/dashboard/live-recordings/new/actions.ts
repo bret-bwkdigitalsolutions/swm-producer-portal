@@ -31,6 +31,7 @@ export async function createLiveRecording(
   const description = (formData.get("description") as string)?.trim() ?? "";
   const scheduledStartLocal = formData.get("scheduledStartAt") as string;
   const timezone = formData.get("timezone") as string | null;
+  const isPremiumOnly = formData.get("premium_only") === "true";
 
   const errors: Record<string, string[]> = {};
   if (!wpShowIdRaw) errors.wpShowId = ["Pick a show."];
@@ -130,6 +131,7 @@ export async function createLiveRecording(
       description: description || null,
       scheduledStartAt,
       state: "scheduled",
+      isPremiumOnly,
       createdByUserId: session.user.id,
     },
   });
@@ -151,6 +153,7 @@ export async function createLiveRecording(
         _swm_episode_youtube_video_id: videoId,
         _swm_episode_scheduled_start: scheduledStartAt.toISOString(),
         _swm_live_recording_portal_id: liveRecording.id,
+        is_premium_only: isPremiumOnly,
       },
     });
 

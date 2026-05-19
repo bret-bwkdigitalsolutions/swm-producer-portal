@@ -28,6 +28,7 @@ All meta keys below need to be registered with `register_meta` and exposed via t
 | `_swm_episode_live_started_at` | string | ISO 8601 timestamp or empty | Portal when YouTube reports actualStartTime | Theme — "Live since" display in `live` state (optional) |
 | `_swm_episode_live_ended_at` | string | ISO 8601 timestamp or empty | Portal when YouTube reports actualEndTime | Theme — "Stream ended at" display in `ended_pending` / `archived` states |
 | `_swm_live_recording_portal_id` | string | Portal's `LiveRecording.id` (cuid) | Portal at create | Reserved for cross-system tracing; theme doesn't need to render it |
+| `is_premium_only` | boolean | `true` \| `false` | Portal at create (mirrors the existing studio-episode flag) | Theme — gates the live page (scheduled CTA, live player, ended_pending / archived replay) behind the premium check, same as a studio episode |
 
 ### `register_meta` requirements
 
