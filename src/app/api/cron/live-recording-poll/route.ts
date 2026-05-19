@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   try {
     const summary = await pollLiveRecordings();
     console.log(
-      `[live-recording-poll] checked=${summary.totalChecked} transitions=${summary.transitions.length} handoffs=${summary.handoffsTriggered.length} failures=${summary.failures.length}`
+      `[live-recording-poll] checked=${summary.totalChecked} transitions=${summary.transitions.length} handoffs=${summary.handoffsTriggered.length} archived=${summary.archived.length} failures=${summary.failures.length}`
     );
     return NextResponse.json(summary);
   } catch (error) {

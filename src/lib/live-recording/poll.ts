@@ -13,6 +13,7 @@ import {
   type LiveRecordingState,
 } from "@/lib/live-recording/types";
 import { runHandoff } from "@/lib/live-recording/handoff";
+import { archiveLiveRecording } from "@/lib/live-recording/archive";
 
 /**
  * Hourly window around scheduledStartAt within which we actively poll
@@ -29,6 +30,7 @@ export interface PollSummary {
     to: LiveRecordingState;
   }>;
   handoffsTriggered: string[];
+  archived: string[];
   failures: Array<{ id: string; error: string }>;
 }
 
@@ -126,8 +128,38 @@ export async function pollLiveRecordings(now: Date = new Date()): Promise<PollSu
     totalChecked: 0,
     transitions: [],
     handoffsTriggered: [],
+    archived: [],
     failures: [],
   };
+
+  // First pass: archive any recordings whose handoff completed during a
+  // prior tick. Cheap (no YouTube call needed) and gets them out of the
+  // active set before the main loop polls them.
+  const handedOffRows = await db.liveRecording.findMany({
+    where: {
+      state: "ended_pending",
+      transistorEpisodeId: { not: null },
+    },
+  });
+  for (const row of handedOffRows) {
+    try {
+      const result = await archiveLiveRecording(row.id);
+      if (result.ok) {
+        summary.archived.push(row.id);
+        summary.transitions.push({
+          id: row.id,
+          from: "ended_pending",
+          to: "archived",
+        });
+      } else {
+        summary.failures.push({ id: row.id, error: result.message ?? "Archive failed" });
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Archive crashed";
+      summary.failures.push({ id: row.id, error: message });
+    }
+  }
 
   const rows = await listActiveRecordings(now);
   for (const row of rows) {
