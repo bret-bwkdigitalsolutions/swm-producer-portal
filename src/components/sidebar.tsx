@@ -27,6 +27,7 @@ export function Sidebar({ visibleContentTypes, hasDistributionAccess, isAdmin }:
     ...(hasDistributionAccess || isAdmin
       ? [{ label: "Episode Distribution", href: "/dashboard/distribute" }]
       : []),
+    { label: "Live Recordings", href: "/dashboard/live-recordings" },
     { label: "Settings", href: "/settings" },
   ];
 
