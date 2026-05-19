@@ -12,6 +12,7 @@ import {
   canTransition,
   type LiveRecordingState,
 } from "@/lib/live-recording/types";
+import { runHandoff } from "@/lib/live-recording/handoff";
 
 /**
  * Hourly window around scheduledStartAt within which we actively poll
@@ -55,14 +56,22 @@ async function listActiveRecordings(now: Date) {
 }
 
 /**
- * Trigger the YouTube → Transistor handoff for one recording. Stubbed
- * for now; replaced by U5's real implementation. The stub still records
- * the trigger so the poll summary stays accurate during incremental ship.
+ * Trigger the YouTube → Transistor handoff for one recording. Fire and
+ * forget — the handoff itself owns retry/backoff/stuck logic and writes
+ * back to the LiveRecording row. We log result for visibility.
  */
 async function triggerHandoff(liveRecordingId: string): Promise<void> {
-  console.log(
-    `[live-recording-poll] Handoff trigger (stub) for ${liveRecordingId} — wire up runHandoff() once U5 lands.`
-  );
+  try {
+    const result = await runHandoff(liveRecordingId);
+    console.log(
+      `[live-recording-poll] Handoff ${liveRecordingId}: ${result.message ?? (result.ok ? "ok" : "failed")}`
+    );
+  } catch (error) {
+    console.error(
+      `[live-recording-poll] Handoff ${liveRecordingId} crashed:`,
+      error
+    );
+  }
 }
 
 /**
