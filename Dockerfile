@@ -34,11 +34,15 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Pin yt-dlp and deno versions for reproducible builds
-ENV YT_DLP_VERSION=2026.03.17
+# Pin yt-dlp and deno versions for reproducible builds.
+# yt-dlp tracks YouTube's player API, which changes faster than the stable
+# release cadence — pin to a nightly build (from yt-dlp-nightly-builds) and
+# bump it when downloads start failing with "format not available" or
+# "Sign in to confirm you're not a bot". See docs/youtube-cookie-refresh.md.
+ENV YT_DLP_VERSION=2026.05.16.233954
 ENV DENO_VERSION=v2.7.12
 RUN apk add --no-cache ffmpeg python3 curl unzip && \
-    wget -q "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/yt-dlp" -O /usr/local/bin/yt-dlp && \
+    wget -q "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/${YT_DLP_VERSION}/yt-dlp" -O /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp && \
     curl -fsSL "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" -o /tmp/deno.zip && \
     unzip -q /tmp/deno.zip -d /usr/local/bin && \
