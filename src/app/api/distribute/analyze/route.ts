@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { extractAudio } from "@/lib/jobs/audio-extractor";
 import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
 import { generateAiSuggestions } from "@/lib/jobs/ai-processor";
-import { downloadYouTubeVideoToGcs } from "@/lib/jobs/youtube-video-downloader";
+import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import { getRecentEpisodeTitles, getLatestEpisodeNumbers, getShow } from "@/lib/wordpress/client";
 
 /**
@@ -49,16 +49,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // For live YouTube recordings: download the video to GCS if not already done
+    // For URL-sourced episodes (YouTube or Vimeo): download the audio to GCS
+    // if not already done.
     let gcsPath = job.gcsPath;
     if (!gcsPath) {
       const jobMeta = job.metadata as Record<string, unknown>;
-      const existingYoutubeUrl = jobMeta.existingYoutubeUrl as string | undefined;
-      if (!existingYoutubeUrl) {
+      const sourceUrl =
+        (jobMeta.existingVimeoUrl as string | undefined) ??
+        (jobMeta.existingYoutubeUrl as string | undefined);
+      if (!sourceUrl) {
         return NextResponse.json({ error: "No video uploaded." }, { status: 400 });
       }
-      console.log(`[analyze] Downloading YouTube video for job ${jobId}`);
-      gcsPath = await downloadYouTubeVideoToGcs(existingYoutubeUrl, jobId);
+      console.log(`[analyze] Downloading source video for job ${jobId}`);
+      gcsPath = await downloadVideoToGcs(sourceUrl, jobId);
       await db.distributionJob.update({
         where: { id: jobId },
         data: { gcsPath },
@@ -138,7 +141,7 @@ export async function POST(request: NextRequest) {
     // Return a user-friendly error — don't expose raw yt-dlp output
     const isYtdlpAuth = rawMessage.includes("Sign in to confirm") || rawMessage.includes("cookies");
     const message = isYtdlpAuth
-      ? "YouTube download failed — authentication cookies have expired. Please contact an admin to refresh them."
+      ? "YouTube download failed — authentication cookies have expired. Please contact an admin to refresh them, or use a Vimeo URL instead."
       : rawMessage;
 
     return NextResponse.json({ error: message }, { status: 500 });

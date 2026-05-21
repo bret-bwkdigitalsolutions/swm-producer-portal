@@ -11,7 +11,7 @@ import { runVerificationTier, TIER_LABELS, type TierResult } from "./verify-dist
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
-import { downloadYouTubeVideoToGcs } from "./youtube-video-downloader";
+import { downloadVideoToGcs } from "./video-downloader";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -141,24 +141,28 @@ async function processJobInner(
   const platformResults: ProcessingResult["platformResults"] = [];
 
   const existingYoutubeUrl = metadata.existingYoutubeUrl as string | undefined;
+  const existingVimeoUrl = metadata.existingVimeoUrl as string | undefined;
+  // A URL-sourced job (YouTube or Vimeo) yields audio only — no uploadable
+  // video — so YouTube distribution is skipped for these (see guard below).
+  const sourceUrl = existingVimeoUrl ?? existingYoutubeUrl;
 
-  // For live YouTube recordings: download audio from YouTube to GCS.
-  // This gives us an mp3 directly — no need for the extractAudio step.
+  // For URL-sourced episodes: download audio to GCS. This gives us an mp3
+  // directly — no need for the extractAudio step.
   let effectiveGcsPath: string | null = job.gcsPath;
-  // On retry, gcsPath is already set from the first run. If this is a live
-  // recording, that file is already an mp3 — skip extractAudio.
+  // On retry, gcsPath is already set from the first run. If this is a URL
+  // source, that file is already an mp3 — skip extractAudio.
   let youtubeAudioPath: string | null =
-    existingYoutubeUrl && effectiveGcsPath ? effectiveGcsPath : null;
-  if (existingYoutubeUrl && !effectiveGcsPath) {
-    console.log(`[processor] Live YouTube recording — downloading audio from ${existingYoutubeUrl}`);
-    const downloadedPath = await downloadYouTubeVideoToGcs(existingYoutubeUrl, job.id);
+    sourceUrl && effectiveGcsPath ? effectiveGcsPath : null;
+  if (sourceUrl && !effectiveGcsPath) {
+    console.log(`[processor] URL-sourced episode — downloading audio from ${sourceUrl}`);
+    const downloadedPath = await downloadVideoToGcs(sourceUrl, job.id);
     await db.distributionJob.update({
       where: { id: job.id },
       data: { gcsPath: downloadedPath },
     });
     effectiveGcsPath = downloadedPath;
     youtubeAudioPath = downloadedPath; // Already audio — skip extractAudio later
-    console.log(`[processor] YouTube audio downloaded to GCS: ${downloadedPath}`);
+    console.log(`[processor] Source audio downloaded to GCS: ${downloadedPath}`);
   }
 
   // Look up show hosts for Transistor author field
@@ -255,7 +259,7 @@ async function processJobInner(
   const youtubeNeedsWork = job.platforms.some(
     (p) => p.platform === "youtube" && p.status !== "completed"
   );
-  if (youtubeNeedsWork && effectiveGcsPath && !existingYoutubeUrl) {
+  if (youtubeNeedsWork && effectiveGcsPath && !sourceUrl) {
     try {
       const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
       tempVideoPath = join(tempDir, "video.mp4");

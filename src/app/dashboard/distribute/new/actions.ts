@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { toISOWithTimezone } from "@/lib/timezone";
 import { getLatestEpisodeNumbers } from "@/lib/wordpress/client";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { isValidVimeoUrl } from "@/lib/vimeo-url";
 
 interface FormState {
   success?: boolean;
@@ -51,6 +52,7 @@ export async function submitDistribution(
   const videoFileSize = formData.get("video_file_size") as string | null;
   const videoContentType = formData.get("video_content_type") as string | null;
   const existingYoutubeUrl = formData.get("existing_youtube_url") as string | null;
+  const existingVimeoUrl = formData.get("existing_vimeo_url") as string | null;
   const seasonNumber = formData.get("season_number") as string | null;
   const episodeNumber = formData.get("episode_number") as string | null;
   const explicit = formData.get("explicit") === "true";
@@ -83,14 +85,22 @@ export async function submitDistribution(
     errors.scheduled_at = ["Please select a date and time for scheduling."];
   }
 
-  if (!videoFileName && !existingYoutubeUrl) {
-    errors.video_file = ["Please select a video file or provide a YouTube URL."];
+  if (!videoFileName && !existingYoutubeUrl && !existingVimeoUrl) {
+    errors.video_file = ["Please select a video file or provide a YouTube or Vimeo URL."];
   }
 
   if (existingYoutubeUrl) {
     if (!extractYoutubeVideoId(existingYoutubeUrl)) {
       errors.video_file = [
         "Please provide a valid YouTube URL (e.g. https://www.youtube.com/watch?v=VIDEO_ID or https://www.youtube.com/live/VIDEO_ID).",
+      ];
+    }
+  }
+
+  if (existingVimeoUrl) {
+    if (!isValidVimeoUrl(existingVimeoUrl)) {
+      errors.video_file = [
+        "Please provide a valid Vimeo URL (e.g. https://vimeo.com/123456789).",
       ];
     }
   }
@@ -130,6 +140,7 @@ export async function submitDistribution(
     episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
     explicit,
     ...(existingYoutubeUrl ? { existingYoutubeUrl } : {}),
+    ...(existingVimeoUrl ? { existingVimeoUrl } : {}),
   };
 
   // Verify user has access to this show

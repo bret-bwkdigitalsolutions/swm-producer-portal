@@ -105,6 +105,21 @@ export default async function LiveRecordingDetailPage({ params }: PageProps) {
               </a>
             }
           />
+          {recording.vimeoSourceUrl && (
+            <Field
+              label="Vimeo source"
+              value={
+                <a
+                  href={recording.vimeoSourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  {recording.vimeoSourceUrl}
+                </a>
+              }
+            />
+          )}
           {recording.transistorEpisodeId && (
             <Field
               label="Transistor episode"

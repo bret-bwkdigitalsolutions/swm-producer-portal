@@ -436,6 +436,7 @@ model LiveRecording {
   wpPostId            Int?      // populated after WP post creation
   youtubeVideoId      String    @unique  // extracted from the live URL
   youtubeLiveUrl      String    // canonical URL as entered by admin
+  vimeoSourceUrl      String?   // optional Vimeo URL — preferred audio source at handoff, more reliable than the YouTube VOD
   title               String
   description         String?   @db.Text
   scheduledStartAt    DateTime

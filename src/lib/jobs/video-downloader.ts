@@ -5,27 +5,42 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { Storage } from "@google-cloud/storage";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { extractVimeoId } from "@/lib/vimeo-url";
 
 const execFileAsync = promisify(execFile);
 
 /**
- * Download a YouTube video to GCS using yt-dlp.
- *
- * Uses yt-dlp (installed in the Docker image) which handles YouTube's
- * bot detection far better than ytdl-core. Supports authenticated
- * downloads via the YOUTUBE_COOKIES env var (Netscape cookie format).
- *
- * @param youtubeUrl - Full YouTube URL (watch, live, or youtu.be format)
- * @param jobId - Used only for log context
- * @returns GCS path of the downloaded video
+ * Build a `<source>-<id>` label for the GCS object name. Supports the two
+ * sources the portal accepts (YouTube and Vimeo); returns null for anything
+ * else so callers can reject the URL with a clear message.
  */
-export async function downloadYouTubeVideoToGcs(
-  youtubeUrl: string,
+function deriveSourceLabel(videoUrl: string): string | null {
+  const youtubeId = extractYoutubeVideoId(videoUrl);
+  if (youtubeId) return `youtube-${youtubeId}`;
+  const vimeoId = extractVimeoId(videoUrl);
+  if (vimeoId) return `vimeo-${vimeoId}`;
+  return null;
+}
+
+/**
+ * Download a video's audio to GCS using yt-dlp.
+ *
+ * yt-dlp (installed in the Docker image) is source-agnostic — it handles
+ * YouTube and Vimeo natively. YouTube needs the YOUTUBE_COOKIES env var
+ * (Netscape format) to get past bot detection; Vimeo generally does not.
+ * The cookies file, when present, is harmless for non-YouTube sources.
+ *
+ * @param videoUrl - Full YouTube or Vimeo URL
+ * @param jobId - Used only for log context
+ * @returns GCS path of the downloaded audio
+ */
+export async function downloadVideoToGcs(
+  videoUrl: string,
   jobId: string
 ): Promise<string> {
-  const videoId = extractYoutubeVideoId(youtubeUrl);
-  if (!videoId) {
-    throw new Error(`Invalid YouTube URL: ${youtubeUrl}`);
+  const sourceLabel = deriveSourceLabel(videoUrl);
+  if (!sourceLabel) {
+    throw new Error(`Invalid video URL — must be a YouTube or Vimeo URL: ${videoUrl}`);
   }
 
   // Build GCS destination path (same format as gcs.ts generateGcsPath)
@@ -33,7 +48,7 @@ export async function downloadYouTubeVideoToGcs(
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const timestamp = now.getTime();
-  const gcsPath = `uploads/${year}/${month}/${timestamp}-youtube-${videoId}.mp3`;
+  const gcsPath = `uploads/${year}/${month}/${timestamp}-${sourceLabel}.mp3`;
 
   const bucketName = process.env.GCS_BUCKET_NAME;
   if (!bucketName) {
@@ -53,7 +68,7 @@ export async function downloadYouTubeVideoToGcs(
     storage = new Storage({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
   }
 
-  const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-dl-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "swm-video-dl-"));
   const outputTemplate = join(tempDir, "video.%(ext)s");
 
   // Write cookies file if YOUTUBE_COOKIES env var is set (Netscape cookie format)
@@ -64,7 +79,7 @@ export async function downloadYouTubeVideoToGcs(
   }
 
   try {
-    console.log(`[yt-downloader] Job ${jobId}: downloading YouTube video ${videoId} via yt-dlp`);
+    console.log(`[video-downloader] Job ${jobId}: downloading ${sourceLabel} via yt-dlp`);
 
     const args = [
       "--no-playlist",
@@ -79,7 +94,7 @@ export async function downloadYouTubeVideoToGcs(
       args.push("--cookies", cookiesPath);
     }
 
-    args.push(youtubeUrl);
+    args.push(videoUrl);
 
     const { stderr } = await execFileAsync("yt-dlp", args, {
       timeout: 10 * 60 * 1000, // 10 minute timeout
@@ -87,7 +102,7 @@ export async function downloadYouTubeVideoToGcs(
     });
 
     if (stderr) {
-      console.warn(`[yt-downloader] Job ${jobId} stderr: ${stderr}`);
+      console.warn(`[video-downloader] Job ${jobId} stderr: ${stderr}`);
     }
 
     // Find the downloaded file
@@ -98,13 +113,13 @@ export async function downloadYouTubeVideoToGcs(
     }
     const tempVideoPath = join(tempDir, videoFile);
 
-    console.log(`[yt-downloader] Job ${jobId}: uploading to GCS at ${gcsPath}`);
+    console.log(`[video-downloader] Job ${jobId}: uploading to GCS at ${gcsPath}`);
     await storage.bucket(bucketName).upload(tempVideoPath, {
       destination: gcsPath,
       metadata: { contentType: "audio/mpeg" },
     });
 
-    console.log(`[yt-downloader] Job ${jobId}: download complete`);
+    console.log(`[video-downloader] Job ${jobId}: download complete`);
     return gcsPath;
   } finally {
     const files = await readdir(tempDir).catch(() => []);

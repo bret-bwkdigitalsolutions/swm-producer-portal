@@ -1,7 +1,7 @@
 import "server-only";
 
 import { db } from "@/lib/db";
-import { downloadYouTubeVideoToGcs } from "@/lib/jobs/youtube-video-downloader";
+import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { canTransition, type LiveRecordingState } from "./types";
 
@@ -70,13 +70,13 @@ export async function runHandoff(
   }
 
   try {
-    // 1. Download from YouTube to GCS. yt-dlp will fail with a clear
-    //    error if YouTube hasn't finished archiving the VOD yet — the
-    //    retry logic below catches that and backs off.
-    const gcsAudioPath = await downloadYouTubeVideoToGcs(
-      row.youtubeLiveUrl,
-      row.id
-    );
+    // 1. Download the audio to GCS. Prefer the Vimeo source URL when the
+    //    admin supplied one (more reliable than scraping the YouTube VOD);
+    //    fall back to the YouTube broadcast URL otherwise. yt-dlp fails with
+    //    a clear error if the source isn't ready yet — the retry logic below
+    //    catches that and backs off.
+    const downloadUrl = row.vimeoSourceUrl ?? row.youtubeLiveUrl;
+    const gcsAudioPath = await downloadVideoToGcs(downloadUrl, row.id);
 
     // 2. Upload from GCS to Transistor using the existing wrapper that
     //    knows about per-show credentials and the upload sequence.

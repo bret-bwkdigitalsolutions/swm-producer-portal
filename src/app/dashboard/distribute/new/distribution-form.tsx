@@ -42,6 +42,7 @@ import {
   LinkIcon,
 } from "lucide-react";
 import { isValidYoutubeUrl, extractYoutubeVideoId } from "@/lib/youtube-url";
+import { isValidVimeoUrl } from "@/lib/vimeo-url";
 
 interface Show {
   id: string;
@@ -105,9 +106,10 @@ export function DistributionForm({
   );
   const thumbnailFileRef = useRef<File | null>(null);
   const thumbnailUploadedNameRef = useRef<string | null>(null);
-  const [videoSource, setVideoSource] = useState<"upload" | "youtube">("upload");
+  const [videoSource, setVideoSource] = useState<"upload" | "youtube" | "vimeo">("upload");
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
   const [youtubeThumbUrl, setYoutubeThumbUrl] = useState<string | null>(null);
+  const [vimeoUrlInput, setVimeoUrlInput] = useState("");
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -314,6 +316,8 @@ export function DistributionForm({
         fd.set("video_file_name", videoFileName ?? "");
         fd.set("video_file_size", videoFileSize.toString());
         fd.set("video_content_type", videoContentType);
+      } else if (videoSource === "vimeo") {
+        fd.set("existing_vimeo_url", vimeoUrlInput);
       } else {
         fd.set("existing_youtube_url", youtubeUrlInput);
       }
@@ -352,7 +356,9 @@ export function DistributionForm({
       setAnalysisStep(
         videoSource === "youtube"
           ? "Downloading video from YouTube... this may take several minutes"
-          : "Transcribing... this may take a few minutes"
+          : videoSource === "vimeo"
+            ? "Downloading video from Vimeo... this may take several minutes"
+            : "Transcribing... this may take a few minutes"
       );
       const analyzeRes = await fetch("/api/distribute/analyze", {
         method: "POST",
@@ -430,6 +436,7 @@ export function DistributionForm({
     videoFileSize,
     videoContentType,
     youtubeUrlInput,
+    vimeoUrlInput,
     publishState.status,
     uploadVideoToGCS,
     uploadThumbnailToGCS,
@@ -616,7 +623,9 @@ export function DistributionForm({
   const videoSourceReady =
     videoSource === "upload"
       ? !!videoFileName
-      : isValidYoutubeUrl(youtubeUrlInput);
+      : videoSource === "vimeo"
+        ? isValidVimeoUrl(vimeoUrlInput)
+        : isValidYoutubeUrl(youtubeUrlInput);
   const showModeChoice = videoSourceReady && !descriptionMode;
 
   const aiReady = descriptionMode === "ai" && suggestions.length > 0 && !analyzing;
@@ -814,12 +823,14 @@ export function DistributionForm({
           {/* Video source toggle */}
           <div className="space-y-2">
             <Label>Video Source</Label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setVideoSource("upload");
                   setYoutubeUrlInput("");
+                  setYoutubeThumbUrl(null);
+                  setVimeoUrlInput("");
                   setDescriptionMode(null);
                   setSuggestions([]);
                   setAiUploadedJobId(null);
@@ -841,6 +852,7 @@ export function DistributionForm({
                 type="button"
                 onClick={() => {
                   setVideoSource("youtube");
+                  setVimeoUrlInput("");
                   videoFileRef.current = null;
                   setVideoFileName(null);
                   setVideoFileSize(0);
@@ -861,6 +873,33 @@ export function DistributionForm({
               >
                 <LinkIcon className="size-4" />
                 Recorded live on YouTube
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setVideoSource("vimeo");
+                  setYoutubeUrlInput("");
+                  setYoutubeThumbUrl(null);
+                  videoFileRef.current = null;
+                  setVideoFileName(null);
+                  setVideoFileSize(0);
+                  setVideoContentType("");
+                  setDescriptionMode(null);
+                  setSuggestions([]);
+                  setAiUploadedJobId(null);
+                  thumbnailUploadedNameRef.current = null;
+                  setTags(frequentTags[showId] ?? []);
+                  setSuggestedTags([]);
+                }}
+                disabled={isDisabled}
+                className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors ${
+                  videoSource === "vimeo"
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-input hover:border-primary/50 hover:bg-muted/30"
+                }`}
+              >
+                <LinkIcon className="size-4" />
+                Vimeo URL
               </button>
             </div>
           </div>
@@ -943,6 +982,36 @@ export function DistributionForm({
             </div>
           )}
 
+          {/* Vimeo URL input — only shown when source is "vimeo" */}
+          {videoSource === "vimeo" && (
+            <div className="space-y-2">
+              <Label htmlFor="vimeo_url_input">
+                Vimeo URL <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="vimeo_url_input"
+                type="url"
+                placeholder="https://vimeo.com/..."
+                value={vimeoUrlInput}
+                onChange={(e) => {
+                  setVimeoUrlInput(e.target.value);
+                  if (aiUploadedJobId) {
+                    setDescriptionMode(null);
+                    setSuggestions([]);
+                    setAiUploadedJobId(null);
+                    thumbnailUploadedNameRef.current = null;
+                    setTags(frequentTags[showId] ?? []);
+                    setSuggestedTags([]);
+                  }
+                }}
+                disabled={isDisabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                Paste the Vimeo URL. The system downloads it to extract audio for Transistor and generate AI suggestions. The video must be downloadable (public, or unlisted with downloads enabled). Add a thumbnail below.
+              </p>
+            </div>
+          )}
+
           {/* Hidden fields for video metadata */}
           {videoSource === "upload" && videoFileName && (
             <>
@@ -961,6 +1030,9 @@ export function DistributionForm({
           )}
           {videoSource === "youtube" && isValidYoutubeUrl(youtubeUrlInput) && (
             <input type="hidden" name="existing_youtube_url" value={youtubeUrlInput} />
+          )}
+          {videoSource === "vimeo" && isValidVimeoUrl(vimeoUrlInput) && (
+            <input type="hidden" name="existing_vimeo_url" value={vimeoUrlInput} />
           )}
 
           {/* Thumbnail upload + YouTube preview */}

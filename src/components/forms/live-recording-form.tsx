@@ -163,6 +163,29 @@ export function LiveRecordingForm({ allowedShows }: LiveRecordingFormProps) {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="vimeoSourceUrl">
+              Vimeo source URL{" "}
+              <span className="text-xs text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id="vimeoSourceUrl"
+              name="vimeoSourceUrl"
+              type="url"
+              placeholder="https://vimeo.com/..."
+              disabled={isPending}
+            />
+            <p className="text-xs text-muted-foreground">
+              If provided, the archived audio is pulled from Vimeo instead of
+              YouTube — more reliable. YouTube still drives the live monitoring.
+            </p>
+            {state?.errors?.vimeoSourceUrl && (
+              <p className="text-xs text-destructive">
+                {state.errors.vimeoSourceUrl[0]}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="description">
               Description{" "}
               <span className="text-xs text-muted-foreground">(optional)</span>

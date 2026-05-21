@@ -3,6 +3,7 @@
 import { requireAdmin } from "@/lib/auth-guard";
 import { db } from "@/lib/db";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { isValidVimeoUrl } from "@/lib/vimeo-url";
 import { getVideoLiveDetails } from "@/lib/youtube-api";
 import { getYouTubeAccessToken } from "@/lib/analytics/credentials";
 import { createPost } from "@/lib/wordpress/client";
@@ -32,6 +33,7 @@ export async function createLiveRecording(
   const scheduledStartLocal = formData.get("scheduledStartAt") as string;
   const timezone = formData.get("timezone") as string | null;
   const isPremiumOnly = formData.get("premium_only") === "true";
+  const vimeoSourceUrl = (formData.get("vimeoSourceUrl") as string)?.trim() ?? "";
 
   const errors: Record<string, string[]> = {};
   if (!wpShowIdRaw) errors.wpShowId = ["Pick a show."];
@@ -50,6 +52,10 @@ export async function createLiveRecording(
     errors.youtubeLiveUrl = [
       "Could not extract a YouTube video ID from that URL.",
     ];
+  }
+
+  if (vimeoSourceUrl && !isValidVimeoUrl(vimeoSourceUrl)) {
+    errors.vimeoSourceUrl = ["Please provide a valid Vimeo URL (e.g. https://vimeo.com/123456789)."];
   }
 
   // Convert the datetime-local string to an absolute ISO timestamp using the
@@ -132,6 +138,7 @@ export async function createLiveRecording(
       scheduledStartAt,
       state: "scheduled",
       isPremiumOnly,
+      vimeoSourceUrl: vimeoSourceUrl || null,
       createdByUserId: session.user.id,
     },
   });
