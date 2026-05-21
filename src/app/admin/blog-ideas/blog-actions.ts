@@ -385,14 +385,18 @@ export async function publishToWordPress(
     }
 
     const wpPost = await wpResponse.json();
-    const wpPostUrl =
-      wpPost.link ??
-      `${WP_API_URL().replace("/wp-json/wp/v2", "")}/wp-admin/post.php?post=${wpPost.id}&action=edit`;
+    const wpAdminEditUrl = `${WP_API_URL().replace("/wp-json/wp/v2", "")}/wp-admin/post.php?post=${wpPost.id}&action=edit`;
+
+    // For a draft, wpPost.link is the public permalink, which 404s until the
+    // post is published — so point at the WP admin editor instead, and keep
+    // the portal status as "draft" rather than falsely marking it published.
+    const isDraft = wpStatus === "draft";
+    const wpPostUrl = isDraft ? wpAdminEditUrl : (wpPost.link ?? wpAdminEditUrl);
 
     await db.blogPost.update({
       where: { id: blogPostId },
       data: {
-        status: "published",
+        status: isDraft ? "draft" : "published",
         wpPostId: wpPost.id,
         wpPostUrl: wpPostUrl,
       },
@@ -400,7 +404,11 @@ export async function publishToWordPress(
 
     revalidateTag("blog-posts", "max");
 
-    return { success: true, message: "Published to WordPress.", wpPostUrl };
+    return {
+      success: true,
+      message: isDraft ? "Drafted in WordPress." : "Published to WordPress.",
+      wpPostUrl,
+    };
   } catch (error) {
     const msg =
       error instanceof Error ? error.message : "Failed to publish to WordPress";

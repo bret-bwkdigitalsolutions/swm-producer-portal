@@ -329,13 +329,17 @@ async function publishUploadedBlog(
 
   const wpPost = (await wpResponse.json()) as { id: number; link?: string };
   const adminBase = wpApiUrl.replace("/wp-json/wp/v2", "");
-  const wpPostUrl =
-    wpPost.link ?? `${adminBase}/wp-admin/post.php?post=${wpPost.id}&action=edit`;
+  const wpAdminEditUrl = `${adminBase}/wp-admin/post.php?post=${wpPost.id}&action=edit`;
+
+  // A draft's public permalink 404s until published, so point at the WP admin
+  // editor and keep the portal status as "draft" rather than "published".
+  const isDraft = wpStatus === "draft";
+  const wpPostUrl = isDraft ? wpAdminEditUrl : (wpPost.link ?? wpAdminEditUrl);
 
   await db.blogPost.update({
     where: { id: blogPostId },
     data: {
-      status: "published",
+      status: isDraft ? "draft" : "published",
       wpPostId: wpPost.id,
       wpPostUrl,
     },

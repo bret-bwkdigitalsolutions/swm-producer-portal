@@ -87,6 +87,20 @@ export function BlogPostControls({
         Open Google Doc
       </a>
 
+      {/* Draft/reviewing: link to the WP admin editor (the public permalink
+          404s until the post is published, so we point at the editor). */}
+      {status !== "published" && wpPostUrl && (
+        <a
+          href={wpPostUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-3 inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline"
+        >
+          <ExternalLinkIcon className="size-3.5" />
+          View draft in WP
+        </a>
+      )}
+
       {/* Status badge */}
       {status === "reviewing" && (
         <div className="flex items-center gap-2">
