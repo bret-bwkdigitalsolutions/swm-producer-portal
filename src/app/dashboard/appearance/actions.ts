@@ -33,13 +33,36 @@ export async function submitAppearance(
     return { success: false, message: "You do not have access to this content type." };
   }
 
-  // Verify show access
+  // Resolve the primary show. The "Network Event" option maps to 0 — a
+  // network-level appearance with no primary host (matches the WP contract).
   const showIdRaw = formData.get("show_id") as string;
-  if (showIdRaw) {
-    const hasShowAccess = await verifyShowAccess(session.user.id, parseInt(showIdRaw, 10));
+  const primaryShowId = showIdRaw === "network_event" ? 0 : Number(showIdRaw);
+
+  // Verify show access for a real primary show (network events have none).
+  if (primaryShowId > 0) {
+    const hasShowAccess = await verifyShowAccess(session.user.id, primaryShowId);
     if (!hasShowAccess) {
       return { success: false, message: "You do not have access to this show." };
     }
+  }
+
+  // Parse co-host shows. The form sends a plain comma list of show IDs; we
+  // dedupe, drop the primary, and reject an explicit primary/co-host clash.
+  const additionalShowIdsRaw = (formData.get("additional_show_ids") as string) ?? "";
+  const coHostShowIds = Array.from(
+    new Set(
+      additionalShowIdsRaw
+        .split(",")
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => !isNaN(n) && n > 0)
+    )
+  );
+  if (primaryShowId > 0 && coHostShowIds.includes(primaryShowId)) {
+    return {
+      success: false,
+      message: "A co-host show can't also be the primary show.",
+      errors: { show_id: ["A co-host show can't also be the primary show."] },
+    };
   }
 
   // Extract fields
@@ -110,6 +133,12 @@ export async function submitAppearance(
     // Build the title from venue + location
     const title = `${venue} - ${location}`;
 
+    // Co-host IDs ship as a comma-delimited list with sentinel commas on both
+    // ends (",27,28,25,") so the WP archive's meta_query LIKE '%,<id>,%' can't
+    // false-match (e.g. ,1, vs ,21,). Empty string when there are no co-hosts.
+    const additionalShowIdsMeta =
+      coHostShowIds.length > 0 ? `,${coHostShowIds.join(",")},` : "";
+
     // Split datetime-local values into separate date and time fields
     // Input format: "2026-03-31T14:30"
     const [dateStart, timeStart] = datetimeStart.split("T");
@@ -127,7 +156,8 @@ export async function submitAppearance(
       meta: {
         _swm_portal_user_id: session.user.id,
         _swm_portal_submission: true,
-        _swm_appearance_show_id: Number(showId),
+        _swm_appearance_show_id: primaryShowId,
+        _swm_appearance_additional_show_ids: additionalShowIdsMeta,
         _swm_appearance_date_start: dateStart,
         _swm_appearance_time_start: timeStart,
         _swm_appearance_date_end: dateEnd || "",
@@ -154,7 +184,7 @@ export async function submitAppearance(
         action: "create",
         contentType: ContentType.APPEARANCE,
         wpPostId: wpPost.id,
-        wpShowId: Number(showId),
+        wpShowId: primaryShowId,
       },
     });
 

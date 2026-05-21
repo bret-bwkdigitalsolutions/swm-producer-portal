@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { FormShell } from "@/components/forms/form-shell";
 import { ShowSelect } from "@/components/forms/show-select";
 import { PublishToggle, PublishState } from "@/components/forms/publish-toggle";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +40,7 @@ const STATUS_OPTIONS = [
 
 export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
   const [showId, setShowId] = useState("");
+  const [coHostIds, setCoHostIds] = useState<string[]>([]);
   const [appearanceStatus, setAppearanceStatus] = useState("");
   const [publishState, setPublishState] = useState<PublishState>({
     status: "publish",
@@ -46,6 +48,22 @@ export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
   const uploaderRef = useRef<UploaderHandle | null>(null);
 
   const showsWithNetwork = [...allowedShows, NETWORK_EVENT_OPTION];
+
+  // Co-hosts are real shows other than the one chosen as primary. Picking a
+  // show as primary removes it from the co-host list (a show can't co-host
+  // with itself).
+  const coHostOptions = allowedShows.filter((s) => s.id !== showId);
+
+  const handlePrimaryChange = (value: string) => {
+    setShowId(value);
+    setCoHostIds((prev) => prev.filter((id) => id !== value));
+  };
+
+  const toggleCoHost = (id: string, checked: boolean) => {
+    setCoHostIds((prev) =>
+      checked ? [...prev, id] : prev.filter((existing) => existing !== id)
+    );
+  };
 
   // Wrap the server action: resolve uploaded gallery IDs from the uploader
   // child, then submit just the IDs (no inline file payload). This bypasses
@@ -68,10 +86,12 @@ export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
     if (resolved.heroId) {
       formData.set("hero_id", String(resolved.heroId));
     }
+    formData.set("additional_show_ids", coHostIds.join(","));
 
     const result = await submitAppearance(prevState, formData);
     if (result.success) {
       setShowId("");
+      setCoHostIds([]);
       setAppearanceStatus("");
       setPublishState({ status: "publish" });
       // The uploader's items are managed inside that component; resetting
@@ -87,8 +107,40 @@ export function AppearanceForm({ allowedShows }: AppearanceFormProps) {
       <ShowSelect
         allowedShows={showsWithNetwork}
         value={showId}
-        onValueChange={setShowId}
+        onValueChange={handlePrimaryChange}
+        label="Primary show"
       />
+
+      {/* Co-host shows (optional) — for events broadcast by multiple shows */}
+      <div className="space-y-2">
+        <Label>
+          Co-host shows{" "}
+          <span className="text-xs text-muted-foreground">(optional)</span>
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Select any additional shows that share this broadcast.
+        </p>
+        {coHostOptions.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No other shows available.</p>
+        ) : (
+          <div className="space-y-2 rounded-md border border-input p-3">
+            {coHostOptions.map((show) => (
+              <label
+                key={show.id}
+                className="flex cursor-pointer items-center gap-2 text-sm"
+              >
+                <Checkbox
+                  checked={coHostIds.includes(show.id)}
+                  onCheckedChange={(checked) =>
+                    toggleCoHost(show.id, checked === true)
+                  }
+                />
+                {show.title}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Description */}
       <div className="space-y-2">
