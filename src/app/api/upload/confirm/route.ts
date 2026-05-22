@@ -63,13 +63,15 @@ export async function POST(request: NextRequest) {
 
   if (!job.gcsPath) {
     const jobMetadata = job.metadata as Record<string, unknown>;
-    if (!jobMetadata.existingYoutubeUrl) {
+    // URL-sourced jobs (YouTube or Vimeo) have no uploaded file at confirm
+    // time — the audio is downloaded later in /api/distribute/analyze.
+    if (!jobMetadata.existingYoutubeUrl && !jobMetadata.existingVimeoUrl) {
       return NextResponse.json(
         { error: "No file has been uploaded for this job." },
         { status: 400 }
       );
     }
-    // Live YouTube job — no GCS upload needed, proceeding without a file
+    // URL-sourced job — no GCS upload needed, proceeding without a file
   }
 
   // Move to pending if still uploading
