@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SparklesIcon } from "lucide-react";
+import { SparklesIcon, XIcon } from "lucide-react";
 import { importBlogFromGoogleDoc } from "./actions";
 import { proposeBlogMetadata } from "./propose-actions";
 
@@ -49,6 +49,8 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
   const [excerpt, setExcerpt] = useState("");
   const [seoDescription, setSeoDescription] = useState("");
   const [seoKeyphrase, setSeoKeyphrase] = useState("");
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordInput, setKeywordInput] = useState("");
 
   // Analyze flow
   const [analyzing, startAnalyze] = useTransition();
@@ -78,6 +80,7 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
         setExcerpt(result.metadata.excerpt);
         setSeoDescription(result.metadata.seoDescription);
         setSeoKeyphrase(result.metadata.seoKeyphrase);
+        setKeywords(result.metadata.keywords ?? []);
         setAnalyzeMessage({
           text: "Metadata filled. Review and edit before submitting.",
           success: true,
@@ -89,6 +92,21 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
         });
       }
     });
+  }
+
+  function addKeyword(raw: string) {
+    const value = raw.trim();
+    if (!value) return;
+    setKeywords((prev) =>
+      prev.some((k) => k.toLowerCase() === value.toLowerCase())
+        ? prev
+        : [...prev, value]
+    );
+    setKeywordInput("");
+  }
+
+  function removeKeyword(value: string) {
+    setKeywords((prev) => prev.filter((k) => k !== value));
   }
 
   const busy = isPending || analyzing;
@@ -314,6 +332,55 @@ export function ImportBlogForm({ shows }: ImportBlogFormProps) {
               onChange={(e) => setSeoKeyphrase(e.target.value)}
               required
               disabled={busy}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="keywordInput">
+              Keywords / tags{" "}
+              <span className="text-xs text-muted-foreground">
+                (attached as tags on the post — edit before submitting)
+              </span>
+            </Label>
+            {keywords.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {keywords.map((kw) => (
+                  <span
+                    key={kw}
+                    className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs"
+                  >
+                    {kw}
+                    <button
+                      type="button"
+                      onClick={() => removeKeyword(kw)}
+                      disabled={busy}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label={`Remove ${kw}`}
+                    >
+                      <XIcon className="size-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <Input
+              id="keywordInput"
+              value={keywordInput}
+              onChange={(e) => setKeywordInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === ",") {
+                  e.preventDefault();
+                  addKeyword(keywordInput);
+                }
+              }}
+              onBlur={() => addKeyword(keywordInput)}
+              placeholder="Add a keyword and press Enter"
+              disabled={busy}
+            />
+            <input
+              type="hidden"
+              name="keywords"
+              value={JSON.stringify(keywords)}
             />
           </div>
 

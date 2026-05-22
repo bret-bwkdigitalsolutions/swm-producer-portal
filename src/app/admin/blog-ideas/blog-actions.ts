@@ -10,11 +10,32 @@ function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+// Parse the JSON-array string stored on BlogPost.keywords. Tolerant: [] for
+// null/garbage.
+function parseKeywordsJson(raw: string | null): string[] {
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return Array.from(
+      new Set(
+        parsed
+          .filter((k): k is string => typeof k === "string")
+          .map((k) => k.trim())
+          .filter(Boolean)
+      )
+    );
+  } catch {
+    return [];
+  }
+}
 import { db } from "@/lib/db";
 import { readGoogleDocAsHtml } from "@/lib/google/docs";
 import { translateBlogPost } from "@/lib/ai/translate";
 import { revalidateTag } from "next/cache";
 import { uploadMedia } from "@/lib/wordpress/client";
+import { resolveTagTermIds, SWM_BLOG_TAG_REST_BASE } from "@/lib/wordpress/tags";
 import { prepareForWordPress } from "@/lib/image";
 
 const WP_API_URL = () => process.env.WP_API_URL!;
@@ -341,6 +362,12 @@ export async function publishToWordPress(
     }
   }
 
+  // Resolve keyword phrases to WP tag term IDs (find-or-create). Best-effort:
+  // a tag failure must not block the publish.
+  const keywords = parseKeywordsJson(blogPost.keywords);
+  const tagTermIds =
+    keywords.length > 0 ? await resolveTagTermIds(keywords) : [];
+
   // Publish to WordPress as swm_blog custom post type
   try {
     const wpResponse = await fetch(`${WP_API_URL()}/swm_blog`, {
@@ -355,6 +382,7 @@ export async function publishToWordPress(
         status: wpStatus,
         excerpt: blogPost.excerpt ?? "",
         ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
+        ...(tagTermIds.length > 0 ? { [SWM_BLOG_TAG_REST_BASE]: tagTermIds } : {}),
         meta: {
           parent_show_id: blogPost.wpShowId,
           _swm_blog_author: blogPost.author ?? "",

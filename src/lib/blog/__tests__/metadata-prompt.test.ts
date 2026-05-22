@@ -64,7 +64,32 @@ describe("parseMetadataResponse", () => {
       excerpt: "An excerpt of about thirty words for the listing page.",
       seoDescription: "A short SEO description.",
       seoKeyphrase: "test keyphrase",
+      keywords: [],
     });
+  });
+
+  it("parses a keywords array and dedupes/trims it", () => {
+    const withKeywords = JSON.stringify({
+      title: "T",
+      excerpt: "E",
+      seoDescription: "S",
+      seoKeyphrase: "K",
+      keywords: [" world cup 2026 ", "messi argentina", "world cup 2026", ""],
+    });
+    const result = parseMetadataResponse(withKeywords);
+    expect(result?.keywords).toEqual(["world cup 2026", "messi argentina"]);
+  });
+
+  it("defaults keywords to [] when absent or not an array", () => {
+    expect(parseMetadataResponse(validJson)?.keywords).toEqual([]);
+    const wrong = JSON.stringify({
+      title: "T",
+      excerpt: "E",
+      seoDescription: "S",
+      seoKeyphrase: "K",
+      keywords: "not-an-array",
+    });
+    expect(parseMetadataResponse(wrong)?.keywords).toEqual([]);
   });
 
   it("strips a leading markdown code fence", () => {

@@ -5,11 +5,12 @@ export interface ProposedMetadata {
   excerpt: string;
   seoDescription: string;
   seoKeyphrase: string;
+  keywords: string[];
 }
 
 const LANGUAGE_INSTRUCTIONS: Record<MetadataLanguage, string> = {
-  en: "Write all four fields in English.",
-  es: "Escribe los cuatro campos en español. Usa terminología natural para hispanohablantes.",
+  en: "Write all fields in English.",
+  es: "Escribe todos los campos en español. Para keywords, usa los términos que un hispanohablante realmente buscaría — no traducciones literales del inglés.",
 };
 
 /**
@@ -29,18 +30,23 @@ export function buildMetadataPrompt(
   const languageInstruction = LANGUAGE_INSTRUCTIONS[language];
 
   return [
-    "You are generating SEO metadata for a podcast blog post. Read the post body and produce four pieces of metadata.",
+    "You are generating SEO metadata for a podcast blog post. Read the post body and produce the metadata below.",
     "",
     "Fields to produce:",
     "- title: a compelling, SEO-friendly headline. If the post already has a strong working title in its first heading, you may use or lightly refine it. Otherwise invent one that captures the post's main hook.",
     "- excerpt: a roughly 30-word summary used on listing pages. Should make a reader want to click. Mention the host/author by name if they introduce themselves.",
     "- seoDescription: a meta description, MAXIMUM 160 characters total (this is a hard limit — count characters, not words). Includes the focus keyphrase naturally.",
     "- seoKeyphrase: a 2-to-4 word focus keyphrase that someone searching for this content would type. Should be high-intent and specific.",
+    "- keywords: an array of 6 to 8 high-intent search phrases this post should rank for, attached as tags. Each is 2-4 words. Requirements:",
+    "    * Specific to the actual topics, people, teams, places, and events discussed in THIS post — not generic filler like \"sports podcast\" or \"blog post\".",
+    "    * Reflect real search intent — phrases a reader would actually type into Google.",
+    "    * Distinct from each other and from the focus keyphrase (cover different angles/subtopics, don't just reword one phrase).",
+    "    * Proper nouns (player names, teams, tournaments) are excellent keywords when the post is about them.",
     "",
     languageInstruction,
     "",
     "Return ONLY a single JSON object in this exact shape, with no markdown fence and no commentary:",
-    `{"title":"...","excerpt":"...","seoDescription":"...","seoKeyphrase":"..."}`,
+    `{"title":"...","excerpt":"...","seoDescription":"...","seoKeyphrase":"...","keywords":["...","..."]}`,
     "",
     "Blog post body (HTML):",
     "---",
@@ -86,9 +92,22 @@ export function parseMetadataResponse(raw: string): ProposedMetadata | null {
   const seoKeyphrase =
     typeof obj.seoKeyphrase === "string" ? obj.seoKeyphrase.trim() : "";
 
+  // Keywords are best-effort: a missing/garbled array shouldn't fail the
+  // whole proposal, since the four core fields are what's required.
+  const keywords = Array.isArray(obj.keywords)
+    ? Array.from(
+        new Set(
+          obj.keywords
+            .filter((k): k is string => typeof k === "string")
+            .map((k) => k.trim())
+            .filter(Boolean)
+        )
+      )
+    : [];
+
   if (!title || !excerpt || !seoDescription || !seoKeyphrase) return null;
 
-  return { title, excerpt, seoDescription, seoKeyphrase };
+  return { title, excerpt, seoDescription, seoKeyphrase, keywords };
 }
 
 function trimMiddle(content: string, maxChars: number): string {

@@ -335,6 +335,7 @@ model BlogPost {
   excerpt          String?
   seoDescription   String?
   seoKeyphrase     String?
+  keywords         String?  // JSON array of high-intent keyword phrases, attached as swm_blog tags at publish
   originalContent  String?  // AI-generated HTML body, saved at generation time
   primaryLanguage  String?  // Per-post override (e.g. "es"). Null = use ShowMetadata.language. Useful for imports where one post is in the show's secondary language.
   status           String   @default("draft") // "draft" | "reviewing" | "published"

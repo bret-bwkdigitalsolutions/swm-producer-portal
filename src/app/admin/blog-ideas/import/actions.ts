@@ -11,6 +11,7 @@ import {
 import { sanitizeImportedHtml } from "@/lib/blog/sanitize-html";
 import { publishToWordPress } from "@/app/admin/blog-ideas/blog-actions";
 import { translateBlogPost } from "@/lib/ai/translate";
+import { resolveTagTermIds, SWM_BLOG_TAG_REST_BASE } from "@/lib/wordpress/tags";
 import { revalidateTag } from "next/cache";
 
 interface FormState {
@@ -45,6 +46,7 @@ export async function importBlogFromGoogleDoc(
     (formData.get("seoKeyphrase") as string)?.trim() ?? "";
   const primaryLanguageRaw = (formData.get("primaryLanguage") as string) || "";
   const publishLive = formData.get("publishLive") === "on";
+  const keywords = parseKeywords(formData.get("keywords"));
 
   const wpShowId = parseInt(wpShowIdRaw, 10);
   if (isNaN(wpShowId) || wpShowId < 1) {
@@ -169,6 +171,7 @@ export async function importBlogFromGoogleDoc(
       excerpt,
       seoDescription,
       seoKeyphrase,
+      keywords: keywords.length > 0 ? JSON.stringify(keywords) : null,
       primaryLanguage,
       status: "draft",
     },
@@ -215,6 +218,28 @@ export async function importBlogFromGoogleDoc(
     wpPostUrl: publishResult.wpPostUrl,
     blogPostId: blogPost.id,
   };
+}
+
+/**
+ * Parse the keywords field — a JSON array string from the form, or the value
+ * stored on BlogPost.keywords. Tolerant: returns [] for null/garbage.
+ */
+function parseKeywords(raw: FormDataEntryValue | string | null): string[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return Array.from(
+      new Set(
+        parsed
+          .filter((k): k is string => typeof k === "string")
+          .map((k) => k.trim())
+          .filter(Boolean)
+      )
+    );
+  } catch {
+    return [];
+  }
 }
 
 function extractFilenameTitle(file: File | null): string {
@@ -294,6 +319,12 @@ async function publishUploadedBlog(
   const auth =
     "Basic " + Buffer.from(`${wpUser}:${wpPassword}`).toString("base64");
 
+  // Resolve keyword phrases to WP tag term IDs (find-or-create). Best-effort:
+  // a tag failure must not block the publish.
+  const keywords = parseKeywords(blogPost.keywords);
+  const tagTermIds =
+    keywords.length > 0 ? await resolveTagTermIds(keywords) : [];
+
   const wpResponse = await fetch(`${wpApiUrl}/swm_blog`, {
     method: "POST",
     headers: { Authorization: auth, "Content-Type": "application/json" },
@@ -302,6 +333,7 @@ async function publishUploadedBlog(
       content: docHtml,
       status: wpStatus,
       excerpt: blogPost.excerpt ?? "",
+      ...(tagTermIds.length > 0 ? { [SWM_BLOG_TAG_REST_BASE]: tagTermIds } : {}),
       meta: {
         parent_show_id: blogPost.wpShowId,
         _swm_blog_author: blogPost.author ?? "",
