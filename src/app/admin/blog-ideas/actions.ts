@@ -393,13 +393,77 @@ export async function generateBlogPost(
     return { success: false, message: "ANTHROPIC_API_KEY is not set." };
   }
 
+  let parsed;
+  try {
+    parsed = await runSuggestionBlogAi({
+      apiKey,
+      suggestion: {
+        content: suggestion.content,
+        job: {
+          title: suggestion.job.title,
+          wpShowId: suggestion.job.wpShowId,
+          metadata: suggestion.job.metadata,
+        },
+      },
+      customInstructions,
+    });
+  } catch (error) {
+    // Revert the claim so the suggestion can be retried
+    await db.aiSuggestion.update({ where: { id: suggestionId }, data: { accepted: false } });
+    const msg = error instanceof Error ? error.message : "AI generation failed";
+    return { success: false, message: msg };
+  }
+
+  if (!parsed.title || !parsed.content) {
+    await db.aiSuggestion.update({ where: { id: suggestionId }, data: { accepted: false } });
+    return { success: false, message: "AI generated empty content." };
+  }
+
+  return createBlogDraftArtifacts({
+    wpShowId: suggestion.job.wpShowId,
+    title: parsed.title,
+    content: parsed.content,
+    excerpt: parsed.excerpt,
+    seoDescription: parsed.seoDescription,
+    seoKeyphrase: parsed.seoKeyphrase,
+    source: "suggestion",
+    suggestionId: suggestion.id,
+    jobId: suggestion.job.id,
+  });
+}
+
+import type { ParsedBlogOutput } from "./parse-blog-output";
+
+interface SuggestionBlogInputs {
+  apiKey: string;
+  suggestion: {
+    content: string;
+    job: {
+      title: string;
+      wpShowId: number;
+      metadata: unknown;
+    };
+  };
+  customInstructions?: string;
+}
+
+/**
+ * Build the suggestion-style blog prompt and call Claude. Pure of DB side
+ * effects beyond the read of show metadata + style guide context. Throws on
+ * AI failure so callers can decide how to recover (revert claim vs not).
+ */
+export async function runSuggestionBlogAi(
+  inputs: SuggestionBlogInputs
+): Promise<ParsedBlogOutput> {
+  const { apiKey, suggestion, customInstructions } = inputs;
+
   const showMetadata = await db.showMetadata.findUnique({
     where: { wpShowId: suggestion.job.wpShowId },
   });
   const showLanguage = showMetadata?.language ?? "en";
   const styleContext = await loadStyleContext(suggestion.job.wpShowId);
 
-  const metadata = suggestion.job.metadata as Record<string, unknown>;
+  const metadata = (suggestion.job.metadata as Record<string, unknown>) ?? {};
   const transcript = (metadata.transcript as string) ?? "";
   const episodeDescription = (metadata.description as string) ?? "";
 
@@ -441,37 +505,12 @@ export async function generateBlogPost(
     .filter(Boolean)
     .join("\n");
 
-  let parsed;
-  try {
-    const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const textBlock = response.content.find((b) => b.type === "text");
-    parsed = parseBlogOutput(textBlock?.text ?? "");
-  } catch (error) {
-    // Revert the claim so the suggestion can be retried
-    await db.aiSuggestion.update({ where: { id: suggestionId }, data: { accepted: false } });
-    const msg = error instanceof Error ? error.message : "AI generation failed";
-    return { success: false, message: msg };
-  }
-
-  if (!parsed.title || !parsed.content) {
-    await db.aiSuggestion.update({ where: { id: suggestionId }, data: { accepted: false } });
-    return { success: false, message: "AI generated empty content." };
-  }
-
-  return createBlogDraftArtifacts({
-    wpShowId: suggestion.job.wpShowId,
-    title: parsed.title,
-    content: parsed.content,
-    excerpt: parsed.excerpt,
-    seoDescription: parsed.seoDescription,
-    seoKeyphrase: parsed.seoKeyphrase,
-    source: "suggestion",
-    suggestionId: suggestion.id,
-    jobId: suggestion.job.id,
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: prompt }],
   });
+  const textBlock = response.content.find((b) => b.type === "text");
+  return parseBlogOutput(textBlock?.text ?? "");
 }

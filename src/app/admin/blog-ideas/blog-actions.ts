@@ -31,12 +31,13 @@ function parseKeywordsJson(raw: string | null): string[] {
   }
 }
 import { db } from "@/lib/db";
-import { readGoogleDocAsHtml } from "@/lib/google/docs";
+import { readGoogleDocAsHtml, replaceGoogleDocContent } from "@/lib/google/docs";
 import { translateBlogPost } from "@/lib/ai/translate";
 import { revalidateTag } from "next/cache";
 import { uploadMedia } from "@/lib/wordpress/client";
 import { resolveTagTermIds, SWM_BLOG_TAG_REST_BASE } from "@/lib/wordpress/tags";
 import { prepareForWordPress } from "@/lib/image";
+import { runSuggestionBlogAi } from "./actions";
 
 const WP_API_URL = () => process.env.WP_API_URL!;
 const WP_AUTH = () =>
@@ -49,6 +50,111 @@ interface ActionResult {
   success: boolean;
   message: string;
   wpPostUrl?: string;
+}
+
+interface RegenerateResult {
+  success: boolean;
+  message: string;
+  googleDocUrl?: string;
+}
+
+/**
+ * Re-run AI generation for an existing suggestion-sourced blog post and
+ * overwrite the body of the same Google Doc. Preserves the doc URL so any
+ * existing host email/link keeps working. Refuses non-suggestion posts and
+ * already-published posts (host-edits and WP state are out of scope).
+ */
+export async function regenerateBlogPost(
+  blogPostId: string,
+  customInstructions?: string
+): Promise<RegenerateResult> {
+  await requireAdmin();
+
+  const blogPost = await db.blogPost.findUnique({
+    where: { id: blogPostId },
+    include: {
+      suggestion: {
+        include: {
+          job: {
+            select: {
+              title: true,
+              wpShowId: true,
+              metadata: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!blogPost) {
+    return { success: false, message: "Blog post not found." };
+  }
+  if (blogPost.status === "published") {
+    return {
+      success: false,
+      message: "Cannot regenerate a published post.",
+    };
+  }
+  if (blogPost.source !== "suggestion" || !blogPost.suggestion?.job) {
+    return {
+      success: false,
+      message: "Only suggestion-sourced posts can be regenerated.",
+    };
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return { success: false, message: "ANTHROPIC_API_KEY is not set." };
+  }
+
+  let parsed;
+  try {
+    parsed = await runSuggestionBlogAi({
+      apiKey,
+      suggestion: {
+        content: blogPost.suggestion.content,
+        job: {
+          title: blogPost.suggestion.job.title,
+          wpShowId: blogPost.suggestion.job.wpShowId,
+          metadata: blogPost.suggestion.job.metadata,
+        },
+      },
+      customInstructions,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "AI generation failed";
+    return { success: false, message: msg };
+  }
+
+  if (!parsed.title || !parsed.content) {
+    return { success: false, message: "AI generated empty content." };
+  }
+
+  try {
+    await replaceGoogleDocContent(blogPost.googleDocId, parsed.content);
+  } catch (error) {
+    const msg =
+      error instanceof Error ? error.message : "Failed to update Google Doc";
+    return { success: false, message: msg };
+  }
+
+  await db.blogPost.update({
+    where: { id: blogPostId },
+    data: {
+      title: parsed.title,
+      excerpt: parsed.excerpt || null,
+      seoDescription: parsed.seoDescription || null,
+      seoKeyphrase: parsed.seoKeyphrase || null,
+      originalContent: parsed.content,
+    },
+  });
+
+  return {
+    success: true,
+    message: "Regenerated — Google Doc updated.",
+    googleDocUrl: blogPost.googleDocUrl,
+  };
 }
 
 /**

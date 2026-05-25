@@ -170,6 +170,49 @@ export async function createGoogleDoc(
 }
 
 // ---------------------------------------------------------------------------
+// Google Docs API: Replace Doc Content
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace the entire body of an existing Google Doc with new HTML content.
+ * The first index of any Doc body is 1, and the trailing newline at the very
+ * end is not deletable — so the delete range is [1, end - 1).
+ */
+export async function replaceGoogleDocContent(
+  docId: string,
+  htmlContent: string
+): Promise<void> {
+  const doc = await googleFetch(`${DOCS_API}/documents/${docId}?fields=body(content(endIndex))`);
+  const contentArr: Array<{ endIndex?: number }> = doc?.body?.content ?? [];
+  const endIndex = contentArr.length
+    ? contentArr[contentArr.length - 1].endIndex ?? 1
+    : 1;
+
+  const requests: Record<string, unknown>[] = [];
+
+  // Only attempt a delete if there's body text beyond the implicit final newline.
+  if (endIndex > 2) {
+    requests.push({
+      deleteContentRange: {
+        range: { startIndex: 1, endIndex: endIndex - 1 },
+      },
+    });
+  }
+
+  const sections = parseHtmlToSections(htmlContent);
+  for (const req of buildInsertRequests(sections)) {
+    requests.push(req as unknown as Record<string, unknown>);
+  }
+
+  if (requests.length === 0) return;
+
+  await googleFetch(`${DOCS_API}/documents/${docId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({ requests }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Google Docs API: Read Doc as HTML
 // ---------------------------------------------------------------------------
 

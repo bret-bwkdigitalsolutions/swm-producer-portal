@@ -9,11 +9,13 @@ import {
   SendIcon,
   GlobeIcon,
   Loader2Icon,
+  RefreshCwIcon,
 } from "lucide-react";
 import {
   updateBlogPostAuthor,
   sendToHost,
   publishToWordPress,
+  regenerateBlogPost,
 } from "./blog-actions";
 
 interface BlogPostControlsProps {
@@ -41,6 +43,7 @@ export function BlogPostControls({
   );
   const [sending, setSending] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [status, setStatus] = useState(blogPost.status);
   const [wpPostUrl, setWpPostUrl] = useState(blogPost.wpPostUrl);
@@ -72,6 +75,18 @@ export function BlogPostControls({
       setWpPostUrl(result.wpPostUrl);
     }
     setPublishing(false);
+  }
+
+  async function handleRegenerate() {
+    const confirmed = window.confirm(
+      "Regenerate this blog post? The Google Doc content will be overwritten and any in-progress host edits will be lost."
+    );
+    if (!confirmed) return;
+    setRegenerating(true);
+    setMessage(null);
+    const result = await regenerateBlogPost(blogPost.id);
+    setMessage(result.message);
+    setRegenerating(false);
   }
 
   return (
@@ -159,21 +174,37 @@ export function BlogPostControls({
         </div>
       )}
 
-      {/* Reviewing or Draft: publish button */}
+      {/* Reviewing or Draft: publish + regenerate */}
       {(status === "draft" || status === "reviewing") && (
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={publishing}
-          onClick={handlePublish}
-        >
-          {publishing ? (
-            <Loader2Icon className="size-3.5 animate-spin" />
-          ) : (
-            <GlobeIcon className="size-3.5" />
-          )}
-          Publish to WP
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={publishing || regenerating}
+            onClick={handlePublish}
+          >
+            {publishing ? (
+              <Loader2Icon className="size-3.5 animate-spin" />
+            ) : (
+              <GlobeIcon className="size-3.5" />
+            )}
+            Publish to WP
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={regenerating || publishing}
+            onClick={handleRegenerate}
+            title="Re-run AI generation and overwrite the Google Doc content"
+          >
+            {regenerating ? (
+              <Loader2Icon className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCwIcon className="size-3.5" />
+            )}
+            Regenerate
+          </Button>
+        </div>
       )}
 
       {/* Published: WP link */}
