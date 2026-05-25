@@ -7,6 +7,22 @@ import { generateAiSuggestions } from "@/lib/jobs/ai-processor";
 import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import { getRecentEpisodeTitles, getLatestEpisodeNumbers, getShow } from "@/lib/wordpress/client";
 
+// Map raw yt-dlp / pipeline errors to a user-actionable message. "Sign in to
+// confirm" and "cookies" both point at a missing/expired/untrusted session.
+// "Requested format is not available" is what yt-dlp returns when YouTube
+// served no usable audio formats — usually a still-processing live VOD, a
+// gated video, or (per past incident) an empty YOUTUBE_COOKIES env making
+// YouTube downgrade the player response on datacenter IPs.
+function friendlyAnalyzeError(raw: string): string {
+  if (raw.includes("Sign in to confirm") || raw.includes("cookies")) {
+    return "YouTube download failed — authentication cookies have expired or are missing. Please contact an admin to refresh them, or use a Vimeo URL instead.";
+  }
+  if (raw.includes("Requested format is not available")) {
+    return "YouTube download failed — no downloadable audio was offered for this video. It may still be processing after the livestream, be members-only/age-gated for the configured account, or the YouTube cookies on the server may be empty or malformed. Try again in a bit, or contact an admin.";
+  }
+  return raw;
+}
+
 /**
  * POST /api/distribute/analyze
  *
@@ -139,12 +155,6 @@ export async function POST(request: NextRequest) {
       data: { status: "failed", errorMessage: rawMessage.slice(0, 4000) },
     }).catch((e) => console.error(`[analyze] Failed to mark job ${jobId} as failed:`, e));
 
-    // Return a user-friendly error — don't expose raw yt-dlp output
-    const isYtdlpAuth = rawMessage.includes("Sign in to confirm") || rawMessage.includes("cookies");
-    const message = isYtdlpAuth
-      ? "YouTube download failed — authentication cookies have expired. Please contact an admin to refresh them, or use a Vimeo URL instead."
-      : rawMessage;
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: friendlyAnalyzeError(rawMessage) }, { status: 500 });
   }
 }
