@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 
 const MAX_EDIT_PAIRS = 15;
-const FIRST_SYNTHESIS_AT_EDITS = 5;
+const FIRST_SYNTHESIS_AT_EDITS = 2;
 const REFRESH_AFTER_NEW_EDITS = 3;
 
 function truncateMiddle(content: string, maxChars: number): string {

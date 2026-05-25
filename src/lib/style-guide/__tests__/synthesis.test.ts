@@ -6,24 +6,24 @@ describe("decideSynthesis", () => {
     it("does not synthesize when below first-synthesis threshold", () => {
       const decision = decideSynthesis({
         hasExistingGuide: false,
-        totalEdits: 4,
-        newEditsSinceLastSynthesis: 4,
+        totalEdits: 1,
+        newEditsSinceLastSynthesis: 1,
       });
       expect(decision.shouldSynthesize).toBe(false);
       expect(decision.reason).toBe("below_first_threshold");
     });
 
-    it("synthesizes when total edits first reaches 5", () => {
+    it("synthesizes when total edits first reaches the threshold", () => {
       const decision = decideSynthesis({
         hasExistingGuide: false,
-        totalEdits: 5,
-        newEditsSinceLastSynthesis: 5,
+        totalEdits: 2,
+        newEditsSinceLastSynthesis: 2,
       });
       expect(decision.shouldSynthesize).toBe(true);
       expect(decision.reason).toBe("first_synthesis");
     });
 
-    it("synthesizes when total edits exceeds 5 and no guide yet", () => {
+    it("synthesizes when total edits well exceeds the threshold and no guide yet", () => {
       const decision = decideSynthesis({
         hasExistingGuide: false,
         totalEdits: 12,

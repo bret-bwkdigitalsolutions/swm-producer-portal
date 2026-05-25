@@ -43,7 +43,7 @@ export async function loadStyleContext(wpShowId: number): Promise<string> {
 
   if (editCount === 0) return "";
 
-  if (editCount >= 5 && hasStyleGuide) {
+  if (editCount >= 2 && hasStyleGuide) {
     const recentExamples = editRecords.slice(0, 2);
     const examplePairs = recentExamples
       .map((r, i) => {
