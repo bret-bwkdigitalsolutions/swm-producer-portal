@@ -1,7 +1,7 @@
 # swm-producer-portal — Living State
 
 ## What This Is
-A comprehensive podcast producer portal that transforms audio episodes into multi-platform digital assets through automated workflows. Podcast producers use this to ingest episodes from hosting platforms, generate AI-powered blog posts from transcripts with human collaboration, and distribute content across WordPress, YouTube, and social media while maintaining brand consistency through learned style guides and editorial oversight.
+A comprehensive podcast producer portal that transforms audio episodes into multi-platform digital assets through automated AI-powered workflows. Podcast producers use this to ingest episodes from hosting platforms, generate blog posts from transcripts with human collaboration and style learning, distribute content across WordPress and YouTube, and manage live recording lifecycles from stream creation to podcast publication.
 
 ## How to Run & Access
 Development server runs with `npm run dev` on http://localhost:3000. The application containerizes with Docker using Next.js standalone output, including FFmpeg, yt-dlp v2026.05.16.233954, and Deno v2.7.12 for media processing. The container automatically runs database migrations via `scripts/migrate.mjs` before starting the server on port 3000. Production deployment configuration is complete but no live deployment URLs are evident in the codebase.
@@ -17,14 +17,14 @@ Development server runs with `npm run dev` on http://localhost:3000. The applica
 - `/admin/credentials/[showId]` — Per-show API credentials with YouTube channel verification
 - `/admin/blog-ideas` — AI-generated blog ideas organized by episode with collapsible grouping
 - `/admin/blog-ideas/import` — Direct blog post import from Google Docs with AI metadata extraction
-- `/admin/live-recordings` — Live recording management with YouTube-to-podcast workflow
-- `/admin/social-accounts` — Social media platform integration and analytics management
+- `/admin/live-recordings` — Live recording management with YouTube-to-podcast workflow state tracking
+- `/admin/social-accounts` — Social media platform integration and analytics management (shell interface)
 - `/admin/users` — User invitation system and access control
 - `/admin/users/[id]` — Individual user profile and permission management
 - `/admin/activity` — System activity logs and user behavior tracking
 - `/reaction` — Content reaction submission form with show-specific filtering
 - `/api/distribute/analyze` — AI content analysis for titles and metadata suggestions
-- `/api/distribute/[id]` — Multi-platform content distribution pipeline
+- `/api/distribute/[id]` — Multi-platform content distribution pipeline with duplicate detection
 - `/api/upload/thumbnail` — Image processing with EXIF handling and compression
 - `/api/scraper/trigger` — Automated Transistor dashboard scraping
 
@@ -38,7 +38,7 @@ Next.js 16 application with App Router using PostgreSQL via Prisma ORM with conn
 - Multi-platform content distribution to WordPress with SEO optimization, category assignment, and formatted transcripts
 - YouTube video publishing with AI-suggested titles, thumbnail cropping, and 100-character title limit enforcement
 - Host-written blog post import directly from Google Docs with AI metadata auto-fill and file upload support
-- Live recording lifecycle management from YouTube stream creation through podcast episode handoff
+- Live recording lifecycle management from YouTube stream creation through podcast episode handoff with premium toggles
 - Season and episode numbering driven by configurable per-show schemes with conditional season display
 - Pre-distribution duplicate detection across YouTube, Transistor, and WordPress platforms
 - Tiered post-distribution verification at 30-second, 2-minute, 10-minute, and 30-minute intervals
@@ -49,9 +49,11 @@ Next.js 16 application with App Router using PostgreSQL via Prisma ORM with conn
 - YouTube OAuth with channel verification and connected Google account email display
 - Content reaction submission system with show association and categorization
 - Auto-reload functionality preventing stale server actions after deployments
+- High-intent keyword generation and WordPress tag attachment for SEO optimization
+- Vimeo URL support as video source for distribution pipeline
 
 ## Recent Activity
-Development over the past month has concentrated on **live recording infrastructure** with complete YouTube-to-podcast workflow including stream state detection, polling automation, Transistor handoff, and archive lifecycle management with premium-only toggles. **Content import capabilities** have expanded with direct Google Docs import supporting file uploads, AI metadata auto-fill, and per-post primary language selection. **Media management improvements** include appearance gallery functionality with per-file upload and 16:9 hero image cropping interfaces. **Social media analytics foundation** has been established with database models for SocialAccount, SocialAccountCredential, and SocialFollowerSnapshot plus administrative shell interfaces. **Authentication reliability** has been enhanced with auto-linking Google sign-in to existing accounts by email and proper OAuth token refresh handling. **Distribution pipeline robustness** now features comprehensive duplicate checking, tiered verification workflows, and improved season scheme handling. **Tool maintenance** includes bumping yt-dlp to the latest nightly build to restore YouTube download functionality.
+Development over the past month has concentrated on **live recording infrastructure** with complete YouTube-to-podcast workflow including stream state detection, polling automation, Transistor handoff, and archive lifecycle management with premium-only toggles. **Content import and processing** has expanded with direct Google Docs import supporting file uploads, AI metadata auto-fill, and per-post primary language selection, plus high-intent keyword generation for SEO tagging. **Media source flexibility** now includes Vimeo URLs alongside YouTube for video ingestion. **Social media analytics foundation** has been established with database models for SocialAccount, SocialAccountCredential, and SocialFollowerSnapshot plus administrative shell interfaces. **Appearance management** has been enhanced with multi-show co-host support and gallery functionality with per-file upload and 16:9 hero image cropping. **Distribution pipeline reliability** improvements include allowing Vimeo-sourced jobs through upload confirmation and preventing WordPress drafts from being marked as published. **Tool maintenance** includes bumping yt-dlp to the latest nightly build to restore YouTube download functionality.
 
 ## Known Gaps & Limitations
 - Social media analytics models exist but lack data collection automation and dashboard visualization
@@ -93,4 +95,4 @@ Development over the past month has concentrated on **live recording infrastruct
 - `src/app/admin/credentials/[showId]/page.tsx` — Platform credential management with OAuth verification and health monitoring
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-21_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-25_
