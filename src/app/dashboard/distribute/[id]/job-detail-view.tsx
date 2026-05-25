@@ -53,6 +53,7 @@ interface SerializedJob {
   title: string;
   showName: string;
   status: string;
+  errorMessage: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -347,6 +348,23 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
           </Button>
         </div>
       </div>
+
+      {/* Failure detail — surfaces the persisted analyze/processor error so
+          post-mortems don't depend on Railway log retention. */}
+      {liveStatus === "failed" && job.errorMessage && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-destructive">
+              Failure detail
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="whitespace-pre-wrap break-words text-xs text-destructive/90">
+              {job.errorMessage}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Metadata card */}
       <Card>

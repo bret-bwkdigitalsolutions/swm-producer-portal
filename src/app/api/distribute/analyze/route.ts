@@ -132,10 +132,11 @@ export async function POST(request: NextRequest) {
     const rawMessage = error instanceof Error ? error.message : "Analysis failed";
     console.error(`[analyze] Failed for job ${jobId}:`, error);
 
-    // Mark the job as failed so it shows correctly in the job list
+    // Mark the job as failed AND persist the error so post-mortems don't
+    // require Railway log access (logs rotate aggressively).
     await db.distributionJob.update({
       where: { id: jobId },
-      data: { status: "failed" },
+      data: { status: "failed", errorMessage: rawMessage.slice(0, 4000) },
     }).catch((e) => console.error(`[analyze] Failed to mark job ${jobId} as failed:`, e));
 
     // Return a user-friendly error — don't expose raw yt-dlp output

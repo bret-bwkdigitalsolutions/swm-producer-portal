@@ -142,6 +142,7 @@ model DistributionJob {
   title     String
   metadata  Json     // episode metadata (description, chapters, tags, etc.)
   status    String   @default("pending") // "pending" | "processing" | "awaiting_review" | "completed" | "failed"
+  errorMessage String? @db.Text // Last failure message (analyze / processor). Set when status flips to "failed"; cleared on retry.
   gcsPath   String?  // Google Cloud Storage path for uploaded file
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -39,7 +39,7 @@ RUN adduser --system --uid 1001 nextjs
 # release cadence — pin to a nightly build (from yt-dlp-nightly-builds) and
 # bump it when downloads start failing with "format not available" or
 # "Sign in to confirm you're not a bot". See docs/youtube-cookie-refresh.md.
-ENV YT_DLP_VERSION=2026.05.16.233954
+ENV YT_DLP_VERSION=2026.05.24.234402
 ENV DENO_VERSION=v2.7.12
 RUN apk add --no-cache ffmpeg python3 curl unzip && \
     wget -q "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/${YT_DLP_VERSION}/yt-dlp" -O /usr/local/bin/yt-dlp && \

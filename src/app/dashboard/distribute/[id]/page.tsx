@@ -44,6 +44,7 @@ export default async function DistributionJobPage({ params }: Props) {
     title: job.title,
     showName,
     status: job.status,
+    errorMessage: job.errorMessage,
     metadata: job.metadata as Record<string, unknown>,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),

@@ -88,6 +88,7 @@ export async function downloadVideoToGcs(
       "--audio-quality", "0",     // best quality
       "-o", outputTemplate,
       "--no-warnings",
+      "--no-progress",            // suppress per-fragment progress lines that blew past maxBuffer
     ];
 
     if (cookiesPath) {
@@ -97,8 +98,9 @@ export async function downloadVideoToGcs(
     args.push(videoUrl);
 
     const { stderr } = await execFileAsync("yt-dlp", args, {
-      timeout: 10 * 60 * 1000, // 10 minute timeout
-      killSignal: "SIGKILL",   // Force-kill hung yt-dlp processes on timeout
+      timeout: 10 * 60 * 1000,        // 10 minute timeout
+      killSignal: "SIGKILL",          // Force-kill hung yt-dlp processes on timeout
+      maxBuffer: 200 * 1024 * 1024,   // 200 MB — yt-dlp's combined stdout+stderr on long episodes can exceed the 1 MB default
     });
 
     if (stderr) {
