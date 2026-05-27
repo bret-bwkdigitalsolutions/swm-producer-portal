@@ -135,6 +135,24 @@ model PlatformCredential {
   @@map("platform_credentials")
 }
 
+// YouTube cookies for yt-dlp downloads, keyed by Google account email.
+// Multiple PlatformCredential rows (e.g. the SLN network default at
+// wpShowId=0 plus per-show overrides) can join to the same identity via
+// PlatformCredential.connectedEmail, so cookies are pasted once per real
+// Google account rather than once per show.
+model YoutubeIdentity {
+  email             String    @id
+  channelTitle      String?
+  channelId         String?
+  cookies           String?   @db.Text
+  cookiesUpdatedAt  DateTime?
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("youtube_identities")
+}
+
 model DistributionJob {
   id        String   @id @default(cuid())
   userId    String

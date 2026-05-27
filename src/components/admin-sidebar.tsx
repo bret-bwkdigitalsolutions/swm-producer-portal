@@ -9,6 +9,7 @@ const navItems = [
   { label: "Users", href: "/admin/users" },
   { label: "Shows", href: "/admin/shows" },
   { label: "Credentials", href: "/admin/credentials" },
+  { label: "YouTube Identities", href: "/admin/youtube-identities" },
   { label: "Social Accounts", href: "/admin/social-accounts" },
   { label: "Blog Ideas", href: "/admin/blog-ideas" },
   { label: "Activity Log", href: "/admin/activity" },

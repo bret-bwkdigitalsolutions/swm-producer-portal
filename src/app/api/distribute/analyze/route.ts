@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "No video uploaded." }, { status: 400 });
       }
       console.log(`[analyze] Downloading source video for job ${jobId}`);
-      gcsPath = await downloadVideoToGcs(sourceUrl, jobId);
+      gcsPath = await downloadVideoToGcs(sourceUrl, jobId, job.wpShowId);
       await db.distributionJob.update({
         where: { id: jobId },
         data: { gcsPath },

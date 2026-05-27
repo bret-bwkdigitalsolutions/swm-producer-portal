@@ -76,7 +76,7 @@ export async function runHandoff(
     //    a clear error if the source isn't ready yet — the retry logic below
     //    catches that and backs off.
     const downloadUrl = row.vimeoSourceUrl ?? row.youtubeLiveUrl;
-    const gcsAudioPath = await downloadVideoToGcs(downloadUrl, row.id);
+    const gcsAudioPath = await downloadVideoToGcs(downloadUrl, row.id, row.wpShowId);
 
     // 2. Upload from GCS to Transistor using the existing wrapper that
     //    knows about per-show credentials and the upload sequence.

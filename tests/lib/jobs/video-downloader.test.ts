@@ -10,6 +10,7 @@ const {
   mockUnlink,
   mockRmdir,
   mockWriteFile,
+  mockGetYoutubeCookiesForShow,
 } = vi.hoisted(() => ({
   // Follows the (cmd, args, opts, cb) callback convention so util.promisify
   // resolves to { stdout, stderr }.
@@ -23,6 +24,11 @@ const {
   mockUnlink: vi.fn().mockResolvedValue(undefined),
   mockRmdir: vi.fn().mockResolvedValue(undefined),
   mockWriteFile: vi.fn().mockResolvedValue(undefined),
+  mockGetYoutubeCookiesForShow: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@/lib/youtube-identity", () => ({
+  getYoutubeCookiesForShow: mockGetYoutubeCookiesForShow,
 }));
 
 vi.mock("node:child_process", () => ({
@@ -71,6 +77,7 @@ describe("downloadVideoToGcs", () => {
     process.env.GCS_BUCKET_NAME = "test-bucket";
     process.env.GCS_CREDENTIALS_JSON = JSON.stringify({ type: "service_account" });
     delete process.env.YOUTUBE_COOKIES;
+    mockGetYoutubeCookiesForShow.mockResolvedValue(null);
   });
 
   it("returns a GCS path labeled with the YouTube video ID", async () => {
@@ -115,5 +122,46 @@ describe("downloadVideoToGcs", () => {
     await expect(
       downloadVideoToGcs("https://example.com/video/123", "job-1")
     ).rejects.toThrow("Invalid video URL");
+  });
+
+  it("uses per-identity cookies when wpShowId resolves to one, skipping the env var", async () => {
+    process.env.YOUTUBE_COOKIES = "# Netscape HTTP Cookie File\n# env-fallback\n";
+    mockGetYoutubeCookiesForShow.mockResolvedValue(
+      "# Netscape HTTP Cookie File\n# from-identity\n"
+    );
+    await downloadVideoToGcs(
+      "https://www.youtube.com/watch?v=abc123xyz",
+      "job-1",
+      42
+    );
+    expect(mockGetYoutubeCookiesForShow).toHaveBeenCalledWith(42);
+    const writeCalls = mockWriteFile.mock.calls;
+    expect(writeCalls.length).toBeGreaterThan(0);
+    const cookiePayload = writeCalls[0][1] as string;
+    expect(cookiePayload).toContain("from-identity");
+    expect(cookiePayload).not.toContain("env-fallback");
+  });
+
+  it("falls back to YOUTUBE_COOKIES env var when no identity cookies exist for the show", async () => {
+    process.env.YOUTUBE_COOKIES = "# Netscape HTTP Cookie File\n# env-fallback\n";
+    mockGetYoutubeCookiesForShow.mockResolvedValue(null);
+    await downloadVideoToGcs(
+      "https://www.youtube.com/watch?v=abc123xyz",
+      "job-1",
+      42
+    );
+    const cookiePayload = mockWriteFile.mock.calls[0][1] as string;
+    expect(cookiePayload).toContain("env-fallback");
+  });
+
+  it("skips the identity lookup entirely when wpShowId is omitted", async () => {
+    process.env.YOUTUBE_COOKIES = "# Netscape HTTP Cookie File\n# env-fallback\n";
+    await downloadVideoToGcs(
+      "https://www.youtube.com/watch?v=abc123xyz",
+      "job-1"
+    );
+    expect(mockGetYoutubeCookiesForShow).not.toHaveBeenCalled();
+    const cookiePayload = mockWriteFile.mock.calls[0][1] as string;
+    expect(cookiePayload).toContain("env-fallback");
   });
 });

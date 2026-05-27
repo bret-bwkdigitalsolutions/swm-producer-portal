@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { Storage } from "@google-cloud/storage";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { extractVimeoId } from "@/lib/vimeo-url";
+import { getYoutubeCookiesForShow } from "@/lib/youtube-identity";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,17 +27,25 @@ function deriveSourceLabel(videoUrl: string): string | null {
  * Download a video's audio to GCS using yt-dlp.
  *
  * yt-dlp (installed in the Docker image) is source-agnostic — it handles
- * YouTube and Vimeo natively. YouTube needs the YOUTUBE_COOKIES env var
- * (Netscape format) to get past bot detection; Vimeo generally does not.
- * The cookies file, when present, is harmless for non-YouTube sources.
+ * YouTube and Vimeo natively. YouTube needs cookies to get past bot
+ * detection; Vimeo generally does not. The cookies file, when present, is
+ * harmless for non-YouTube sources.
+ *
+ * Cookie resolution prefers per-identity cookies (looked up via the show's
+ * PlatformCredential.connectedEmail → YoutubeIdentity) when a wpShowId is
+ * supplied. Falls back to the global YOUTUBE_COOKIES env var so the system
+ * keeps working before identities are populated.
  *
  * @param videoUrl - Full YouTube or Vimeo URL
  * @param jobId - Used only for log context
+ * @param wpShowId - Show that owns this download. When supplied, drives the
+ *   per-identity cookie lookup; omit for contexts where no show is known.
  * @returns GCS path of the downloaded audio
  */
 export async function downloadVideoToGcs(
   videoUrl: string,
-  jobId: string
+  jobId: string,
+  wpShowId?: number
 ): Promise<string> {
   const sourceLabel = deriveSourceLabel(videoUrl);
   if (!sourceLabel) {
@@ -71,11 +80,21 @@ export async function downloadVideoToGcs(
   const tempDir = await mkdtemp(join(tmpdir(), "swm-video-dl-"));
   const outputTemplate = join(tempDir, "video.%(ext)s");
 
-  // Write cookies file if YOUTUBE_COOKIES env var is set (Netscape cookie format)
+  // Prefer per-identity cookies (real owner of the channel) over the
+  // shared env-var burner; the env var stays as a safety net so existing
+  // shows keep downloading before identities are populated.
+  let cookieValue: string | null = null;
+  if (typeof wpShowId === "number") {
+    cookieValue = await getYoutubeCookiesForShow(wpShowId);
+  }
+  if (!cookieValue && process.env.YOUTUBE_COOKIES) {
+    cookieValue = process.env.YOUTUBE_COOKIES;
+  }
+
   let cookiesPath: string | null = null;
-  if (process.env.YOUTUBE_COOKIES) {
+  if (cookieValue) {
     cookiesPath = join(tempDir, "cookies.txt");
-    await writeFile(cookiesPath, process.env.YOUTUBE_COOKIES, { encoding: "utf-8", mode: 0o600 });
+    await writeFile(cookiesPath, cookieValue, { encoding: "utf-8", mode: 0o600 });
   }
 
   try {
