@@ -4,7 +4,7 @@
 A comprehensive podcast producer portal that transforms audio episodes into multi-platform digital assets through automated AI-powered workflows. Podcast producers use this to ingest episodes from hosting platforms, generate blog posts from transcripts with human collaboration and style learning, distribute content across WordPress and YouTube, and manage live recording lifecycles from stream creation to podcast publication.
 
 ## How to Run & Access
-Development server runs with `npm run dev` on http://localhost:3000. The application containerizes with Docker using Next.js standalone output, including FFmpeg, yt-dlp v2026.05.16.233954, and Deno v2.7.12 for media processing. The container automatically runs database migrations via `scripts/migrate.mjs` before starting the server on port 3000. Production deployment configuration is complete but no live deployment URLs are evident in the codebase.
+Development server runs with `npm run dev` on http://localhost:3000. The application containerizes with Docker using Next.js standalone output, including FFmpeg, yt-dlp v2026.05.24.234402, and Deno v2.7.12 for media processing. The container automatically runs database migrations via `scripts/migrate.mjs` before starting the server on port 3000. Production deployment configuration is complete but no live deployment URLs are evident in the codebase.
 
 ## Site Map / Content Structure
 - `/` — Public landing page introducing the portal
@@ -29,11 +29,11 @@ Development server runs with `npm run dev` on http://localhost:3000. The applica
 - `/api/scraper/trigger` — Automated Transistor dashboard scraping
 
 ## Current Architecture
-Next.js 16 application with App Router using PostgreSQL via Prisma ORM with connection pooling for multi-tenant podcast data. Authentication flows through NextAuth v5 with Google OAuth and invite-based user management. Core integrations include a standalone Transistor.fm scraper with Playwright for episode ingestion, Deepgram SDK for transcription services, Anthropic Claude for content generation with show-specific style guides, Google Drive integration for collaborative editing workflows, WordPress REST API for SEO-optimized publishing, YouTube Data API v3 with OAuth channel verification, and Google Cloud Storage for media asset management. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, comprehensive edit tracking to measure AI vs. human contributions, and per-show customization including seasonal numbering schemes and dynamic style guide synthesis from accumulated edits.
+Next.js 16 application with App Router using PostgreSQL via Prisma ORM with connection pooling for multi-tenant podcast data. Authentication flows through NextAuth v5 with Google OAuth and invite-based user management. Core integrations include a standalone Transistor.fm scraper with Playwright for episode ingestion, Deepgram SDK for transcription services, Anthropic Claude for content generation with show-specific style guides, Google Drive integration for collaborative editing workflows, WordPress REST API for SEO-optimized publishing, YouTube Data API v3 with OAuth channel verification and per-identity cookie support for yt-dlp, and Google Cloud Storage for media asset management. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, comprehensive edit tracking to measure AI vs. human contributions, and per-show customization including seasonal numbering schemes and dynamic style guide synthesis from accumulated edits.
 
 ## What Works Today
 - Automated episode ingestion from Transistor.fm with metadata extraction, thumbnail processing, and transcript generation
-- AI blog post generation from episode transcripts using Claude with dynamically learned style guides and custom prompts
+- AI blog post generation from episode transcripts using Claude with dynamically learned style guides after 2+ human edits
 - Google Docs collaborative editing integration with automatic change detection and edit percentage tracking
 - Multi-platform content distribution to WordPress with SEO optimization, category assignment, and formatted transcripts
 - YouTube video publishing with AI-suggested titles, thumbnail cropping, and 100-character title limit enforcement
@@ -51,9 +51,11 @@ Next.js 16 application with App Router using PostgreSQL via Prisma ORM with conn
 - Auto-reload functionality preventing stale server actions after deployments
 - High-intent keyword generation and WordPress tag attachment for SEO optimization
 - Vimeo URL support as video source for distribution pipeline
+- In-place blog post regeneration for iterative content improvement
+- Per-YouTube-identity cookie management for yt-dlp downloads to prevent authentication conflicts
 
 ## Recent Activity
-Development over the past month has concentrated on **live recording infrastructure** with complete YouTube-to-podcast workflow including stream state detection, polling automation, Transistor handoff, and archive lifecycle management with premium-only toggles. **Content import and processing** has expanded with direct Google Docs import supporting file uploads, AI metadata auto-fill, and per-post primary language selection, plus high-intent keyword generation for SEO tagging. **Media source flexibility** now includes Vimeo URLs alongside YouTube for video ingestion. **Social media analytics foundation** has been established with database models for SocialAccount, SocialAccountCredential, and SocialFollowerSnapshot plus administrative shell interfaces. **Appearance management** has been enhanced with multi-show co-host support and gallery functionality with per-file upload and 16:9 hero image cropping. **Distribution pipeline reliability** improvements include allowing Vimeo-sourced jobs through upload confirmation and preventing WordPress drafts from being marked as published. **Tool maintenance** includes bumping yt-dlp to the latest nightly build to restore YouTube download functionality.
+Development over the past month has concentrated on **YouTube download reliability** with per-identity cookie management for yt-dlp to resolve authentication conflicts across multiple channels, bumping to nightly builds for format compatibility, and distinguishing format errors from expired cookies. **Blog workflow efficiency** has improved with in-place draft regeneration and reduced style guide application threshold from 5 edits to 2 for faster personalization. **Live recording feature completion** includes premium toggles, operator documentation, and full YouTube-to-Transistor handoff workflows. **Content import and processing** has expanded with direct Google Docs import supporting file uploads, AI metadata auto-fill, and high-intent keyword generation for SEO tagging. **Multi-show support enhancement** includes co-host assignment across multiple shows on appearance creation. **Distribution pipeline reliability** improvements include Vimeo URL support and preventing WordPress drafts from being marked as published.
 
 ## Known Gaps & Limitations
 - Social media analytics models exist but lack data collection automation and dashboard visualization
@@ -64,7 +66,7 @@ Development over the past month has concentrated on **live recording infrastruct
 - Google Drive integration has minimal error handling for API quota exhaustion and permission failures
 - Concurrent multi-show processing can create resource contention without proper job queuing
 - Content validation for reaction submissions lacks quality control and spam prevention measures
-- Import workflow supports Google Docs but lacks validation for malformed or incomplete content
+- YouTube download reliability still depends on frequent yt-dlp nightly build updates
 
 ## Next Meaningful Capabilities
 - Social media follower analytics dashboard with historical tracking and cross-platform growth insights
@@ -95,4 +97,4 @@ Development over the past month has concentrated on **live recording infrastruct
 - `src/app/admin/credentials/[showId]/page.tsx` — Platform credential management with OAuth verification and health monitoring
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-25_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-05-28_
