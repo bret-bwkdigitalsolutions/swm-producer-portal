@@ -449,22 +449,42 @@ export async function publishToWordPress(
     }
   }
 
-  // Fallback: use the show's featured image from WordPress
-  if (!featuredMediaId) {
+  // No fallback to show thumbnail — it's square and distorts the widescreen hero.
+  // The PHP template handles the show thumbnail fallback for archive cards only.
+
+  // Resolve the linked episode WP post ID.
+  // Primary: job's completed website platform externalId.
+  // Fallback: query WordPress for the most recent episode of the same show.
+  let linkedEpisodeId: number | undefined;
+  const platformExternalId = blogPost.job?.platforms[0]?.externalId;
+  if (platformExternalId) {
+    linkedEpisodeId = parseInt(platformExternalId, 10);
+  } else if (blogPost.job) {
+    // Fallback: search WordPress for the episode by job title
     try {
-      const showRes = await fetch(
-        `${WP_API_URL()}/swm_show/${blogPost.wpShowId}?_fields=featured_media`,
-        { headers: { Authorization: WP_AUTH() } }
-      );
-      if (showRes.ok) {
-        const show = await showRes.json();
-        if (show.featured_media) {
-          featuredMediaId = show.featured_media;
-          console.log(`[blog] Using show featured image: ${featuredMediaId}`);
+      const epSearchUrl = new URL(`${WP_API_URL()}/swm_episode`);
+      epSearchUrl.searchParams.set("search", blogPost.job.title);
+      epSearchUrl.searchParams.set("per_page", "5");
+      epSearchUrl.searchParams.set("orderby", "date");
+      epSearchUrl.searchParams.set("order", "desc");
+      const epRes = await fetch(epSearchUrl.toString(), {
+        headers: { Authorization: WP_AUTH() },
+      });
+      if (epRes.ok) {
+        const episodes = (await epRes.json()) as Array<{
+          id: number;
+          meta?: { parent_show_id?: number };
+        }>;
+        // Prefer an episode matching the same show
+        const match =
+          episodes.find((ep) => ep.meta?.parent_show_id === blogPost.wpShowId) ??
+          episodes[0];
+        if (match) {
+          linkedEpisodeId = match.id;
         }
       }
     } catch (error) {
-      console.error("[blog] Show featured image lookup failed (non-fatal):", error);
+      console.error("[blog] Episode lookup fallback failed (non-fatal):", error);
     }
   }
 
@@ -496,8 +516,8 @@ export async function publishToWordPress(
           ...(blogPost.suggestion
             ? { _swm_source_suggestion_id: blogPost.suggestion.id }
             : {}),
-          ...(blogPost.job?.platforms[0]?.externalId
-            ? { _swm_linked_episode: parseInt(blogPost.job.platforms[0].externalId, 10) }
+          ...(linkedEpisodeId
+            ? { _swm_linked_episode: linkedEpisodeId }
             : {}),
           ...(blogPost.seoDescription
             ? { _swm_seo_description: blogPost.seoDescription }
