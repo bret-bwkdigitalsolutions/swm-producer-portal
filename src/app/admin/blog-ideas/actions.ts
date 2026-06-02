@@ -310,6 +310,9 @@ export async function generateCustomBlogPost(
       ? "- IMPORTANT: Write the entire blog post in Spanish — headline, excerpt, SEO description, keyphrase, and HTML body must all be in Spanish"
       : "",
     styleContext,
+    showMetadata?.hosts
+      ? `\nIMPORTANT — correct spelling of host name(s): ${showMetadata.hosts}. The transcript may misspell these names. Always use the exact spelling provided here.\n`
+      : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -498,6 +501,9 @@ export async function runSuggestionBlogAi(
       ? "- IMPORTANT: Write the entire blog post in Spanish — headline, excerpt, SEO description, keyphrase, and HTML body must all be in Spanish"
       : "",
     styleContext,
+    showMetadata?.hosts
+      ? `\nIMPORTANT — correct spelling of host name(s): ${showMetadata.hosts}. The transcript may misspell these names. Always use the exact spelling provided here.\n`
+      : "",
     customInstructions
       ? `\n## Additional Instructions from Editor\n${customInstructions}`
       : "",

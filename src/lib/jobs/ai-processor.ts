@@ -8,6 +8,7 @@ interface AnalysisContext {
   description?: string;
   transcript?: string; // timestamped transcript text
   language?: string;
+  hosts?: string; // comma-separated host names for correct spelling
 }
 
 let _client: Anthropic | null = null;
@@ -18,6 +19,12 @@ function getClient(): Anthropic | null {
     _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
   return _client;
+}
+
+/** Spelling reminder injected into prompts that process transcript content. */
+function hostSpellingNote(ctx: AnalysisContext): string {
+  if (!ctx.hosts) return "";
+  return `\nIMPORTANT — correct spelling of host name(s): ${ctx.hosts}. The transcript may misspell these names. Always use the exact spelling provided here.\n`;
 }
 
 function buildChapterPrompt(ctx: AnalysisContext): string {
@@ -41,7 +48,7 @@ function buildChapterPrompt(ctx: AnalysisContext): string {
     "Use the actual timestamps from the transcript. Aim for chapters every 5-15 minutes depending on topic changes.",
     "Include a brief one-sentence description for each chapter.",
     "Output ONLY the chapters. No preamble, no introduction, no explanation — just the chapter list.",
-    "",
+    hostSpellingNote(ctx),
     `Episode title: "${ctx.title}"`,
     "",
     "Transcript:",
@@ -64,7 +71,7 @@ function buildSummaryPrompt(ctx: AnalysisContext): string {
     ctx.language === "es"
       ? "- Write the summary in Spanish since the episode is in Spanish"
       : "",
-    "",
+    hostSpellingNote(ctx),
     source,
   ]
     .filter(Boolean)
@@ -99,7 +106,7 @@ function buildBlogPrompt(ctx: AnalysisContext): string {
     ctx.language === "es"
       ? "\nIMPORTANT: Write all blog titles, descriptions, and keywords in Spanish. The show is Spanish-language."
       : "",
-    "",
+    hostSpellingNote(ctx),
     source,
   ]
     .filter(Boolean)
@@ -123,7 +130,7 @@ function buildKeywordsPrompt(ctx: AnalysisContext): string {
     ctx.language === "es"
       ? "- Write all tags in Spanish since the episode is in Spanish"
       : "",
-    "",
+    hostSpellingNote(ctx),
     source,
   ]
     .filter(Boolean)
@@ -153,6 +160,7 @@ function buildTitlePrompt(ctx: AnalysisContext, recentTitles: string[], showName
       : "",
     "",
     "Output ONLY the title. No preamble, no explanation, no quotes — just the title text.",
+    hostSpellingNote(ctx),
     titleExamples,
     "",
     source,
@@ -207,6 +215,7 @@ export async function generateAiSuggestions(
     description: (metadata.description as string) ?? undefined,
     transcript: transcript ?? undefined,
     language: showLanguage,
+    hosts: showMetadata?.hosts ?? undefined,
   };
 
   const typesToGenerate = types ?? ["chapters", "summary", "blog", "keywords", "title"];
