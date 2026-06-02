@@ -258,20 +258,22 @@ export default async function BlogIdeasPage() {
               summary={group.summary}
             >
               {group.cards.map((card) => {
-                const displayTitle =
-                  card.episodeTitle ?? card.blogPost?.title ?? "Custom blog";
+                // Use the blog post title once generated, otherwise
+                // extract the first line of the idea as a short label
+                const cardLabel = card.blogPost?.title
+                  ?? card.body.split("\n")[0].replace(/^\d+\.\s*/, "").replace(/\*\*/g, "").slice(0, 120)
+                  ?? "Blog idea";
                 return (
                   <Card key={card.key}>
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <CardTitle className="text-base">
-                            {displayTitle}
+                            {cardLabel}
                           </CardTitle>
-                          <p className="text-sm text-muted-foreground">
-                            {card.showName}
-                            {card.bodyLabel === "Custom brief" && " · Custom"}
-                          </p>
+                          {card.bodyLabel === "Custom brief" && (
+                            <p className="text-sm text-muted-foreground">Custom</p>
+                          )}
                         </div>
                         {card.suggestionAccepted && !card.blogPost && (
                           <Badge className="bg-green-100 text-green-800">
