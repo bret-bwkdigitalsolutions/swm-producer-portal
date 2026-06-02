@@ -7,7 +7,7 @@ import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/yo
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
-import { runVerificationTier, TIER_LABELS, type TierResult } from "./verify-distribution";
+import { runVerificationTier, type TierResult } from "./verify-distribution";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
@@ -789,6 +789,10 @@ async function maybeNotifyTierFailure(
   jobTitle: string,
   result: TierResult,
 ) {
+  // Only notify on the final tier — earlier tiers catch transient states
+  // (e.g. YouTube still processing, Transistor not yet published)
+  if (result.tier < 4) return;
+
   const failed = result.platforms.filter((p) => !p.passed);
   if (failed.length === 0) return;
 
@@ -802,7 +806,7 @@ async function maybeNotifyTierFailure(
 
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   await sendVerificationFailureNotification({
-    jobTitle: `${jobTitle} (verification tier ${result.tier} — ${TIER_LABELS[result.tier]})`,
+    jobTitle,
     showName,
     issues,
     jobUrl: `${baseUrl}/dashboard/distribute/${jobId}`,
