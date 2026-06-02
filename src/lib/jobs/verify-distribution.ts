@@ -83,7 +83,7 @@ async function ytTier(
   }
 
   const parts =
-    tier === 3 ? "snippet,status,processingDetails" :
+    tier >= 3 ? "snippet,status,processingDetails" :
     tier === 2 ? "snippet,status" :
     "snippet";
 
@@ -118,8 +118,10 @@ async function ytTier(
   }
   if (tier >= 3) {
     const us = v.status?.uploadStatus;
-    if (us !== "processed") {
-      issues.push({ platform: "youtube", field: "uploadStatus", expected: "processed", actual: us ?? "unknown" });
+    // "uploaded" means still processing — not a failure, just slow
+    // Only flag genuinely bad states: "failed", "rejected", "deleted"
+    if (us && us !== "processed" && us !== "uploaded") {
+      issues.push({ platform: "youtube", field: "uploadStatus", expected: "processed", actual: us });
     }
   }
   if (tier === 4) {
@@ -164,7 +166,8 @@ async function transistorTier(
     }
   }
   if (tier >= 3) {
-    if (ep.attributes.status !== "published") {
+    // "scheduled" is valid — episode will publish at its scheduled time
+    if (ep.attributes.status !== "published" && ep.attributes.status !== "scheduled") {
       issues.push({ platform: "transistor", field: "status", expected: "published", actual: ep.attributes.status });
     }
     if (ep.attributes.media_url) {
@@ -215,14 +218,18 @@ async function wpTier(
     }
   }
   if (tier >= 3) {
-    if (post.status !== "publish") {
+    // "future" is valid — post is scheduled for later publication
+    if (post.status !== "publish" && post.status !== "future") {
       issues.push({ platform: "website", field: "status", expected: "publish", actual: post.status });
     }
   }
   if (tier === 4 && post.link) {
-    const reach = await checkUrlReachable(post.link);
-    if (!reach.ok) {
-      issues.push({ platform: "website", field: "public_url", expected: "200", actual: `${reach.status ?? "unreachable"}` });
+    // Skip public URL check for future-dated posts — they 404 by design
+    if (post.status !== "future") {
+      const reach = await checkUrlReachable(post.link);
+      if (!reach.ok) {
+        issues.push({ platform: "website", field: "public_url", expected: "200", actual: `${reach.status ?? "unreachable"}` });
+      }
     }
   }
   return issues;
