@@ -41,8 +41,10 @@ export async function submitDistribution(
   const title = formData.get("title") as string | null;
   const description = formData.get("description") as string | null;
   const tags = formData.get("tags") as string | null;
-  const scheduleMode = formData.get("schedule_mode") as string | null;
-  const scheduledAtRaw = formData.get("scheduled_at") as string | null;
+  // PublishToggle outputs: status ("publish"|"future"|"draft"), scheduled_date, timezone
+  const publishStatus = formData.get("status") as string | null;
+  const scheduleMode = publishStatus === "future" ? "schedule" : "now";
+  const scheduledAtRaw = formData.get("scheduled_date") as string | null;
   const timezone = formData.get("timezone") as string | null;
   const scheduledAt =
     scheduledAtRaw && scheduleMode === "schedule"
@@ -122,7 +124,6 @@ export async function submitDistribution(
     : [];
 
   // Check if this is a draft/test upload
-  const publishStatus = formData.get("status") as string | null;
   const isDraft = publishStatus === "draft";
 
   // Build metadata JSON
@@ -130,7 +131,7 @@ export async function submitDistribution(
     description: description!.trim(),
     tags: parsedTags,
     isDraft,
-    scheduleMode: isDraft ? "now" : (scheduleMode ?? "now"),
+    scheduleMode: isDraft ? "now" : scheduleMode,
     scheduledAt: scheduleMode === "schedule" && !isDraft ? scheduledAt : null,
     youtubePrivacy: isDraft ? "unlisted" : "public",
     videoFileName,
