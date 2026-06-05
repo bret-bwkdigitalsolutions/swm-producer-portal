@@ -117,7 +117,7 @@ export async function downloadVideoToGcs(
     args.push(videoUrl);
 
     const { stderr } = await execFileAsync("yt-dlp", args, {
-      timeout: 10 * 60 * 1000,        // 10 minute timeout
+      timeout: 30 * 60 * 1000,        // 30 minute timeout — long Vimeo episodes (2000+ DASH fragments) can exceed 10 min
       killSignal: "SIGKILL",          // Force-kill hung yt-dlp processes on timeout
       maxBuffer: 200 * 1024 * 1024,   // 200 MB — yt-dlp's combined stdout+stderr on long episodes can exceed the 1 MB default
     });
