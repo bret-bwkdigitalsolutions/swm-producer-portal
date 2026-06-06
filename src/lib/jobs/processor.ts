@@ -770,7 +770,7 @@ async function processJobInner(
   // verifications are lost. Acceptable for now — switch to DB-backed schedule
   // if reliability becomes an issue.
   if (finalStatus === "completed" || (!allFailed && anyFailed)) {
-    scheduleVerificationTiers(job.id, job.wpShowId, job.title, !!existingYoutubeUrl);
+    scheduleVerificationTiers(job.id, job.wpShowId, job.title, !!existingYoutubeUrl, isPremium);
   }
 
   return { jobId: job.id, status: finalStatus, platformResults };
@@ -788,12 +788,13 @@ function scheduleVerificationTiers(
   wpShowId: number,
   title: string,
   isLiveRecording: boolean,
+  isPremium: boolean,
 ) {
   const tiers: Array<1 | 2 | 3 | 4> = [1, 2, 3, 4];
   for (const tier of tiers) {
     const delay = VERIFICATION_TIER_DELAYS_MS[tier];
     setTimeout(() => {
-      runVerificationTier(tier, jobId, wpShowId, title, isLiveRecording)
+      runVerificationTier(tier, jobId, wpShowId, title, isLiveRecording, isPremium)
         .then((result) => maybeNotifyTierFailure(jobId, wpShowId, title, result))
         .catch((err) => {
           console.error(`[verify] tier ${tier} failed for job ${jobId}:`, err);

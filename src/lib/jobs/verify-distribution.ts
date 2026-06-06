@@ -67,6 +67,7 @@ interface CheckCtx {
   wpShowId: number;
   expectedTitle: string;
   isLiveRecording: boolean;
+  isPremium: boolean;
 }
 
 // --------------------------- Per-platform tier checks -----------------------
@@ -124,7 +125,7 @@ async function ytTier(
       issues.push({ platform: "youtube", field: "uploadStatus", expected: "processed", actual: us });
     }
   }
-  if (tier === 4) {
+  if (tier === 4 && !ctx.isPremium) {
     const reach = await checkUrlReachable(`https://www.youtube.com/watch?v=${videoId}`);
     if (!reach.ok) {
       issues.push({ platform: "youtube", field: "public_url", expected: "200", actual: `${reach.status ?? "unreachable"}` });
@@ -247,11 +248,12 @@ export async function runVerificationTier(
   wpShowId: number,
   expectedTitle: string,
   isLiveRecording = false,
+  isPremium = false,
 ): Promise<TierResult> {
   const platforms = await db.distributionJobPlatform.findMany({
     where: { jobId, status: "completed" },
   });
-  const ctx: CheckCtx = { jobId, wpShowId, expectedTitle, isLiveRecording };
+  const ctx: CheckCtx = { jobId, wpShowId, expectedTitle, isLiveRecording, isPremium };
 
   const platformResults: PlatformTierResult[] = await Promise.all(
     platforms.map(async (p): Promise<PlatformTierResult> => {
