@@ -274,6 +274,42 @@ export async function bumpCurrentSeason(
   }
 }
 
+export async function updateShowPremium(
+  _prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, message: "Unauthorized." };
+  }
+
+  const wpShowId = parseInt(formData.get("wpShowId") as string, 10);
+  const premiumEnabled = formData.get("premiumEnabled") === "true";
+  const transistorPrivateShowId = (formData.get("transistorPrivateShowId") as string)?.trim() || null;
+
+  if (isNaN(wpShowId) || wpShowId <= 0) {
+    return { success: false, message: "Invalid show." };
+  }
+
+  if (premiumEnabled && !transistorPrivateShowId) {
+    return { success: false, message: "A Transistor private show ID is required when premium is enabled." };
+  }
+
+  try {
+    await db.showMetadata.upsert({
+      where: { wpShowId },
+      create: { wpShowId, hosts: "", premiumEnabled, transistorPrivateShowId },
+      update: { premiumEnabled, transistorPrivateShowId },
+    });
+
+    revalidatePath("/admin/shows");
+    return { success: true, message: "Premium settings saved." };
+  } catch (error) {
+    console.error("Failed to update premium settings:", error);
+    return { success: false, message: "Failed to save premium settings." };
+  }
+}
+
 export async function refreshShowCache(): Promise<FormState> {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {

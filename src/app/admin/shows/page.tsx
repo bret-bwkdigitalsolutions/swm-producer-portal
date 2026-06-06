@@ -10,6 +10,7 @@ import { ShowHostsEditor } from "./show-hosts-editor";
 import { ShowLanguageEditor } from "./show-language-editor";
 import { ShowSeasonSchemeEditor } from "./show-season-scheme-editor";
 import { ShowStyleGuide } from "./show-style-guide";
+import { ShowPremiumEditor } from "./show-premium-editor";
 import Link from "next/link";
 import { ArrowRightLeftIcon } from "lucide-react";
 
@@ -147,6 +148,11 @@ export default async function AdminShowsPage() {
                         : "none"
                     }
                     currentSeason={showMeta?.currentSeason ?? null}
+                  />
+                  <ShowPremiumEditor
+                    wpShowId={show.id}
+                    premiumEnabled={showMeta?.premiumEnabled ?? false}
+                    transistorPrivateShowId={showMeta?.transistorPrivateShowId ?? null}
                   />
                   <ShowStyleGuide
                     wpShowId={show.id}
