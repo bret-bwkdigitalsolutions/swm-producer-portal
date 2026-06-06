@@ -53,6 +53,7 @@ interface SerializedJob {
   title: string;
   showName: string;
   status: string;
+  isPremium: boolean;
   errorMessage: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
@@ -364,6 +365,14 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
             </pre>
           </CardContent>
         </Card>
+      )}
+
+      {/* Premium YouTube Studio reminder */}
+      {job.isPremium && livePlatforms.some(p => p.platform === "youtube" && p.status === "completed") && (
+        <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+          <strong>Premium content:</strong> This video was uploaded as unlisted.
+          To restrict to channel members, set it to &quot;Members only&quot; in YouTube Studio.
+        </div>
       )}
 
       {/* Metadata card */}
