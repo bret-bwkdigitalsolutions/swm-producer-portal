@@ -180,7 +180,7 @@ async function transistorTier(
       issues.push({ platform: "transistor", field: "media_url", expected: "set", actual: "null" });
     }
   }
-  if (tier === 4 && ep.attributes.share_url) {
+  if (tier === 4 && ep.attributes.share_url && !ctx.isPremium) {
     const reach = await checkUrlReachable(ep.attributes.share_url);
     if (!reach.ok) {
       issues.push({ platform: "transistor", field: "public_url", expected: "200", actual: `${reach.status ?? "unreachable"}` });

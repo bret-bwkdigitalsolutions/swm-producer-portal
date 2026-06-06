@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 import {
   listTransistorSubscribers,
   addTransistorSubscriber,
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // 1. Premium shows that have a Transistor private show configured
-    const shows = await prisma.showMetadata.findMany({
+    const shows = await db.showMetadata.findMany({
       where: {
         premiumEnabled: true,
         transistorPrivateShowId: { not: null },
