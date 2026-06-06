@@ -145,6 +145,7 @@ async function processJobInner(
   // A URL-sourced job (YouTube or Vimeo) yields audio only — no uploadable
   // video — so YouTube distribution is skipped for these (see guard below).
   const sourceUrl = existingVimeoUrl ?? existingYoutubeUrl;
+  const isPremium = job.isPremium ?? false;
 
   // For URL-sourced episodes: download audio to GCS. This gives us an mp3
   // directly — no need for the extractAudio step.
@@ -324,12 +325,18 @@ async function processJobInner(
         ? (updatedMetadata.scheduledAt as string) ?? undefined
         : undefined;
 
+      const youtubePrivacy = (
+        isPremium
+          ? "unlisted"
+          : (updatedMetadata.youtubePrivacy as string) ?? (isDraft ? "unlisted" : "public")
+      ) as "unlisted" | "public" | "private";
+
       const result = await uploadToYouTube({
         wpShowId: job.wpShowId,
         title: job.title,
         description: fullDescription,
         tags,
-        privacy: isDraft ? "unlisted" : "public",
+        privacy: youtubePrivacy,
         videoFilePath: tempVideoPath,
         scheduledAt,
       });
@@ -511,14 +518,21 @@ async function processJobInner(
       // Only shows with seasonScheme != "none" can carry a season number
       // through to Transistor. Read from ShowMetadata so the rule lives in
       // one place (DB) and admins can configure new shows without a deploy.
-      const showMeta = await db.showMetadata.findUnique({
+      const transistorShowMeta = await db.showMetadata.findUnique({
         where: { wpShowId: job.wpShowId },
       });
       const showUsesSeasons =
-        showMeta?.seasonScheme === "season" || showMeta?.seasonScheme === "case";
+        transistorShowMeta?.seasonScheme === "season" || transistorShowMeta?.seasonScheme === "case";
       const seasonForChild = showUsesSeasons
         ? ((updatedMetadata.seasonNumber as number) ?? undefined)
         : undefined;
+
+      // Premium content must route to the show's private Transistor feed
+      if (isPremium && !transistorShowMeta?.transistorPrivateShowId) {
+        throw new Error(
+          `Show #${job.wpShowId} has no private Transistor show configured — cannot distribute premium content.`
+        );
+      }
 
       const result = await uploadToTransistor({
         wpShowId: job.wpShowId,
@@ -538,6 +552,7 @@ async function processJobInner(
         scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
           ? (updatedMetadata.scheduledAt as string) ?? undefined
           : undefined,
+        transistorShowIdOverride: isPremium ? transistorShowMeta?.transistorPrivateShowId ?? undefined : undefined,
       });
 
       await db.distributionJobPlatform.update({
@@ -554,51 +569,54 @@ async function processJobInner(
 
       // Also publish to the network Transistor feed if this show is part of
       // the Sunset Lounge network (any show that uses the network default
-      // Transistor credentials — i.e. doesn't have its own override)
-      try {
-        const showOverride = await db.platformCredential.findUnique({
-          where: { wpShowId_platform: { wpShowId: job.wpShowId, platform: "transistor" } },
-        });
-
-        // If no show-specific override exists, this show uses the network default
-        // and should also be cross-posted to the network feed
-        if (!showOverride) {
-          const networkTransistorShow = await db.showPlatformLink.findUnique({
-            where: { wpShowId_platform: { wpShowId: 0, platform: "transistor_show" } },
+      // Transistor credentials — i.e. doesn't have its own override).
+      // Premium content is excluded — it should only go to the private show feed.
+      if (!isPremium) {
+        try {
+          const showOverride = await db.platformCredential.findUnique({
+            where: { wpShowId_platform: { wpShowId: job.wpShowId, platform: "transistor" } },
           });
 
-          if (networkTransistorShow?.url) {
-            console.log(
-              `[processor] Cross-posting to network Transistor feed: ${networkTransistorShow.url}`
-            );
-            // Sunset Lounge (the network feed) is not Clubhouse or Signal 51,
-            // so the season must be cleared on the cross-post regardless of
-            // what the source show's metadata had set.
-            await uploadToTransistor({
-              wpShowId: 0, // Use network credentials
-              title: job.title,
-              description: (updatedMetadata.description as string) ?? "",
-              seasonNumber: undefined,
-              episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
-              gcsAudioPath: gcsAudioPath!,
-              chapters: (updatedMetadata.chapters as string) ?? undefined,
-              tags: (updatedMetadata.tags as string[]) ?? undefined,
-              thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
-              author: showHosts,
-              transcript: transcript ?? (updatedMetadata.transcript as string) ?? undefined,
-              youtubeVideoUrl: youtubeUrl ?? undefined,
-              explicit: (updatedMetadata.explicit as boolean) ?? undefined,
-              isDraft: (updatedMetadata.isDraft as boolean) ?? false,
-              scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
-                ? (updatedMetadata.scheduledAt as string) ?? undefined
-                : undefined,
+          // If no show-specific override exists, this show uses the network default
+          // and should also be cross-posted to the network feed
+          if (!showOverride) {
+            const networkTransistorShow = await db.showPlatformLink.findUnique({
+              where: { wpShowId_platform: { wpShowId: 0, platform: "transistor_show" } },
             });
-            console.log("[processor] Network Transistor cross-post succeeded");
+
+            if (networkTransistorShow?.url) {
+              console.log(
+                `[processor] Cross-posting to network Transistor feed: ${networkTransistorShow.url}`
+              );
+              // Sunset Lounge (the network feed) is not Clubhouse or Signal 51,
+              // so the season must be cleared on the cross-post regardless of
+              // what the source show's metadata had set.
+              await uploadToTransistor({
+                wpShowId: 0, // Use network credentials
+                title: job.title,
+                description: (updatedMetadata.description as string) ?? "",
+                seasonNumber: undefined,
+                episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
+                gcsAudioPath: gcsAudioPath!,
+                chapters: (updatedMetadata.chapters as string) ?? undefined,
+                tags: (updatedMetadata.tags as string[]) ?? undefined,
+                thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
+                author: showHosts,
+                transcript: transcript ?? (updatedMetadata.transcript as string) ?? undefined,
+                youtubeVideoUrl: youtubeUrl ?? undefined,
+                explicit: (updatedMetadata.explicit as boolean) ?? undefined,
+                isDraft: (updatedMetadata.isDraft as boolean) ?? false,
+                scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
+                  ? (updatedMetadata.scheduledAt as string) ?? undefined
+                  : undefined,
+              });
+              console.log("[processor] Network Transistor cross-post succeeded");
+            }
           }
+        } catch (networkErr) {
+          // Non-fatal: log but don't fail the job
+          console.error("[processor] Network Transistor cross-post failed:", networkErr);
         }
-      } catch (networkErr) {
-        // Non-fatal: log but don't fail the job
-        console.error("[processor] Network Transistor cross-post failed:", networkErr);
       }
     } catch (error) {
       const errMsg =
@@ -656,6 +674,7 @@ async function processJobInner(
         status: wpStatus,
         scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
         portalUserId: job.userId,
+        isPremiumOnly: isPremium,
       });
 
       await db.distributionJobPlatform.update({
