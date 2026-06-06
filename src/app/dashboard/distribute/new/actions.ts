@@ -58,6 +58,7 @@ export async function submitDistribution(
   const seasonNumber = formData.get("season_number") as string | null;
   const episodeNumber = formData.get("episode_number") as string | null;
   const explicit = formData.get("explicit") === "true";
+  const isPremium = formData.get("is_premium") === "true";
 
   // Collect selected platforms
   const selectedPlatforms = VALID_PLATFORMS.filter(
@@ -133,13 +134,14 @@ export async function submitDistribution(
     isDraft,
     scheduleMode: isDraft ? "now" : scheduleMode,
     scheduledAt: scheduleMode === "schedule" && !isDraft ? scheduledAt : null,
-    youtubePrivacy: isDraft ? "unlisted" : "public",
+    youtubePrivacy: isDraft || isPremium ? "unlisted" : "public",
     videoFileName,
     videoFileSize: videoFileSize ? parseInt(videoFileSize, 10) : 0,
     videoContentType,
     seasonNumber: seasonNumber ? parseInt(seasonNumber, 10) : undefined,
     episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
     explicit,
+    isPremium,
     ...(existingYoutubeUrl ? { existingYoutubeUrl } : {}),
     ...(existingVimeoUrl ? { existingVimeoUrl } : {}),
   };
@@ -173,6 +175,7 @@ export async function submitDistribution(
         title: title!.trim(),
         metadata,
         status: "uploading",
+        isPremium,
       },
     });
 
@@ -223,6 +226,7 @@ export async function updateDistribution(
     seasonNumber?: number;
     episodeNumber?: number;
     explicit?: boolean;
+    isPremium?: boolean;
   }
 ): Promise<FormState> {
   const session = await auth();
@@ -247,21 +251,25 @@ export async function updateDistribution(
 
   await db.$transaction(async (tx) => {
     // Update job metadata with final description, chapters, tags, and optional fields
+    const isPremium = data.isPremium ?? false;
+    const isDraft = data.isDraft ?? false;
     await tx.distributionJob.update({
       where: { id: jobId },
       data: {
         ...(data.title !== undefined ? { title: data.title } : {}),
+        isPremium,
         metadata: {
           ...existingMetadata,
           description: data.description,
           ...(data.chapters ? { chapters: data.chapters } : {}),
           ...(data.tags ? { tags: data.tags } : {}),
-          isDraft: data.isDraft ?? false,
+          isDraft,
           scheduleMode: data.scheduleMode ?? "now",
           scheduledAt:
             data.scheduledAt && data.scheduleMode === "schedule"
               ? toISOWithTimezone(data.scheduledAt, data.timezone)
               : (data.scheduledAt ?? null),
+          youtubePrivacy: isDraft || isPremium ? "unlisted" : "public",
           ...(data.seasonNumber !== undefined
             ? { seasonNumber: data.seasonNumber }
             : {}),
@@ -269,6 +277,7 @@ export async function updateDistribution(
             ? { episodeNumber: data.episodeNumber }
             : {}),
           ...(data.explicit !== undefined ? { explicit: data.explicit } : {}),
+          isPremium,
         },
       },
     });

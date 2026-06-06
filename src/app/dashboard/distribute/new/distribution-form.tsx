@@ -47,6 +47,7 @@ import { isValidVimeoUrl } from "@/lib/vimeo-url";
 interface Show {
   id: string;
   title: string;
+  premiumEnabled?: boolean;
 }
 
 interface FormState {
@@ -80,10 +81,12 @@ export function DistributionForm({
   shows,
   descriptionFooters = {},
   frequentTags = {},
+  premiumShows = {},
 }: {
   shows: Show[];
   descriptionFooters?: Record<string, string>;
   frequentTags?: Record<string, string[]>;
+  premiumShows?: Record<string, boolean>;
 }) {
   const router = useRouter();
   const [state, formAction, isPending] = useActionState<FormState, FormData>(
@@ -144,6 +147,9 @@ export function DistributionForm({
   // Tag chip state
   const [tags, setTags] = useState<string[]>([]);
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+
+  // Premium content toggle — only visible for premium-enabled shows
+  const [isPremium, setIsPremium] = useState(false);
 
   // Track whether upload was done for AI path (video uploaded before form submit)
   const [aiUploadedJobId, setAiUploadedJobId] = useState<string | null>(null);
@@ -540,6 +546,7 @@ export function DistributionForm({
         seasonNumber: seasonNumber ? parseInt(seasonNumber, 10) : undefined,
         episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
         explicit: explicitChecked,
+        isPremium,
       });
 
       if (!updateResult.success) {
@@ -573,7 +580,7 @@ export function DistributionForm({
       setUploadError(message);
       setUploading(false);
     }
-  }, [aiUploadedJobId, description, chapters, publishState, router, uploadThumbnailToGCS, title, seasonNumber, episodeNumber]);
+  }, [aiUploadedJobId, description, chapters, publishState, router, uploadThumbnailToGCS, title, seasonNumber, episodeNumber, isPremium]);
 
   // Re-fire /api/upload/confirm with forceDuplicates=true after the user has
   // chosen to override the duplicate-detection block.
@@ -802,6 +809,7 @@ export function DistributionForm({
               setShowId(newShowId);
               setTags(frequentTags[newShowId] ?? []);
               setSuggestedTags([]);
+              setIsPremium(false);
               // Auto-populate episode/season numbers from the show's
               // seasonScheme + currentSeason in admin metadata.
               if (newShowId) {
@@ -1208,6 +1216,23 @@ export function DistributionForm({
                   Contains explicit/mature content
                 </Label>
               </div>
+
+              {premiumShows[showId] && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="is_premium"
+                    name="is_premium"
+                    value="true"
+                    checked={isPremium}
+                    onChange={(e) => setIsPremium(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  <Label htmlFor="is_premium" className="cursor-pointer text-sm">
+                    Premium content (subscribers only)
+                  </Label>
+                </div>
+              )}
             </>
           )}
 
@@ -1284,6 +1309,23 @@ export function DistributionForm({
                   Contains explicit/mature content
                 </Label>
               </div>
+
+              {premiumShows[showId] && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="is_premium"
+                    name="is_premium"
+                    value="true"
+                    checked={isPremium}
+                    onChange={(e) => setIsPremium(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  <Label htmlFor="is_premium" className="cursor-pointer text-sm">
+                    Premium content (subscribers only)
+                  </Label>
+                </div>
+              )}
 
               {/* Summary / Description */}
               <div className="space-y-2">

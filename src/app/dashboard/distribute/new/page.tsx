@@ -28,12 +28,16 @@ export default async function NewDistributionPage() {
   const showIds = allowedShows.map((s) => s.id);
   const showMetadataList = await db.showMetadata.findMany({
     where: { wpShowId: { in: showIds } },
-    select: { wpShowId: true, descriptionFooter: true },
+    select: { wpShowId: true, descriptionFooter: true, premiumEnabled: true },
   });
   const footerMap: Record<string, string> = {};
+  const premiumMap: Record<string, boolean> = {};
   for (const sm of showMetadataList) {
     if (sm.descriptionFooter) {
       footerMap[String(sm.wpShowId)] = sm.descriptionFooter;
+    }
+    if (sm.premiumEnabled) {
+      premiumMap[String(sm.wpShowId)] = true;
     }
   }
 
@@ -69,6 +73,7 @@ export default async function NewDistributionPage() {
   const shows = allowedShows.map((show) => ({
     id: String(show.id),
     title: show.title.rendered,
+    premiumEnabled: premiumMap[String(show.id)] ?? false,
   }));
 
   return (
@@ -77,6 +82,7 @@ export default async function NewDistributionPage() {
         shows={shows}
         descriptionFooters={footerMap}
         frequentTags={frequentTagsMap}
+        premiumShows={premiumMap}
       />
     </div>
   );
