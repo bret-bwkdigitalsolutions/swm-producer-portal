@@ -68,6 +68,7 @@ export interface TransistorUploadParams {
   explicit?: boolean;
   isDraft?: boolean;
   scheduledAt?: string; // ISO 8601 date — if set, episode is scheduled for future publish
+  transistorShowIdOverride?: string;
 }
 
 export interface TransistorUploadResult {
@@ -100,7 +101,11 @@ export async function uploadToTransistor(
       `No Transistor show linked for WP show ${wpShowId}. Please configure it in Admin > Shows.`
     );
   }
-  const transistorShowId = await resolveTransistorShowId(apiKey, showLink);
+  let transistorShowId = await resolveTransistorShowId(apiKey, showLink);
+
+  if (params.transistorShowIdOverride) {
+    transistorShowId = params.transistorShowIdOverride;
+  }
 
   // 1. Get an authorized upload URL from Transistor
   console.log(`[transistor] Requesting upload URL for "${title}"`);
