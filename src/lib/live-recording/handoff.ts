@@ -80,12 +80,28 @@ export async function runHandoff(
 
     // 2. Upload from GCS to Transistor using the existing wrapper that
     //    knows about per-show credentials and the upload sequence.
+
+    // Premium live recordings must route to the show's private Transistor feed.
+    let transistorShowIdOverride: string | undefined;
+    if (row.isPremiumOnly) {
+      const showMeta = await db.showMetadata.findUnique({
+        where: { wpShowId: row.wpShowId },
+      });
+      if (!showMeta?.transistorPrivateShowId) {
+        throw new Error(
+          `Show #${row.wpShowId} has no private Transistor show configured — cannot distribute premium live recording.`
+        );
+      }
+      transistorShowIdOverride = showMeta.transistorPrivateShowId;
+    }
+
     const result = await uploadToTransistor({
       wpShowId: row.wpShowId,
       title: row.title,
       description: row.description ?? "",
       gcsAudioPath,
       youtubeVideoUrl: row.youtubeLiveUrl,
+      transistorShowIdOverride,
     });
 
     // 3. Stamp the Transistor episode ID on the row. The Transistor
