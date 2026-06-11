@@ -180,12 +180,18 @@ export async function downloadFullVideoToGcs(
 
   const bucketName = process.env.GCS_BUCKET_NAME;
   if (!bucketName) {
-    throw new Error("GCS_BUCKET_NAME is not set");
+    throw new Error("GCS_BUCKET_NAME is not set — cannot upload downloaded video");
   }
   const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
   let storage: Storage;
   if (credentialsJson) {
-    storage = new Storage({ credentials: JSON.parse(credentialsJson) });
+    let credentials: object;
+    try {
+      credentials = JSON.parse(credentialsJson);
+    } catch {
+      throw new Error("GCS_CREDENTIALS_JSON is not valid JSON — check the Railway environment variable");
+    }
+    storage = new Storage({ credentials });
   } else {
     storage = new Storage({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
   }
