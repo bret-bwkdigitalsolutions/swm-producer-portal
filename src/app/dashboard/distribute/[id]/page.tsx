@@ -47,6 +47,12 @@ export default async function DistributionJobPage({ params }: Props) {
     isPremium: job.isPremium,
     errorMessage: job.errorMessage,
     metadata: job.metadata as Record<string, unknown>,
+    isAdmin: session.user.role === "admin",
+    hasVideo: !!(
+      job.gcsPath ||
+      (job.metadata as Record<string, unknown>).existingYoutubeUrl ||
+      (job.metadata as Record<string, unknown>).existingVimeoUrl
+    ),
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
     platforms: job.platforms.map((p) => ({

@@ -29,6 +29,7 @@ import {
   BookOpenIcon,
   ListIcon,
   Trash2Icon,
+  DownloadIcon,
 } from "lucide-react";
 
 interface Platform {
@@ -60,6 +61,8 @@ interface SerializedJob {
   updatedAt: string;
   platforms: Platform[];
   aiSuggestions: AiSuggestion[];
+  isAdmin: boolean;
+  hasVideo: boolean;
 }
 
 const PLATFORM_ICONS: Record<string, React.ReactNode> = {
@@ -250,6 +253,52 @@ function AiSuggestionCard({ suggestion }: { suggestion: AiSuggestion }) {
   );
 }
 
+function DownloadVideoButton({ jobId }: { jobId: string }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDownload() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/distribute/${jobId}/download-video`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Download failed");
+        return;
+      }
+      window.open(data.downloadUrl, "_blank");
+    } catch {
+      setError("Network error — try again");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleDownload}
+        disabled={loading}
+      >
+        {loading ? (
+          <Loader2Icon className="size-3.5 animate-spin" />
+        ) : (
+          <DownloadIcon className="size-3.5" />
+        )}
+        {loading ? "Preparing video…" : "Download Video"}
+      </Button>
+      {error && (
+        <p className="mt-1 text-xs text-destructive">{error}</p>
+      )}
+    </div>
+  );
+}
+
 const TERMINAL_STATUSES = ["completed", "failed"];
 const POLL_INTERVAL_MS = 5_000;
 
@@ -333,6 +382,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
           <Badge className={STATUS_COLORS[liveStatus] ?? ""}>
             {STATUS_LABELS[liveStatus] ?? liveStatus}
           </Badge>
+          {job.isAdmin && job.hasVideo && (
+            <DownloadVideoButton jobId={job.id} />
+          )}
           <Button
             variant="outline"
             size="sm"
