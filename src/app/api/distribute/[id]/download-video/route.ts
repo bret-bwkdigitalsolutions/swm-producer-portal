@@ -4,12 +4,17 @@ import { db } from "@/lib/db";
 import { generateSignedDownloadUrl } from "@/lib/gcs";
 import { downloadFullVideoToGcs } from "@/lib/jobs/video-downloader";
 
+const DOWNLOAD_URL_EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
+
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
-  if (!session?.user || session.user.role !== "admin") {
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.user.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -32,29 +37,29 @@ export async function POST(
 
   const metadata = job.metadata as Record<string, unknown>;
 
-  // Case 1: Upload-based job — video file is already in GCS at job.gcsPath
-  if (job.gcsPath && !metadata.existingYoutubeUrl && !metadata.existingVimeoUrl) {
-    const url = await generateSignedDownloadUrl(job.gcsPath, 4 * 60 * 60 * 1000); // 4 hours
-    return NextResponse.json({ downloadUrl: url });
-  }
-
-  // Case 2: URL-sourced job — check if we've already downloaded the full video
-  const existingVideoGcsPath = metadata.gcsFullVideoPath as string | undefined;
-  if (existingVideoGcsPath) {
-    const url = await generateSignedDownloadUrl(existingVideoGcsPath, 4 * 60 * 60 * 1000);
-    return NextResponse.json({ downloadUrl: url });
-  }
-
-  // Case 3: URL-sourced job — need to download the full video first
-  const videoUrl = (metadata.existingYoutubeUrl ?? metadata.existingVimeoUrl) as string | undefined;
-  if (!videoUrl) {
-    return NextResponse.json(
-      { error: "No video source found for this job" },
-      { status: 400 }
-    );
-  }
-
   try {
+    // Case 1: Upload-based job — video file is already in GCS at job.gcsPath
+    if (job.gcsPath && !metadata.existingYoutubeUrl && !metadata.existingVimeoUrl) {
+      const url = await generateSignedDownloadUrl(job.gcsPath, DOWNLOAD_URL_EXPIRY_MS);
+      return NextResponse.json({ downloadUrl: url });
+    }
+
+    // Case 2: URL-sourced job — check if we've already downloaded the full video
+    const existingVideoGcsPath = metadata.gcsFullVideoPath as string | undefined;
+    if (existingVideoGcsPath) {
+      const url = await generateSignedDownloadUrl(existingVideoGcsPath, DOWNLOAD_URL_EXPIRY_MS);
+      return NextResponse.json({ downloadUrl: url });
+    }
+
+    // Case 3: URL-sourced job — need to download the full video first
+    const videoUrl = (metadata.existingYoutubeUrl ?? metadata.existingVimeoUrl) as string | undefined;
+    if (!videoUrl) {
+      return NextResponse.json(
+        { error: "No video source found for this job" },
+        { status: 400 }
+      );
+    }
+
     const gcsPath = await downloadFullVideoToGcs(videoUrl, job.id, job.wpShowId ?? undefined);
 
     // Cache the GCS path in metadata so future clicks don't re-download.
@@ -68,10 +73,10 @@ export async function POST(
       },
     });
 
-    const url = await generateSignedDownloadUrl(gcsPath, 4 * 60 * 60 * 1000);
+    const url = await generateSignedDownloadUrl(gcsPath, DOWNLOAD_URL_EXPIRY_MS);
     return NextResponse.json({ downloadUrl: url });
   } catch (error) {
-    console.error(`[download-video] Failed to download video for job ${job.id}:`, error);
+    console.error(`[download-video] Failed for job ${job.id}:`, error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to download video" },
       { status: 500 }
