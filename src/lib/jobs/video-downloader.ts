@@ -150,3 +150,111 @@ export async function downloadVideoToGcs(
     await rmdir(tempDir).catch(() => {});
   }
 }
+
+/**
+ * Download the full video (not audio-only) from YouTube/Vimeo to GCS.
+ * Used for manual Transistor video uploads where the admin needs the
+ * original video file. Unlike downloadVideoToGcs, this does NOT extract
+ * audio — it keeps the best available video+audio muxed into mp4.
+ *
+ * @param videoUrl - Full YouTube or Vimeo URL
+ * @param jobId - For log context
+ * @param wpShowId - Show that owns this download (drives cookie lookup)
+ * @returns GCS path of the downloaded video
+ */
+export async function downloadFullVideoToGcs(
+  videoUrl: string,
+  jobId: string,
+  wpShowId?: number
+): Promise<string> {
+  const sourceLabel = deriveSourceLabel(videoUrl);
+  if (!sourceLabel) {
+    throw new Error(`Invalid video URL — must be a YouTube or Vimeo URL: ${videoUrl}`);
+  }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const timestamp = now.getTime();
+  const gcsPath = `uploads/${year}/${month}/${timestamp}-${sourceLabel}-video.mp4`;
+
+  const bucketName = process.env.GCS_BUCKET_NAME;
+  if (!bucketName) {
+    throw new Error("GCS_BUCKET_NAME is not set");
+  }
+  const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
+  let storage: Storage;
+  if (credentialsJson) {
+    storage = new Storage({ credentials: JSON.parse(credentialsJson) });
+  } else {
+    storage = new Storage({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
+  }
+
+  const tempDir = await mkdtemp(join(tmpdir(), "swm-video-full-dl-"));
+  const outputTemplate = join(tempDir, "video.%(ext)s");
+
+  let cookieValue: string | null = null;
+  if (typeof wpShowId === "number") {
+    cookieValue = await getYoutubeCookiesForShow(wpShowId);
+  }
+  if (!cookieValue && process.env.YOUTUBE_COOKIES) {
+    cookieValue = process.env.YOUTUBE_COOKIES;
+  }
+
+  let cookiesPath: string | null = null;
+  if (cookieValue) {
+    cookiesPath = join(tempDir, "cookies.txt");
+    await writeFile(cookiesPath, cookieValue, { encoding: "utf-8", mode: 0o600 });
+  }
+
+  try {
+    console.log(`[video-downloader] Job ${jobId}: downloading full video ${sourceLabel} via yt-dlp`);
+
+    const args = [
+      "--no-playlist",
+      "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+      "--merge-output-format", "mp4",
+      "-o", outputTemplate,
+      "--no-warnings",
+      "--no-progress",
+    ];
+
+    if (cookiesPath) {
+      args.push("--cookies", cookiesPath);
+    }
+
+    args.push(videoUrl);
+
+    const { stderr } = await execFileAsync("yt-dlp", args, {
+      timeout: 60 * 60 * 1000,       // 60 minutes — full video downloads are larger
+      killSignal: "SIGKILL",
+      maxBuffer: 200 * 1024 * 1024,
+    });
+
+    if (stderr) {
+      console.warn(`[video-downloader] Job ${jobId} video stderr: ${stderr}`);
+    }
+
+    const files = await readdir(tempDir);
+    const videoFile = files.find((f) => f.startsWith("video.") && f !== "video.part");
+    if (!videoFile) {
+      throw new Error("yt-dlp completed but no output video file found");
+    }
+    const tempVideoPath = join(tempDir, videoFile);
+
+    console.log(`[video-downloader] Job ${jobId}: uploading full video to GCS at ${gcsPath}`);
+    await storage.bucket(bucketName).upload(tempVideoPath, {
+      destination: gcsPath,
+      metadata: { contentType: "video/mp4" },
+    });
+
+    console.log(`[video-downloader] Job ${jobId}: full video download complete`);
+    return gcsPath;
+  } finally {
+    const files = await readdir(tempDir).catch(() => []);
+    for (const f of files) {
+      await unlink(join(tempDir, f)).catch(() => {});
+    }
+    await rmdir(tempDir).catch(() => {});
+  }
+}
