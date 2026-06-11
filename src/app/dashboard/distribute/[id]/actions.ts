@@ -201,6 +201,15 @@ export async function deleteJob(jobId: string): Promise<FormState> {
     }
   }
 
+  // Delete cached full video from GCS if present (URL-sourced jobs may not have gcsPath)
+  const metadata = job.metadata as Record<string, unknown> | null;
+  const fullVideoPath = metadata?.gcsFullVideoPath as string | undefined;
+  if (fullVideoPath) {
+    await deleteFile(fullVideoPath).catch((e) =>
+      console.error("[deleteJob] Failed to delete full video from GCS:", e)
+    );
+  }
+
   // Delete related records then the job itself
   await db.$transaction(async (tx) => {
     await tx.aiSuggestion.deleteMany({ where: { jobId } });
