@@ -240,8 +240,11 @@ export async function uploadToTransistor(
     });
 
     if (!publishRes.ok) {
-      console.warn(
-        `[transistor] Schedule failed (${publishRes.status}), episode remains as draft`
+      const body = await publishRes.text().catch(() => "");
+      // Surface as a failure — silently leaving the episode as a draft made
+      // the portal show "completed" while nothing was scheduled.
+      throw new Error(
+        `Transistor episode ${episodeId} was created and audio uploaded, but scheduling failed (${publishRes.status}). It remains a draft — publish it in Transistor or retry. ${body.slice(0, 300)}`
       );
     }
   } else {
@@ -258,8 +261,11 @@ export async function uploadToTransistor(
     });
 
     if (!publishRes.ok) {
-      console.warn(
-        `[transistor] Publish failed (${publishRes.status}), episode remains as draft`
+      const body = await publishRes.text().catch(() => "");
+      // Surface as a failure — silently leaving the episode as a draft made
+      // the portal show "completed" while nothing went live.
+      throw new Error(
+        `Transistor episode ${episodeId} was created and audio uploaded, but publishing failed (${publishRes.status}). It remains a draft — publish it in Transistor or retry. ${body.slice(0, 300)}`
       );
     }
   }
