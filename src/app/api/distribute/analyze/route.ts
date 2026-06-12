@@ -23,6 +23,12 @@ function friendlyAnalyzeError(raw: string): string {
   return raw;
 }
 
+// An analyze "running" state older than this is considered dead (the
+// background pipeline died with a server restart/redeploy) and may be
+// restarted. The longest legitimate pipeline (download + transcribe a
+// multi-hour episode) stays well under this.
+const ANALYZE_STALE_MS = 90 * 60 * 1000;
+
 type AnalyzeState = {
   state: "running" | "complete" | "failed";
   step?: string;
@@ -168,7 +174,7 @@ async function loadAuthorizedJob(jobId: string) {
   }
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
-    select: { id: true, userId: true, gcsPath: true, metadata: true, wpShowId: true },
+    select: { id: true, userId: true, gcsPath: true, metadata: true, wpShowId: true, status: true },
   });
   if (!job) {
     return { errorResponse: NextResponse.json({ error: "Job not found." }, { status: 404 }) };
@@ -213,11 +219,30 @@ export async function POST(request: NextRequest) {
   if (existing?.state === "running") {
     // Already in flight (e.g. user retried after a transient client error) —
     // don't start a second pipeline, just let the client resume polling.
-    return NextResponse.json({ started: true, resumed: true }, { status: 202 });
+    // EXCEPT: a "running" state with a stale startedAt means the background
+    // pipeline died (server restart/redeploy kills fire-and-forget work).
+    // Without this check the job would report "running" forever and the
+    // producer could never re-analyze.
+    const startedAt = existing.startedAt ? Date.parse(existing.startedAt) : NaN;
+    const isStale = Number.isNaN(startedAt) || Date.now() - startedAt > ANALYZE_STALE_MS;
+    if (!isStale) {
+      return NextResponse.json({ started: true, resumed: true }, { status: 202 });
+    }
+    console.warn(`[analyze] Stale running state for job ${jobId} — restarting analysis`);
   }
 
   if (!job.gcsPath && !meta.existingVimeoUrl && !meta.existingYoutubeUrl) {
     return NextResponse.json({ error: "No video uploaded." }, { status: 400 });
+  }
+
+  // A previous analyze failure marks the job "failed". Starting a fresh
+  // analysis must reset it to "pending", otherwise /api/upload/confirm
+  // rejects the job (409) even after a successful re-analysis.
+  if (job.status === "failed") {
+    await db.distributionJob.update({
+      where: { id: jobId },
+      data: { status: "pending", errorMessage: null },
+    });
   }
 
   const startState: AnalyzeState = {
@@ -263,6 +288,15 @@ export async function GET(request: NextRequest) {
   }
 
   if (analyze.state === "running") {
+    const startedAt = analyze.startedAt ? Date.parse(analyze.startedAt) : NaN;
+    if (Number.isNaN(startedAt) || Date.now() - startedAt > ANALYZE_STALE_MS) {
+      // Background pipeline died (server restart). Report failed so the
+      // client stops polling and offers a retry.
+      return NextResponse.json({
+        state: "failed",
+        error: "Analysis was interrupted by a server restart — please try again.",
+      });
+    }
     return NextResponse.json({ state: "running", step: analyze.step ?? "starting" });
   }
 

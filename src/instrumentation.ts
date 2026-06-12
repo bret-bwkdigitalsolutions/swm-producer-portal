@@ -11,6 +11,16 @@ export async function register() {
   // Only run on the Node.js server, not during build or edge runtime
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  await sweepStuckProcessingJobs();
+  await sweepStuckAnalyses();
+}
+
+/**
+ * Jobs left in "processing" when the server shut down. The fire-and-forget
+ * processJob pipeline died with the process — mark them failed so producers
+ * can retry.
+ */
+async function sweepStuckProcessingJobs() {
   try {
     const stuck = await db.distributionJob.findMany({
       where: { status: "processing" },
@@ -47,5 +57,49 @@ export async function register() {
   } catch (error) {
     // Don't block startup if the sweep fails
     console.error("[instrumentation] Stuck job sweep failed:", error);
+  }
+}
+
+/**
+ * Analyze pipelines left in "running" when the server shut down. These jobs
+ * sit at status "pending" (not "processing"), so the sweep above misses them.
+ * Mark the analyze state failed so the client stops polling and the producer
+ * can re-run analysis.
+ */
+async function sweepStuckAnalyses() {
+  try {
+    const stuck = await db.distributionJob.findMany({
+      where: {
+        metadata: { path: ["analyze", "state"], equals: "running" },
+      },
+      select: { id: true, title: true, metadata: true },
+    });
+
+    if (stuck.length === 0) return;
+
+    console.log(
+      `[instrumentation] Found ${stuck.length} analyze pipeline(s) stuck in "running" — marking as failed`
+    );
+
+    for (const job of stuck) {
+      const metadata = (job.metadata as Record<string, unknown>) ?? {};
+      const analyze = (metadata.analyze as Record<string, unknown>) ?? {};
+      await db.distributionJob.update({
+        where: { id: job.id },
+        data: {
+          metadata: {
+            ...metadata,
+            analyze: {
+              ...analyze,
+              state: "failed",
+              error: "Analysis was interrupted by a server restart — please try again.",
+            },
+          },
+        },
+      });
+      console.log(`[instrumentation] Analyze for job ${job.id} ("${job.title}") marked as failed`);
+    }
+  } catch (error) {
+    console.error("[instrumentation] Stuck analyze sweep failed:", error);
   }
 }
