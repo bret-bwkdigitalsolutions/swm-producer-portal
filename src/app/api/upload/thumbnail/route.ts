@@ -82,7 +82,14 @@ export async function POST(request: NextRequest) {
       contentType = file.type;
       filename = file.name;
     } else {
-      // YouTube thumbnail fallback — fetch server-side to avoid CORS
+      // YouTube thumbnail fallback — fetch server-side to avoid CORS.
+      // Validate the ID strictly before interpolating it into a URL.
+      if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId!)) {
+        return NextResponse.json(
+          { error: "Invalid YouTube video ID." },
+          { status: 400 }
+        );
+      }
       const urls = [
         `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
         `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`,

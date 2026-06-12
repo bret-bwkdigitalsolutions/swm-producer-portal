@@ -40,6 +40,14 @@ export default async function AdminCredentialsPage() {
     getCachedShows().catch(() => []),
     db.platformCredential.findMany({
       orderBy: { platform: "asc" },
+      // Never pull secret values into the page — only display fields.
+      select: {
+        id: true,
+        wpShowId: true,
+        platform: true,
+        status: true,
+        credentialType: true,
+      },
     }),
   ]);
 

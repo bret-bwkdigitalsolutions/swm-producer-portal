@@ -90,13 +90,13 @@ describe("submitDistribution", () => {
   it("accepts an existing YouTube URL instead of a file", async () => {
     const fd = makeFormData({
       ...BASE_FIELDS,
-      existing_youtube_url: "https://www.youtube.com/watch?v=abc123",
+      existing_youtube_url: "https://www.youtube.com/watch?v=abc12345678",
     });
     const result = await submitDistribution({}, fd);
     expect(result.success).toBe(true);
     const createdData = mockCreate.mock.calls[0][0].data;
     expect(createdData.metadata.existingYoutubeUrl).toBe(
-      "https://www.youtube.com/watch?v=abc123"
+      "https://www.youtube.com/watch?v=abc12345678"
     );
     expect(createdData.metadata.videoFileName).toBeNull();
   });
@@ -104,13 +104,13 @@ describe("submitDistribution", () => {
   it("accepts a YouTube /live/ URL", async () => {
     const fd = makeFormData({
       ...BASE_FIELDS,
-      existing_youtube_url: "https://www.youtube.com/live/abc123",
+      existing_youtube_url: "https://www.youtube.com/live/abc12345678",
     });
     const result = await submitDistribution({}, fd);
     expect(result.success).toBe(true);
     const createdData = mockCreate.mock.calls[0][0].data;
     expect(createdData.metadata.existingYoutubeUrl).toBe(
-      "https://www.youtube.com/live/abc123"
+      "https://www.youtube.com/live/abc12345678"
     );
   });
 

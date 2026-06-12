@@ -82,10 +82,10 @@ describe("downloadVideoToGcs", () => {
 
   it("returns a GCS path labeled with the YouTube video ID", async () => {
     const result = await downloadVideoToGcs(
-      "https://www.youtube.com/watch?v=abc123xyz",
+      "https://www.youtube.com/watch?v=abc123xyz45",
       "job-1"
     );
-    expect(result).toMatch(/uploads\/\d{4}\/\d{2}\/\d+-youtube-abc123xyz\.mp3/);
+    expect(result).toMatch(/uploads\/\d{4}\/\d{2}\/\d+-youtube-abc123xyz45\.mp3/);
   });
 
   it("returns a GCS path labeled with the Vimeo video ID", async () => {
@@ -113,7 +113,7 @@ describe("downloadVideoToGcs", () => {
 
   it("passes --cookies when YOUTUBE_COOKIES is set", async () => {
     process.env.YOUTUBE_COOKIES = "# Netscape HTTP Cookie File\n";
-    await downloadVideoToGcs("https://www.youtube.com/watch?v=abc123xyz", "job-1");
+    await downloadVideoToGcs("https://www.youtube.com/watch?v=abc123xyz45", "job-1");
     const args = mockExecFile.mock.calls[0][1] as string[];
     expect(args).toContain("--cookies");
   });
@@ -130,7 +130,7 @@ describe("downloadVideoToGcs", () => {
       "# Netscape HTTP Cookie File\n# from-identity\n"
     );
     await downloadVideoToGcs(
-      "https://www.youtube.com/watch?v=abc123xyz",
+      "https://www.youtube.com/watch?v=abc123xyz45",
       "job-1",
       42
     );
@@ -146,7 +146,7 @@ describe("downloadVideoToGcs", () => {
     process.env.YOUTUBE_COOKIES = "# Netscape HTTP Cookie File\n# env-fallback\n";
     mockGetYoutubeCookiesForShow.mockResolvedValue(null);
     await downloadVideoToGcs(
-      "https://www.youtube.com/watch?v=abc123xyz",
+      "https://www.youtube.com/watch?v=abc123xyz45",
       "job-1",
       42
     );
@@ -157,7 +157,7 @@ describe("downloadVideoToGcs", () => {
   it("skips the identity lookup entirely when wpShowId is omitted", async () => {
     process.env.YOUTUBE_COOKIES = "# Netscape HTTP Cookie File\n# env-fallback\n";
     await downloadVideoToGcs(
-      "https://www.youtube.com/watch?v=abc123xyz",
+      "https://www.youtube.com/watch?v=abc123xyz45",
       "job-1"
     );
     expect(mockGetYoutubeCookiesForShow).not.toHaveBeenCalled();

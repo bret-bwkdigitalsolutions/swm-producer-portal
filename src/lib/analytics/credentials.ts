@@ -3,8 +3,16 @@ import { db } from "@/lib/db";
 import { refreshAccessToken } from "@/lib/youtube-oauth";
 
 /**
+ * Shows that must NEVER fall back to the network default credentials.
+ * Your Dark Companion (wpShowId 21) is a separate network — falling back to
+ * Sunset Lounge credentials would publish its content to the wrong accounts.
+ */
+const NO_NETWORK_FALLBACK_SHOW_IDS = new Set([21]);
+
+/**
  * Resolve an API credential for a given show and platform.
- * Falls back to network default (wpShowId=0) if show-specific not found.
+ * Falls back to network default (wpShowId=0) if show-specific not found,
+ * except for shows in NO_NETWORK_FALLBACK_SHOW_IDS.
  */
 export async function resolveCredential(
   wpShowId: number,
@@ -17,7 +25,7 @@ export async function resolveCredential(
   if (showCred) return showCred;
 
   // Fall back to network default
-  if (wpShowId !== 0) {
+  if (wpShowId !== 0 && !NO_NETWORK_FALLBACK_SHOW_IDS.has(wpShowId)) {
     const networkCred = await db.platformCredential.findUnique({
       where: { wpShowId_platform: { wpShowId: 0, platform } },
     });
@@ -40,7 +48,7 @@ export async function resolvePlatformId(
   });
   if (showLink) return showLink.url;
 
-  if (wpShowId !== 0) {
+  if (wpShowId !== 0 && !NO_NETWORK_FALLBACK_SHOW_IDS.has(wpShowId)) {
     const networkLink = await db.showPlatformLink.findUnique({
       where: { wpShowId_platform: { wpShowId: 0, platform: platformLinkType } },
     });
