@@ -67,6 +67,23 @@ async function requireShowAccess(wpShowId: number): Promise<void> {
   if (!access) throw new Error("Access denied");
 }
 
+/** Guard for aggregated actions: caller must have access to EVERY requested show. */
+async function requireShowsAccess(wpShowIds: number[]): Promise<void> {
+  const session = await auth();
+  if (!session?.user) throw new Error("Not authenticated");
+  if (wpShowIds.length === 0) return;
+  if (session.user.role === "admin") return;
+
+  const accessible = await db.userShowAccess.findMany({
+    where: { userId: session.user.id, wpShowId: { in: wpShowIds } },
+    select: { wpShowId: true },
+  });
+  const allowed = new Set(accessible.map((a) => a.wpShowId));
+  if (wpShowIds.some((id) => !allowed.has(id))) {
+    throw new Error("Access denied");
+  }
+}
+
 export async function fetchAccessibleShows(): Promise<AccessibleShow[]> {
   const session = await auth();
   if (!session?.user) return [];
@@ -415,6 +432,7 @@ export async function fetchAggregatedPodcastAnalytics(
   wpShowIds: number[],
   dateRange: DateRange
 ): Promise<TransistorAnalyticsPoint[]> {
+  await requireShowsAccess(wpShowIds);
   const allData = await throttledMap(wpShowIds, (id) =>
     getTransistorShowAnalytics(id, dateRange)
   );
@@ -424,6 +442,7 @@ export async function fetchAggregatedPodcastAnalytics(
 export async function fetchAggregatedPodcastEpisodes(
   wpShowIds: number[]
 ): Promise<TransistorEpisode[]> {
+  await requireShowsAccess(wpShowIds);
   const allEpisodes = await throttledMap(wpShowIds, (id) =>
     getTransistorEpisodes(id)
   );
@@ -433,6 +452,7 @@ export async function fetchAggregatedPodcastEpisodes(
 export async function fetchAggregatedYouTubeChannel(
   wpShowIds: number[]
 ): Promise<YouTubeChannelStats> {
+  await requireShowsAccess(wpShowIds);
   const allChannels = await throttledMap(wpShowIds, (id) =>
     getYouTubeChannelStats(id)
   );
@@ -442,6 +462,7 @@ export async function fetchAggregatedYouTubeChannel(
 export async function fetchAggregatedYouTubeVideos(
   wpShowIds: number[]
 ): Promise<YouTubeVideo[]> {
+  await requireShowsAccess(wpShowIds);
   const allVideos = await throttledMap(wpShowIds, (id) =>
     getYouTubeVideos(id)
   );
@@ -452,6 +473,7 @@ export async function fetchAggregatedYouTubeAnalytics(
   wpShowIds: number[],
   dateRange: DateRange
 ): Promise<YouTubeAnalyticsPoint[]> {
+  await requireShowsAccess(wpShowIds);
   const allData = await throttledMap(wpShowIds, (id) =>
     getYouTubeChannelAnalytics(id, dateRange)
   );
@@ -462,6 +484,7 @@ export async function fetchAggregatedYouTubeGeo(
   wpShowIds: number[],
   dateRange: DateRange
 ): Promise<YouTubeCountryData[]> {
+  await requireShowsAccess(wpShowIds);
   const allGeo = await throttledMap(wpShowIds, (id) =>
     getYouTubeGeoAnalytics(id, dateRange)
   );
@@ -472,6 +495,7 @@ export async function fetchAggregatedYouTubeDemographics(
   wpShowIds: number[],
   dateRange: DateRange
 ): Promise<YouTubeDemographic[]> {
+  await requireShowsAccess(wpShowIds);
   const allDemos = await throttledMap(wpShowIds, (id) =>
     getYouTubeDemographics(id, dateRange)
   );
@@ -482,6 +506,7 @@ export async function fetchAggregatedYouTubeSubscription(
   wpShowIds: number[],
   dateRange: DateRange
 ): Promise<YouTubeSubscriptionStatus[]> {
+  await requireShowsAccess(wpShowIds);
   const allSubs = await throttledMap(wpShowIds, (id) =>
     getYouTubeSubscriptionStatus(id, dateRange)
   );
@@ -492,6 +517,7 @@ export async function fetchAggregatedYouTubeDevices(
   wpShowIds: number[],
   dateRange: DateRange
 ): Promise<YouTubeDeviceType[]> {
+  await requireShowsAccess(wpShowIds);
   const allDevices = await throttledMap(wpShowIds, (id) =>
     getYouTubeDeviceTypes(id, dateRange)
   );
@@ -502,6 +528,7 @@ export async function fetchAggregatedYouTubeContentTypes(
   wpShowIds: number[],
   dateRange: DateRange
 ): Promise<YouTubeContentType[]> {
+  await requireShowsAccess(wpShowIds);
   const allTypes = await throttledMap(wpShowIds, (id) =>
     getYouTubeContentTypes(id, dateRange)
   );
@@ -511,6 +538,7 @@ export async function fetchAggregatedYouTubeContentTypes(
 export async function fetchAggregatedScrapedOverview(
   wpShowIds: number[]
 ): Promise<ScrapedOverviewData> {
+  await requireShowsAccess(wpShowIds);
   const allOverviews = await throttledMap(wpShowIds, (id) =>
     fetchScrapedOverview(id)
   );
@@ -520,6 +548,7 @@ export async function fetchAggregatedScrapedOverview(
 export async function fetchAggregatedScrapedGeo(
   wpShowIds: number[]
 ): Promise<{ data: ScrapedGeoEntry[]; scrapedAt: string | null }> {
+  await requireShowsAccess(wpShowIds);
   const allGeo = await throttledMap(wpShowIds, (id) => fetchScrapedGeo(id));
   return aggregateGeo(allGeo);
 }
@@ -527,6 +556,7 @@ export async function fetchAggregatedScrapedGeo(
 export async function fetchAggregatedScrapedApps(
   wpShowIds: number[]
 ): Promise<{ data: ScrapedAppEntry[]; scrapedAt: string | null }> {
+  await requireShowsAccess(wpShowIds);
   const allApps = await throttledMap(wpShowIds, (id) => fetchScrapedApps(id));
   return aggregateApps(allApps);
 }
@@ -534,6 +564,7 @@ export async function fetchAggregatedScrapedApps(
 export async function fetchAggregatedScrapedDevices(
   wpShowIds: number[]
 ): Promise<{ data: ScrapedDeviceEntry[]; scrapedAt: string | null }> {
+  await requireShowsAccess(wpShowIds);
   const allDevices = await throttledMap(wpShowIds, (id) => fetchScrapedDevices(id));
   return aggregateDevices(allDevices);
 }
@@ -541,6 +572,7 @@ export async function fetchAggregatedScrapedDevices(
 export async function refreshAggregatedCache(
   wpShowIds: number[]
 ): Promise<void> {
+  await requireShowsAccess(wpShowIds);
   for (const id of wpShowIds) {
     await bustCachePrefix(`analytics:transistor:${id}`);
     await bustCachePrefix(`analytics:youtube:${id}`);
