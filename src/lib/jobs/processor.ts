@@ -8,6 +8,7 @@ import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
 import { runVerificationTier, type TierResult } from "./verify-distribution";
+import { mergeJobMetadata } from "./job-metadata";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
@@ -764,13 +765,11 @@ async function processJobInner(
 
   // --- Schedule tiered post-distribution verification (fire-and-forget) ---
   // Each tier checks deeper: tier 1 = "did the resource land at all", tier 4 =
-  // "is the public URL actually serving". Scheduled via setTimeout so the
-  // processor returns immediately while verification runs in background.
-  // NOTE: setTimeout-based; if the container restarts mid-flight, in-progress
-  // verifications are lost. Acceptable for now — switch to DB-backed schedule
-  // if reliability becomes an issue.
+  // "is the public URL actually serving". Timers run via setTimeout, but the
+  // schedule is persisted to job metadata so a server restart can resume
+  // pending tiers (see resumeVerificationSchedules, called at startup).
   if (finalStatus === "completed" || (!allFailed && anyFailed)) {
-    scheduleVerificationTiers(job.id, job.wpShowId, job.title, !!existingYoutubeUrl, isPremium);
+    await scheduleVerificationTiers(job.id, job.wpShowId, job.title, !!existingYoutubeUrl, isPremium);
   }
 
   return { jobId: job.id, status: finalStatus, platformResults };
@@ -783,23 +782,109 @@ const VERIFICATION_TIER_DELAYS_MS: Record<1 | 2 | 3 | 4, number> = {
   4: 30 * 60_000,   // 30 minutes — public URL HEAD check
 };
 
-function scheduleVerificationTiers(
+type VerificationSchedule = {
+  scheduledAt: string;
+  wpShowId: number;
+  title: string;
+  isLiveRecording: boolean;
+  isPremium: boolean;
+  done: boolean;
+};
+
+async function scheduleVerificationTiers(
   jobId: string,
   wpShowId: number,
   title: string,
   isLiveRecording: boolean,
   isPremium: boolean,
 ) {
-  const tiers: Array<1 | 2 | 3 | 4> = [1, 2, 3, 4];
-  for (const tier of tiers) {
-    const delay = VERIFICATION_TIER_DELAYS_MS[tier];
-    setTimeout(() => {
-      runVerificationTier(tier, jobId, wpShowId, title, isLiveRecording, isPremium)
-        .then((result) => maybeNotifyTierFailure(jobId, wpShowId, title, result))
-        .catch((err) => {
-          console.error(`[verify] tier ${tier} failed for job ${jobId}:`, err);
-        });
-    }, delay).unref?.(); // don't keep the process alive past job completion
+  const schedule: VerificationSchedule = {
+    scheduledAt: new Date().toISOString(),
+    wpShowId,
+    title,
+    isLiveRecording,
+    isPremium,
+    done: false,
+  };
+
+  // Persist before scheduling so a restart can resume pending tiers.
+  await mergeJobMetadata(jobId, { verificationSchedule: schedule }).catch((err) =>
+    console.error(`[verify] could not persist verification schedule for job ${jobId}:`, err)
+  );
+
+  for (const tier of [1, 2, 3, 4] as const) {
+    scheduleVerificationTier(jobId, schedule, tier, VERIFICATION_TIER_DELAYS_MS[tier]);
+  }
+}
+
+function scheduleVerificationTier(
+  jobId: string,
+  schedule: VerificationSchedule,
+  tier: 1 | 2 | 3 | 4,
+  delayMs: number,
+) {
+  setTimeout(() => {
+    runVerificationTier(tier, jobId, schedule.wpShowId, schedule.title, schedule.isLiveRecording, schedule.isPremium)
+      .then((result) => maybeNotifyTierFailure(jobId, schedule.wpShowId, schedule.title, result))
+      .then(() => {
+        // Final tier done — mark the schedule complete so the startup sweep
+        // stops considering this job.
+        if (tier === 4) {
+          return mergeJobMetadata(jobId, {
+            verificationSchedule: { ...schedule, done: true },
+          });
+        }
+      })
+      .catch((err) => {
+        console.error(`[verify] tier ${tier} failed for job ${jobId}:`, err);
+      });
+  }, delayMs).unref?.(); // don't keep the process alive past job completion
+}
+
+/**
+ * Called from instrumentation on server startup. Re-schedules verification
+ * tiers that were pending when the previous container died (setTimeout-based
+ * timers don't survive restarts). Tiers whose delay already elapsed run
+ * shortly after startup; schedules older than 24h are abandoned.
+ */
+export async function resumeVerificationSchedules(): Promise<void> {
+  const jobs = await db.distributionJob.findMany({
+    where: { metadata: { path: ["verificationSchedule", "done"], equals: false } },
+    select: { id: true, metadata: true },
+  });
+
+  for (const job of jobs) {
+    const meta = (job.metadata as Record<string, unknown>) ?? {};
+    const schedule = meta.verificationSchedule as VerificationSchedule | undefined;
+    if (!schedule) continue;
+
+    const elapsed = Date.now() - Date.parse(schedule.scheduledAt);
+    if (Number.isNaN(elapsed) || elapsed > 24 * 60 * 60 * 1000) {
+      await mergeJobMetadata(job.id, {
+        verificationSchedule: { ...schedule, done: true },
+      }).catch(() => {});
+      continue;
+    }
+
+    const ranTiers = new Set(
+      ((meta.verifications as Array<{ tier: number }> | undefined) ?? []).map((v) => v.tier)
+    );
+    const remaining = ([1, 2, 3, 4] as const).filter((t) => !ranTiers.has(t));
+    if (remaining.length === 0) {
+      await mergeJobMetadata(job.id, {
+        verificationSchedule: { ...schedule, done: true },
+      }).catch(() => {});
+      continue;
+    }
+
+    console.log(
+      `[verify] Resuming verification for job ${job.id} — tiers ${remaining.join(", ")} pending`
+    );
+    for (const tier of remaining) {
+      // Stagger overdue tiers slightly so they don't all fire at once.
+      const delay = Math.max(VERIFICATION_TIER_DELAYS_MS[tier] - elapsed, tier * 10_000);
+      scheduleVerificationTier(job.id, schedule, tier, delay);
+    }
   }
 }
 

@@ -13,6 +13,15 @@ export async function register() {
 
   await sweepStuckProcessingJobs();
   await sweepStuckAnalyses();
+
+  // Re-schedule post-distribution verification tiers that were pending when
+  // the previous container died (their setTimeout timers don't survive).
+  try {
+    const { resumeVerificationSchedules } = await import("@/lib/jobs/processor");
+    await resumeVerificationSchedules();
+  } catch (error) {
+    console.error("[instrumentation] Verification resume failed:", error);
+  }
 }
 
 /**
