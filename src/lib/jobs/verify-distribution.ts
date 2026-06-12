@@ -285,22 +285,25 @@ export async function runVerificationTier(
     platforms: platformResults,
   };
 
-  // Persist into job.metadata.verifications (array)
+  // Persist into job.metadata.verifications (array). Read + merge happen
+  // under the same row lock so concurrent tiers can't drop each other's
+  // results.
   try {
-    const job = await db.distributionJob.findUnique({
-      where: { id: jobId }, select: { metadata: true },
-    });
-    if (job) {
-      const meta = (job.metadata as Record<string, unknown>) ?? {};
+    await db.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<Array<{ metadata: unknown }>>`
+        SELECT metadata FROM distribution_jobs WHERE id = ${jobId} FOR UPDATE
+      `;
+      if (rows.length === 0) return;
+      const meta = (rows[0].metadata as Record<string, unknown>) ?? {};
       const existing = (meta.verifications as TierResult[] | undefined) ?? [];
       // Replace any prior entry for this tier (handles re-runs)
       const filtered = existing.filter((v) => v.tier !== tier);
       meta.verifications = [...filtered, tierResult];
-      await db.distributionJob.update({
+      await tx.distributionJob.update({
         where: { id: jobId },
         data: { metadata: JSON.parse(JSON.stringify(meta)) },
       });
-    }
+    });
   } catch (err) {
     console.warn("[verify] could not persist tier result:", err);
   }

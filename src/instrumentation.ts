@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
 
 /**
  * Next.js instrumentation — runs once on server startup before handling requests.
@@ -93,17 +94,11 @@ async function sweepStuckAnalyses() {
     for (const job of stuck) {
       const metadata = (job.metadata as Record<string, unknown>) ?? {};
       const analyze = (metadata.analyze as Record<string, unknown>) ?? {};
-      await db.distributionJob.update({
-        where: { id: job.id },
-        data: {
-          metadata: {
-            ...metadata,
-            analyze: {
-              ...analyze,
-              state: "failed",
-              error: "Analysis was interrupted by a server restart — please try again.",
-            },
-          },
+      await mergeJobMetadata(job.id, {
+        analyze: {
+          ...analyze,
+          state: "failed",
+          error: "Analysis was interrupted by a server restart — please try again.",
         },
       });
       console.log(`[instrumentation] Analyze for job ${job.id} ("${job.title}") marked as failed`);

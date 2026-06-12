@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateSignedUploadUrl } from "@/lib/gcs";
+import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
 
 const ALLOWED_VIDEO_TYPES = [
   "video/mp4",
@@ -94,18 +95,8 @@ export async function POST(request: NextRequest) {
     );
 
     if (isThumbnail) {
-      // Store thumbnail path in job metadata
-      const job2 = await db.distributionJob.findUnique({
-        where: { id: jobId },
-        select: { metadata: true },
-      });
-      const existingMetadata = (job2?.metadata as Record<string, unknown>) ?? {};
-      await db.distributionJob.update({
-        where: { id: jobId },
-        data: {
-          metadata: { ...existingMetadata, thumbnailGcsPath: gcsPath },
-        },
-      });
+      // Store thumbnail path in job metadata (race-safe merge)
+      await mergeJobMetadata(jobId, { thumbnailGcsPath: gcsPath });
     } else {
       // Update the distribution job with the video GCS path
       await db.distributionJob.update({

@@ -220,19 +220,12 @@ async function processJobInner(
       transcript = displayTranscript;
 
       // Store transcript in job metadata
-      const currentMetadata = job.metadata as Record<string, unknown>;
-      await db.distributionJob.update({
-        where: { id: job.id },
-        data: {
-          metadata: {
-            ...currentMetadata,
-            transcript: transcriptionResult.fullText,
-            transcriptDisplay: displayTranscript,
-            transcriptTimestamped: formattedTranscript,
-            detectedLanguage: transcriptionResult.language,
-            audioDuration: transcriptionResult.duration,
-          },
-        },
+      await mergeJobMetadata(job.id, {
+        transcript: transcriptionResult.fullText,
+        transcriptDisplay: displayTranscript,
+        transcriptTimestamped: formattedTranscript,
+        detectedLanguage: transcriptionResult.language,
+        audioDuration: transcriptionResult.duration,
       });
 
       // Generate AI suggestions from transcript
@@ -469,17 +462,7 @@ async function processJobInner(
         updatedMetadata.thumbnailGcsPath = gcsPath;
 
         // Persist to DB so retries and blog posts can also use it
-        const currentMeta =
-          (
-            await db.distributionJob.findUnique({
-              where: { id: job.id },
-              select: { metadata: true },
-            })
-          )?.metadata as Record<string, unknown> | null;
-        await db.distributionJob.update({
-          where: { id: job.id },
-          data: { metadata: { ...currentMeta, thumbnailGcsPath: gcsPath } },
-        });
+        await mergeJobMetadata(job.id, { thumbnailGcsPath: gcsPath });
 
         console.log(
           `[processor] YouTube thumbnail fallback saved to GCS: ${gcsPath}`

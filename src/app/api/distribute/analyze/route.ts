@@ -5,6 +5,7 @@ import { extractAudio } from "@/lib/jobs/audio-extractor";
 import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
 import { generateAiSuggestions } from "@/lib/jobs/ai-processor";
 import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
+import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
 import { getRecentEpisodeTitles, getLatestEpisodeNumbers, getShow } from "@/lib/wordpress/client";
 
 // Map raw yt-dlp / pipeline errors to a user-actionable message. "Sign in to
@@ -40,15 +41,7 @@ type AnalyzeState = {
 
 /** Merge analyze progress into job metadata without clobbering other keys. */
 async function setAnalyzeState(jobId: string, analyze: AnalyzeState) {
-  const job = await db.distributionJob.findUnique({
-    where: { id: jobId },
-    select: { metadata: true },
-  });
-  const metadata = (job?.metadata as Record<string, unknown>) ?? {};
-  await db.distributionJob.update({
-    where: { id: jobId },
-    data: { metadata: { ...metadata, analyze: JSON.parse(JSON.stringify(analyze)) } },
-  });
+  await mergeJobMetadata(jobId, { analyze });
 }
 
 /**
@@ -99,24 +92,13 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
     const transcription = await transcribeAudio(gcsAudioPath);
     const formattedTranscript = formatTranscriptForAI(transcription.segments);
 
-    // Store transcript in job metadata (re-read metadata to avoid clobbering
+    // Store transcript in job metadata (race-safe merge — doesn't clobber
     // the analyze progress writes above)
-    const freshJob = await db.distributionJob.findUnique({
-      where: { id: jobId },
-      select: { metadata: true },
-    });
-    const metadata = (freshJob?.metadata as Record<string, unknown>) ?? {};
-    await db.distributionJob.update({
-      where: { id: jobId },
-      data: {
-        metadata: {
-          ...metadata,
-          transcript: transcription.fullText,
-          transcriptLanguage: transcription.language,
-          audioDuration: transcription.duration,
-          gcsAudioPath,
-        },
-      },
+    await mergeJobMetadata(jobId, {
+      transcript: transcription.fullText,
+      transcriptLanguage: transcription.language,
+      audioDuration: transcription.duration,
+      gcsAudioPath,
     });
 
     // 3. Fetch show context for title generation
