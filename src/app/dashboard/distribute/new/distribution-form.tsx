@@ -212,7 +212,9 @@ export function DistributionForm({
     });
 
     if (!signedUrlRes.ok) {
-      const err = await signedUrlRes.json();
+      const err = await signedUrlRes
+        .json()
+        .catch(() => ({ error: `Server error (${signedUrlRes.status}) — please try again.` }));
       throw new Error(err.error ?? "Failed to get upload URL");
     }
 
@@ -355,30 +357,82 @@ export function DistributionForm({
         body: JSON.stringify({ jobId, skipProcessing: true }),
       });
       if (!confirmRes.ok) {
-        const err = await confirmRes.json();
+        const err = await confirmRes
+          .json()
+          .catch(() => ({ error: `Server error (${confirmRes.status}) — please try again.` }));
         throw new Error(err.error ?? "Failed to confirm upload");
       }
 
-      setAnalysisStep(
-        videoSource === "youtube"
-          ? "Downloading video from YouTube... this may take several minutes"
-          : videoSource === "vimeo"
-            ? "Downloading video from Vimeo... this may take several minutes"
-            : "Transcribing... this may take a few minutes"
-      );
+      // Kick off background analysis (returns immediately), then poll for
+      // progress. The pipeline (download + transcription) can run for many
+      // minutes — far longer than the proxy timeout on a single request.
       const analyzeRes = await fetch("/api/distribute/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId }),
       });
-
       if (!analyzeRes.ok) {
-        const err = await analyzeRes.json();
+        const err = await analyzeRes
+          .json()
+          .catch(() => ({ error: `Server error (${analyzeRes.status}) — please try again.` }));
         throw new Error(err.error ?? "Analysis failed");
       }
 
-      setAnalysisStep("Generating recommendations...");
-      const data = await analyzeRes.json();
+      const stepLabels: Record<string, string> = {
+        starting: "Starting analysis...",
+        downloading:
+          videoSource === "youtube"
+            ? "Downloading video from YouTube... this may take several minutes"
+            : "Downloading video from Vimeo... this may take several minutes",
+        extracting: "Extracting audio...",
+        transcribing: "Transcribing... this may take a few minutes",
+        generating: "Generating recommendations...",
+      };
+      setAnalysisStep(stepLabels.starting);
+
+      // Poll until complete/failed (cap at 60 minutes of polling)
+      const deadline = Date.now() + 60 * 60 * 1000;
+      let data: {
+        state?: string;
+        step?: string;
+        error?: string;
+        suggestions?: AiSuggestion[];
+        episodeNumber?: number | null;
+        seasonNumber?: number | null;
+      };
+      for (;;) {
+        if (Date.now() > deadline) {
+          throw new Error("Analysis timed out — please contact an admin.");
+        }
+        await new Promise((r) => setTimeout(r, 5000));
+
+        const pollRes = await fetch(
+          `/api/distribute/analyze?jobId=${encodeURIComponent(jobId)}`
+        );
+        if (!pollRes.ok) {
+          // Transient server/proxy hiccups shouldn't kill a long-running
+          // analysis — keep polling unless the job is genuinely gone.
+          if (pollRes.status === 404 || pollRes.status === 403) {
+            const err = await pollRes
+              .json()
+              .catch(() => ({ error: `Server error (${pollRes.status})` }));
+            throw new Error(err.error ?? "Analysis failed");
+          }
+          continue;
+        }
+        const poll = await pollRes.json().catch(() => null);
+        if (!poll) continue;
+
+        if (poll.state === "failed") {
+          throw new Error(poll.error ?? "Analysis failed");
+        }
+        if (poll.state === "complete") {
+          data = poll;
+          break;
+        }
+        // running (or none yet — DB write may lag the 202)
+        setAnalysisStep(stepLabels[poll.step ?? "starting"] ?? stepLabels.starting);
+      }
       const aiSuggestions: AiSuggestion[] = data.suggestions ?? [];
       setSuggestions(aiSuggestions);
 
@@ -472,7 +526,7 @@ export function DistributionForm({
           body: JSON.stringify({ jobId }),
         });
         if (confirmRes.status === 409) {
-          const errBody = await confirmRes.json();
+          const errBody = await confirmRes.json().catch(() => ({}));
           if (errBody.error === "duplicate_detected") {
             setDuplicateModal({ jobId, duplicates: errBody.duplicates ?? {} });
             setUploading(false);
@@ -481,7 +535,9 @@ export function DistributionForm({
           throw new Error(errBody.error ?? "Failed to confirm upload");
         }
         if (!confirmRes.ok) {
-          const err = await confirmRes.json();
+          const err = await confirmRes
+            .json()
+            .catch(() => ({ error: `Server error (${confirmRes.status}) — please try again.` }));
           throw new Error(err.error ?? "Failed to confirm upload");
         }
 
@@ -560,7 +616,7 @@ export function DistributionForm({
         body: JSON.stringify({ jobId: aiUploadedJobId }),
       });
       if (confirmRes.status === 409) {
-        const errBody = await confirmRes.json();
+        const errBody = await confirmRes.json().catch(() => ({}));
         if (errBody.error === "duplicate_detected") {
           setDuplicateModal({ jobId: aiUploadedJobId, duplicates: errBody.duplicates ?? {} });
           setUploading(false);
@@ -569,7 +625,9 @@ export function DistributionForm({
         throw new Error(errBody.error ?? "Failed to start distribution");
       }
       if (!confirmRes.ok) {
-        const err = await confirmRes.json();
+        const err = await confirmRes
+          .json()
+          .catch(() => ({ error: `Server error (${confirmRes.status}) — please try again.` }));
         throw new Error(err.error ?? "Failed to start distribution");
       }
 
@@ -596,7 +654,9 @@ export function DistributionForm({
         body: JSON.stringify({ jobId, forceDuplicates: true }),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res
+          .json()
+          .catch(() => ({ error: `Server error (${res.status}) — please try again.` }));
         throw new Error(err.error ?? "Failed to start distribution");
       }
       router.push(`/dashboard/distribute/${jobId}`);
