@@ -21,11 +21,16 @@ describe("GCS Client", () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
+    // gcs.ts caches the Storage client in a module-level singleton — reset
+    // modules so each test's dynamic import gets a fresh instance that
+    // re-reads the env vars.
+    vi.resetModules();
     process.env = {
       ...originalEnv,
       GCS_BUCKET_NAME: "test-bucket",
       GOOGLE_APPLICATION_CREDENTIALS: "/path/to/credentials.json",
     };
+    delete process.env.GCS_CREDENTIALS_JSON;
     mockGetSignedUrl.mockReset();
     mockDelete.mockReset();
     mockFile.mockClear();

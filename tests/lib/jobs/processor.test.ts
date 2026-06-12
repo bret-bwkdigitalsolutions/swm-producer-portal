@@ -8,9 +8,13 @@ const mockFindUnique = vi.fn();
 const mockJobUpdate = vi.fn();
 const mockPlatformUpdate = vi.fn();
 const mockUserFindUnique = vi.fn();
+const mockShowMetadataFindUnique = vi.fn();
+const mockPlatformCredentialFindUnique = vi.fn();
+const mockShowPlatformLinkFindUnique = vi.fn();
+const mockQueryRaw = vi.fn();
 
-vi.mock("@/lib/db", () => ({
-  db: {
+vi.mock("@/lib/db", () => {
+  const dbMock: Record<string, unknown> = {
     distributionJob: {
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
       update: (...args: unknown[]) => mockJobUpdate(...args),
@@ -21,8 +25,22 @@ vi.mock("@/lib/db", () => ({
     user: {
       findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
     },
-  },
-}));
+    showMetadata: {
+      findUnique: (...args: unknown[]) => mockShowMetadataFindUnique(...args),
+    },
+    platformCredential: {
+      findUnique: (...args: unknown[]) => mockPlatformCredentialFindUnique(...args),
+    },
+    showPlatformLink: {
+      findUnique: (...args: unknown[]) => mockShowPlatformLinkFindUnique(...args),
+    },
+    $queryRaw: (...args: unknown[]) => mockQueryRaw(...args),
+    // mergeJobMetadata runs its merge inside a transaction — hand the
+    // callback the same mock client.
+    $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(dbMock),
+  };
+  return { db: dbMock };
+});
 
 // ---------------------------------------------------------------------------
 // Mock platform modules
@@ -40,6 +58,7 @@ const mockGenerateSignedDownloadUrl = vi.fn();
 vi.mock("@/lib/platforms/youtube", () => ({
   uploadToYouTube: (...args: unknown[]) => mockUploadToYouTube(...args),
   addToPlaylist: (...args: unknown[]) => mockAddToPlaylist(...args),
+  setThumbnail: vi.fn(),
 }));
 
 vi.mock("@/lib/platforms/transistor", () => ({
@@ -66,6 +85,17 @@ vi.mock("@/lib/jobs/audio-extractor", () => ({
 vi.mock("@/lib/gcs", () => ({
   generateSignedDownloadUrl: (...args: unknown[]) =>
     mockGenerateSignedDownloadUrl(...args),
+  uploadBuffer: vi.fn().mockResolvedValue("uploads/mock-path"),
+}));
+
+vi.mock("@/lib/transcription", () => ({
+  transcribeAudio: vi.fn().mockRejectedValue(new Error("not mocked")),
+  formatTranscriptForAI: vi.fn().mockReturnValue(""),
+  formatTranscriptForDisplay: vi.fn().mockReturnValue(""),
+}));
+
+vi.mock("@/lib/jobs/video-downloader", () => ({
+  downloadVideoToGcs: vi.fn(),
 }));
 
 // Mock AI processor (unused in new processor but imported)
@@ -114,6 +144,10 @@ describe("processJob", () => {
       "https://storage.example.com/signed-url"
     );
     mockSendDistributionErrorNotification.mockResolvedValue(undefined);
+    mockShowMetadataFindUnique.mockResolvedValue(null);
+    mockPlatformCredentialFindUnique.mockResolvedValue(null);
+    mockShowPlatformLinkFindUnique.mockResolvedValue(null);
+    mockQueryRaw.mockResolvedValue([{ metadata: {} }]);
 
     // Suppress console output during tests
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -150,16 +184,17 @@ describe("processJob", () => {
       videoUrl: "https://youtube.com/watch?v=yt-abc",
     });
 
-    // Mock the fetch for video download
-    const mockBody = {
-      [Symbol.asyncIterator]: async function* () {
-        yield new Uint8Array([0]);
-      },
-    };
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    // Mock the fetch for video download — must be a real web ReadableStream
+    // because the processor pipes it via Readable.fromWeb().
+    globalThis.fetch = vi.fn().mockImplementation(async () => ({
       ok: true,
-      body: mockBody,
-    }) as unknown as typeof fetch;
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([0]));
+          controller.close();
+        },
+      }),
+    })) as unknown as typeof fetch;
 
     const result = await processJob("job-1");
 
@@ -206,15 +241,15 @@ describe("processJob", () => {
       videoUrl: "https://youtube.com/watch?v=yt-abc",
     });
 
-    const mockBody = {
-      [Symbol.asyncIterator]: async function* () {
-        yield new Uint8Array([0]);
-      },
-    };
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockImplementation(async () => ({
       ok: true,
-      body: mockBody,
-    }) as unknown as typeof fetch;
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([0]));
+          controller.close();
+        },
+      }),
+    })) as unknown as typeof fetch;
 
     // WordPress fails (simulated by publishToWordPress throwing)
     mockPublishToWordPress.mockRejectedValue(

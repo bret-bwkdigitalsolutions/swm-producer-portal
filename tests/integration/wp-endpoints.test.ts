@@ -28,6 +28,7 @@ describe("WordPress endpoint validation", () => {
     [ContentType.EPISODE]: "swm_episode",
     [ContentType.CASE_DOCUMENT]: "swm_case_doc",
     [ContentType.SHOW]: "swm_show",
+    [ContentType.REACTION]: "swm_reaction",
   };
 
   describe("POST_TYPE_MAP coverage", () => {
@@ -46,6 +47,7 @@ describe("WordPress endpoint validation", () => {
       expect(EXPECTED_MAP[ContentType.EPISODE]).toBe("swm_episode");
       expect(EXPECTED_MAP[ContentType.CASE_DOCUMENT]).toBe("swm_case_doc");
       expect(EXPECTED_MAP[ContentType.SHOW]).toBe("swm_show");
+      expect(EXPECTED_MAP[ContentType.REACTION]).toBe("swm_reaction");
     });
   });
 

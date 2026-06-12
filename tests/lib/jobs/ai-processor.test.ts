@@ -10,6 +10,7 @@ const mockSuggestionFindFirst = vi.fn();
 const mockSuggestionUpsert = vi.fn();
 const mockSuggestionDeleteMany = vi.fn();
 const mockSuggestionCreate = vi.fn();
+const mockSuggestionCount = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -24,6 +25,7 @@ vi.mock("@/lib/db", () => ({
       upsert: (...args: unknown[]) => mockSuggestionUpsert(...args),
       deleteMany: (...args: unknown[]) => mockSuggestionDeleteMany(...args),
       create: (...args: unknown[]) => mockSuggestionCreate(...args),
+      count: (...args: unknown[]) => mockSuggestionCount(...args),
     },
   },
 }));
@@ -86,6 +88,7 @@ describe("generateAiSuggestions", () => {
     mockSuggestionUpsert.mockResolvedValue({ id: "suggestion-1" });
     mockSuggestionDeleteMany.mockResolvedValue({ count: 0 });
     mockSuggestionCreate.mockResolvedValue({ id: "suggestion-new" });
+    mockSuggestionCount.mockResolvedValue(0);
     mockMessagesCreate.mockResolvedValue(
       makeMockResponse("Mock AI response content")
     );
@@ -95,22 +98,23 @@ describe("generateAiSuggestions", () => {
     process.env = originalEnv;
   });
 
-  it("creates four AI suggestions (chapters, summary, keywords, blog) for a valid job", async () => {
+  it("creates five AI suggestions (chapters, summary, keywords, title, blog) for a valid job", async () => {
     await generateAiSuggestions("job-123", "This is a transcript about cats.");
 
     expect(mockJobFindUnique).toHaveBeenCalledWith({ where: { id: "job-123" } });
 
-    // 3 via Promise.allSettled (chapters, summary, keywords) + 1 for blog = 4
-    expect(mockMessagesCreate).toHaveBeenCalledTimes(4);
+    // 4 via Promise.allSettled (chapters, summary, keywords, title) + 1 for blog = 5
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(5);
 
-    // chapters, summary, keywords are upserted (3 calls)
-    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(3);
+    // chapters, summary, keywords, title are upserted (4 calls)
+    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(4);
     const upsertTypes = mockSuggestionUpsert.mock.calls.map(
       (call) => (call[0] as { create: { type: string } }).create.type
     );
     expect(upsertTypes).toContain("chapters");
     expect(upsertTypes).toContain("summary");
     expect(upsertTypes).toContain("keywords");
+    expect(upsertTypes).toContain("title");
 
     // blog ideas are created (1 — mock response has no '---' separator)
     expect(mockSuggestionCreate).toHaveBeenCalledTimes(1);
@@ -122,17 +126,21 @@ describe("generateAiSuggestions", () => {
   it("uses title/description when no transcript is provided", async () => {
     await generateAiSuggestions("job-123");
 
-    // Should still generate all 4 suggestion types
-    expect(mockMessagesCreate).toHaveBeenCalledTimes(4);
-    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(3);
+    // Should still generate all 5 suggestion types
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(5);
+    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(4);
     expect(mockSuggestionCreate).toHaveBeenCalledTimes(1);
 
-    // Verify prompts contain the title (not "Transcript:")
+    // Verify prompts contain the title (not "Transcript:"). The title-
+    // generation prompt is exempt — it intentionally omits the existing
+    // title because it's writing a new one.
     for (const call of mockMessagesCreate.mock.calls) {
       const args = call as unknown[];
       const params = args[0] as { messages: { content: string }[] };
       const prompt = params.messages[0].content;
-      expect(prompt).toContain("The Mystery of the Missing Cat");
+      if (!prompt.includes("Output ONLY the title")) {
+        expect(prompt).toContain("The Mystery of the Missing Cat");
+      }
       expect(prompt).not.toContain("Transcript:");
     }
   });
@@ -216,19 +224,20 @@ describe("generateAiSuggestions", () => {
   });
 
   it("handles partial failures gracefully — creates suggestions for successful calls", async () => {
-    // chapters succeeds, summary fails, keywords succeeds, blog succeeds
+    // chapters succeeds, summary fails, keywords succeeds, title succeeds, blog succeeds
     mockMessagesCreate
       .mockResolvedValueOnce(makeMockResponse("Chapters content"))
       .mockRejectedValueOnce(new Error("Rate limit exceeded"))
       .mockResolvedValueOnce(makeMockResponse("Keywords content"))
+      .mockResolvedValueOnce(makeMockResponse("Title content"))
       .mockResolvedValueOnce(makeMockResponse("Blog content"));
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await generateAiSuggestions("job-123", "Some transcript");
 
-    // 2 upserts succeed (chapters and keywords), 1 fails (summary)
-    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(2);
+    // 3 upserts succeed (chapters, keywords, title), 1 fails (summary)
+    expect(mockSuggestionUpsert).toHaveBeenCalledTimes(3);
     // blog create succeeds
     expect(mockSuggestionCreate).toHaveBeenCalledTimes(1);
 
