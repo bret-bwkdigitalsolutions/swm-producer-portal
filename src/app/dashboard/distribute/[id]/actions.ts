@@ -132,32 +132,35 @@ export async function retryPlatform(
     };
   }
 
-  // Reset the platform job to queued
-  await db.distributionJobPlatform.update({
-    where: { id: platformJobId },
+  // Atomically reset the platform job to queued. The status guard in the
+  // WHERE clause means a concurrent retry (double-click, second admin) gets
+  // count 0 and bails instead of spawning a duplicate upload pipeline.
+  const claimed = await db.distributionJobPlatform.updateMany({
+    where: { id: platformJobId, status: "failed" },
     data: {
       status: "queued",
       error: null,
       completedAt: null,
     },
   });
+  if (claimed.count === 0) {
+    return { success: false, message: "This platform is already being retried." };
+  }
 
-  // If the parent job was marked as failed, set it back to processing
-  const parentJob = await db.distributionJob.findUnique({
-    where: { id: platformJob.job.id },
-    select: { status: true },
-  });
-
-  // Set parent job to pending so processJob can pick it up
-  await db.distributionJob.update({
-    where: { id: platformJob.job.id },
+  // Set the parent job back to pending so processJob can pick it up — but
+  // only if a pipeline isn't already running. If one is, don't spawn a
+  // second (duplicate uploads); the queued platform stays retryable.
+  const parentClaim = await db.distributionJob.updateMany({
+    where: { id: platformJob.job.id, status: { not: "processing" } },
     data: { status: "pending" },
   });
 
-  // Trigger processing (non-blocking) — processor skips completed platforms
-  processJob(platformJob.job.id).catch((error) => {
-    console.error(`[retry] Processing failed for job ${platformJob.job.id}:`, error);
-  });
+  if (parentClaim.count > 0) {
+    // Trigger processing (non-blocking) — processor skips completed platforms
+    processJob(platformJob.job.id).catch((error) => {
+      console.error(`[retry] Processing failed for job ${platformJob.job.id}:`, error);
+    });
+  }
 
   revalidatePath(`/dashboard/distribute/${platformJob.job.id}`);
 
