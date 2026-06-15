@@ -61,21 +61,25 @@ Next.js 16 application with App Router using PostgreSQL via Prisma ORM with conn
 - Webhook receiver for website subscription events with automatic Transistor synchronization
 - Nightly cron job for premium subscriber reconciliation across platforms
 - YouTube Studio reminder notifications for premium content manual upload steps
+- Race-safe metadata merges across all distribution job writers with atomic guards
+- Background AI analysis to avoid proxy timeouts on URL-sourced jobs
+- Recovered analyze pipelines that survive server restarts
+- Verification schedule persistence across system restarts
 
 ## Recent Activity
-Development over the past month has focused entirely on **premium content distribution infrastructure** with comprehensive routing logic that sends premium episodes to private Transistor shows, unlisted YouTube videos, and gated WordPress posts. **Premium subscription management** includes Transistor subscriber API integration, webhook receivers for website subscription events, nightly reconciliation cron jobs, and premium-aware verification that bypasses public URL checks for gated content. **Distribution pipeline enhancements** feature premium content toggles throughout live recording workflows, show metadata configuration for premium settings including Transistor show ID overrides, and YouTube Studio reminder notifications for manual premium video steps. **Content quality improvements** continue with host name spelling injection into AI prompts, blog ideas display fixes, and elimination of verification false positives from scheduled content timing. **Reliability fixes** address increased yt-dlp download timeouts from 10 to 30 minutes, scheduling form field mismatches, and episode link fallbacks.
+Development focus has centered on **critical reliability and security hardening** with race-safe metadata merges, atomic guards preventing duplicate uploads, and credential exposure fixes. **System resilience improvements** include verification schedule persistence across restarts, background AI analysis to prevent proxy timeouts, and pipeline recovery for server restart scenarios. **Platform integration refinements** feature failed publish/schedule detection for Transistor, premium-aware verification for private content, and enhanced subscriber reconciliation. **Security enhancements** add show access requirements on aggregated analytics actions and proper credential isolation. **Test infrastructure repair** addresses stale tests across processor modules, AI components, GCS integration, and WordPress types to maintain code quality.
 
 ## Known Gaps & Limitations
 - Social media analytics models exist but lack data collection automation and dashboard visualization
 - Live recording feature requires manual operator setup and coordination with WordPress publishing workflows
 - YouTube OAuth tokens require manual intervention when expired without automated refresh workflows
-- Distribution pipeline lacks retry mechanisms for handling partial platform upload failures
+- Distribution pipeline lacks comprehensive retry mechanisms for handling complex platform upload failures
 - Style guide synthesis measures edit percentages but cannot assess semantic quality improvements
 - Google Drive integration has minimal error handling for API quota exhaustion and permission failures
-- Concurrent multi-show processing can create resource contention without proper job queuing
 - Content validation for reaction submissions lacks quality control and spam prevention measures
-- Premium subscription webhook processing has no authentication or validation mechanisms
-- Transistor subscriber synchronization errors are logged but not exposed through admin interface
+- Premium subscription webhook processing has authentication mechanisms but limited validation depth
+- Cross-platform synchronization timing can still produce verification edge cases despite recent improvements
+- Error reporting for premium subscriber reconciliation failures needs admin interface exposure
 
 ## Next Meaningful Capabilities
 - Social media follower analytics dashboard with historical tracking and cross-platform growth insights
@@ -86,13 +90,13 @@ Development over the past month has focused entirely on **premium content distri
 - Enhanced collaborative workflows with approval chains, granular reviewer permissions, and change request systems
 
 ## Open Technical Questions
-- Premium subscriber synchronization strategy for handling webhook delivery failures and maintaining data consistency across platforms
-- Optimal job queuing architecture for concurrent episode processing without database locks or resource conflicts
-- Long-term media storage strategy balancing Google Cloud Storage costs with CDN performance requirements
-- Social media API integration approach for automated follower data collection across platforms with varying rate limits
-- Error recovery and retry mechanisms for gracefully handling partial distribution failures without data corruption
-- Content quality assessment framework for measuring semantic improvements in AI-generated content over time
-- Premium content access control implementation for protecting gated WordPress content and private podcast feeds
+- Premium subscriber synchronization strategy for handling complex webhook delivery failures and maintaining eventual consistency
+- Optimal job queuing architecture for high-concurrency episode processing with proper backpressure and resource allocation
+- Long-term media storage strategy balancing Google Cloud Storage costs with CDN performance and retention policies
+- Social media API integration approach for automated follower data collection across platforms with varying rate limits and quotas
+- Comprehensive error recovery framework for gracefully handling partial distribution failures with rollback capabilities
+- Content quality assessment metrics for measuring semantic improvements in AI-generated content beyond edit percentages
+- Premium content access control implementation for protecting gated WordPress content with proper authentication layers
 
 ## Key Files & Entry Points
 - `src/app/admin/blog-ideas/page.tsx` — Primary blog content management with episode-based organization and collapsible grouping
@@ -107,4 +111,4 @@ Development over the past month has focused entirely on **premium content distri
 - `src/app/admin/credentials/[showId]/page.tsx` — Platform credential management with OAuth verification and health monitoring
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-06-11_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-06-15_
