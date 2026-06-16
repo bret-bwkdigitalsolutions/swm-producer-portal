@@ -11,6 +11,10 @@ interface AnalysisContext {
   hosts?: string; // comma-separated host names for correct spelling
 }
 
+/** Model used for AI suggestions. Override via ANTHROPIC_MODEL env var in Railway
+ *  when Anthropic retires/renames a model — no redeploy needed. */
+const AI_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+
 let _client: Anthropic | null = null;
 
 function getClient(): Anthropic | null {
@@ -241,7 +245,7 @@ export async function generateAiSuggestions(
   const results = await Promise.allSettled(
     suggestionConfigs.map(async ({ type, prompt }) => {
       const response = await client.messages.create({
-        model: "claude-sonnet-4-6",
+        model: AI_MODEL,
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       });
@@ -290,7 +294,7 @@ export async function generateAiSuggestions(
     } else {
       try {
         const response = await client.messages.create({
-          model: "claude-sonnet-4-6",
+          model: AI_MODEL,
           max_tokens: 2048,
           messages: [{ role: "user", content: buildBlogPrompt(ctx) }],
         });
