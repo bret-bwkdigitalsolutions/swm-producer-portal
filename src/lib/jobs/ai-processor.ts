@@ -241,7 +241,7 @@ export async function generateAiSuggestions(
   const results = await Promise.allSettled(
     suggestionConfigs.map(async ({ type, prompt }) => {
       const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       });
@@ -290,7 +290,7 @@ export async function generateAiSuggestions(
     } else {
       try {
         const response = await client.messages.create({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 2048,
           messages: [{ role: "user", content: buildBlogPrompt(ctx) }],
         });
