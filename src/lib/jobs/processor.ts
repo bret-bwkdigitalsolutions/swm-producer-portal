@@ -12,7 +12,7 @@ import { mergeJobMetadata } from "./job-metadata";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
-import { downloadVideoToGcs } from "./video-downloader";
+import { downloadVideoToGcs, downloadFullVideoToGcs } from "./video-downloader";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -249,12 +249,38 @@ async function processJobInner(
   });
   const updatedMetadata = (updatedJob?.metadata as Record<string, unknown>) ?? metadata;
 
-  // Download video to temp file (for YouTube upload — skip if already completed)
+  // Download video to temp file (for YouTube upload — skip if already completed).
+  // Three paths:
+  //   1. Normal upload (gcsPath is a video file) — download from GCS
+  //   2. YouTube live recording (existingYoutubeUrl set) — skip, already on YouTube
+  //   3. Vimeo source URL — download full video via yt-dlp, then treat like path 1
   let tempVideoPath: string | null = null;
   const youtubeNeedsWork = job.platforms.some(
     (p) => p.platform === "youtube" && p.status !== "completed"
   );
-  if (youtubeNeedsWork && effectiveGcsPath && !sourceUrl) {
+  if (youtubeNeedsWork && existingVimeoUrl) {
+    // Path 3: Vimeo source — download the full video (not audio-only)
+    try {
+      console.log(`[processor] Downloading full Vimeo video for YouTube upload...`);
+      const vimeoVideoGcsPath = await downloadFullVideoToGcs(
+        existingVimeoUrl, job.id, job.wpShowId
+      );
+      const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
+      tempVideoPath = join(tempDir, "video.mp4");
+      const downloadUrl = await generateSignedDownloadUrl(vimeoVideoGcsPath);
+      const response = await fetch(downloadUrl);
+      if (!response.ok || !response.body) {
+        throw new Error(`Failed to download Vimeo video from GCS: ${response.status}`);
+      }
+      const fileStream = createWriteStream(tempVideoPath);
+      await pipeline(Readable.fromWeb(response.body as any), fileStream);
+      console.log(`[processor] Vimeo video ready for YouTube upload`);
+    } catch (error) {
+      console.error("[processor] Vimeo video download for YouTube failed:", error);
+      tempVideoPath = null;
+    }
+  } else if (youtubeNeedsWork && effectiveGcsPath && !sourceUrl) {
+    // Path 1: Normal upload — video file already in GCS
     try {
       const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
       tempVideoPath = join(tempDir, "video.mp4");
