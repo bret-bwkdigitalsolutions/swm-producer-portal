@@ -45,3 +45,7 @@ transistor-auth-*.json
 *.tsbuildinfo
 next-env.d.ts
 .worktrees/
+.playwright-mcp/
+.context/
+.claude/worktrees/
+rtr-page-top.png
