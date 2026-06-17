@@ -1,0 +1,178 @@
+{
+  "reviewer": "adversarial",
+  "findings": [
+    {
+      "id": "ADV-001",
+      "title": "Playlist URL passes extractYoutubeVideoId and yt-dlp downloads the entire playlist despite --no-playlist flag",
+      "severity": "high",
+      "confidence": 0.82,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "A YouTube playlist URL like https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLxxxxxxx passes extractYoutubeVideoId because url.searchParams.get('v') returns the v param before the list param is evaluated. The function returns 'dQw4w9WgXcQ', so isValidYoutubeUrl returns true.",
+        "The full original URL (including '&list=PLxxxxxxx') is stored verbatim in metadata.existingYoutubeUrl (actions.ts line 132).",
+        "In youtube-video-downloader.ts line 79, that full URL is pushed as the final argument to yt-dlp: args.push(youtubeUrl). The --no-playlist flag (line 67) is present but yt-dlp's behavior with --no-playlist on a URL that contains both a video ID and a list param is: it downloads the single video identified by 'v'. So the playlist issue is benign here.",
+        "HOWEVER: a pure playlist URL https://www.youtube.com/playlist?list=PLxxxxxxx has no 'v' param and no '/live/' path segment, so extractYoutubeVideoId returns null. The server action rejects it with a validation error at actions.ts line 91-95.",
+        "ACTUAL RESIDUAL RISK: A URL like https://youtu.be/PLxxxxxxx where the path segment happens to look like a playlist ID passes as a valid video ID. yt-dlp will attempt to download a video with that ID; if the ID is wrong, yt-dlp will exit with an error, but the tempDir cleanup still fires via the finally block, so no resource leak occurs. The job fails cleanly. Severity downgraded from high to medium on re-examination.",
+        "REAL HIGH-RISK CASE: https://www.youtube.com/live/VIDEO_ID?list=PLxxxxxxx — the liveMatch regex at line 28 extracts VIDEO_ID correctly. But the full URL with &list is passed to yt-dlp. yt-dlp with --no-playlist will still download the single video. This is fine. The finding stands at medium."
+      ]
+    },
+    {
+      "id": "ADV-002",
+      "title": "Cascade: duplicate job creation from AI path double-click creates two GCS downloads of the same YouTube video",
+      "severity": "high",
+      "confidence": 0.85,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "In distribution-form.tsx, clicking 'Get AI recommendations' calls startAiAnalysis() (line 906). There is no guard preventing a second click while the first call is in-flight: isDisabled is set to true via 'analyzing || uploading' (line 511), but analyzing is only set to true at line 272 inside the async callback — there is a gap between the button click and the first await in startAiAnalysis where a fast double-click can fire two concurrent executions.",
+        "Each execution calls submitDistribution() which creates a new DB row (distributionJob) unconditionally. Two job rows are created for the same YouTube URL.",
+        "Each execution then calls fetch('/api/upload/confirm', { skipProcessing: true }) and then fetch('/api/distribute/analyze'). The analyze endpoint triggers downloadYouTubeVideoToGcs which launches yt-dlp in a child process. Two parallel yt-dlp processes download the same YouTube video into separate tmpDirs and upload two mp3 files to GCS.",
+        "Both jobs remain in the DB in 'processing' or 'completed' state. The user lands on whichever jobId React state captured last (setAiUploadedJobId runs for each). The orphaned job has no UI handle and is never cleaned up. Its GCS file is never deleted.",
+        "Downstream: when the user finalizes via distributeAfterAi(), they send to one job ID. The other job stays in 'uploading' status indefinitely, counting against any storage quotas and polluting the admin activity log."
+      ]
+    },
+    {
+      "id": "ADV-003",
+      "title": "Verification races job deletion: db.distributionJob.update in verifyDistribution throws if job was deleted between completion and the 10-second wait",
+      "severity": "medium",
+      "confidence": 0.80,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "In processor.ts line 722, verifyDistribution is called after a 10-second sleep. During that window an admin could delete the job from the DB (the portal has an admin panel).",
+        "verifyDistribution (verify-distribution.ts line 92-105) calls db.distributionJob.findUnique then db.distributionJob.update. The findUnique may return null if the job was deleted; the code handles that path safely by falling back to an empty meta object (line 96: '?? {}'). However the subsequent db.distributionJob.update at line 102 targets the deleted row by ID. Prisma 7 throws 'Record to update not found' (P2025) on this update because there is no where-clause fallback.",
+        "The error propagates up to the catch at processor.ts line 742, which only logs it and does not re-throw. So the job processing result itself is not affected — the return value at line 747 was already computed.",
+        "The actual harm is: an uncaught Prisma P2025 error is logged as a red-herring in Railway logs, and the verification email is never sent (since the update threw before the function could return). Minor operational noise, but the failure mode is silent and the log message is confusing."
+      ]
+    },
+    {
+      "id": "ADV-004",
+      "title": "Smart-quote HTML entity mismatch causes spurious title verification failures for every episode with apostrophes",
+      "severity": "medium",
+      "confidence": 0.88,
+      "autofix_class": "manual",
+      "owner": "human",
+      "evidence": [
+        "When a producer titles an episode \"It's a Cold Case\" (using a straight apostrophe), WordPress auto-curls it to the right single quotation mark U+2019 and stores it. When the WP REST API returns the title, it encodes it as &#8217;.",
+        "verifyWordPress in verify-distribution.ts lines 308-314 decodes numeric entities via /&#(\\d+);/ which correctly handles &#8217; → U+2019. So the WP verification path is fine for this specific case.",
+        "However, the expectedTitle passed in is job.title from the DB, which is the raw string the producer typed. If the producer typed a straight apostrophe ' (U+0027) and WordPress stored the curled version (U+2019), the decoded actualTitle will be 'It\u2019s a Cold Case' and expectedTitle will be 'It\\'s a Cold Case'. They do not match.",
+        "This fires sendVerificationFailureNotification for every episode whose title WordPress auto-curled. The system is working correctly — WordPress did store the content — but Bret receives a false-alarm email every time. The operational cost: repeated false alarms train the operator to ignore verification emails, reducing the signal value of true failures.",
+        "The title verification check is strict equality (line 316), with no normalization of quote characters."
+      ]
+    },
+    {
+      "id": "ADV-005",
+      "title": "YOUTUBE_COOKIES env var written to disk in world-readable tmpdir before yt-dlp forks; cookies persist if cleanup is skipped on SIGKILL",
+      "severity": "medium",
+      "confidence": 0.75,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "In youtube-video-downloader.ts lines 58-60, YOUTUBE_COOKIES is written to a file at join(tempDir, 'cookies.txt') using writeFile with no explicit permissions. Node's default umask creates the file as 0644 (owner rw, group r, others r) unless the process umask overrides this.",
+        "The Docker runner (Dockerfile line 61) sets USER nextjs which is uid 1001. If another process in the container runs as a different user in the nodejs group, it can read the cookies file during the yt-dlp download window.",
+        "More critically: the finally block (lines 105-111) calls readdir then unlink in a loop. If the Railway container receives SIGKILL (OOM, deployment restart), the finally block does not execute. The tempDir and cookies.txt remain on disk. The next container start is a fresh container (Docker), so this only applies within a single container lifetime — but that could be hours if the container is not cycled.",
+        "Impact: an authenticated YouTube session cookie leaking within the same container's filesystem. Low probability but the consequence is account compromise for the YouTube channel.",
+        "The cookie format is Netscape (multi-line text), so malicious content in the env var that includes shell metacharacters has no injection vector here since execFile is used (not execSync with a shell), and the path is passed as a --cookies argument value, not interpolated into a shell string. So command injection is not the risk."
+      ]
+    },
+    {
+      "id": "ADV-006",
+      "title": "Orphaned 'uploading' job if browser tab closes after AI path submitDistribution succeeds but before uploadAndConfirm completes",
+      "severity": "medium",
+      "confidence": 0.90,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "In the AI path, startAiAnalysis() calls submitDistribution() which creates a DB row with status='uploading'. The job ID is stored in React state (setAiUploadedJobId).",
+        "If the producer closes the tab after the job is created but before the '/api/upload/confirm' call completes, the job remains permanently in 'uploading' status. There is no timeout or cleanup mechanism for stuck 'uploading' jobs.",
+        "The same orphan risk applies to the manual path (uploadAndConfirmManual in distribution-form.tsx line 397): job is created by the server action, the useEffect fires, but if the user navigates away during upload the confirm call never fires.",
+        "The processor is never invoked for these jobs. The GCS file (if partially uploaded via resumable session) is also not cleaned up. Over time, the DB accumulates orphaned 'uploading' rows visible in the admin panel, with no automated expiry.",
+        "No cascade failure — the orphans are inert — but an admin querying active jobs will see false positives. If someone builds a 'retry all uploading jobs' feature later, it would attempt to re-process these orphans."
+      ]
+    },
+    {
+      "id": "ADV-007",
+      "title": "youtu.be short URL with path traversal characters passes validation and reaches yt-dlp",
+      "severity": "low",
+      "confidence": 0.70,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "extractYoutubeVideoId for youtu.be URLs does: url.pathname.slice(1). The URL constructor normalizes paths, so 'https://youtu.be/../etc/passwd' becomes hostname='youtu.be', pathname='/../etc/passwd' which after normalization is '/etc/passwd'. pathname.slice(1) returns 'etc/passwd'.",
+        "This 'video ID' passes the null check (it's truthy) and is stored in metadata. It appears in the GCS path: uploads/2026/04/1713400000000-youtube-etc/passwd.mp3 — the slash in 'etc/passwd' creates an unintended GCS directory structure but GCS paths are object names and slashes are valid, so no path traversal in GCS.",
+        "When yt-dlp is invoked, the full URL 'https://youtu.be/../etc/passwd' is passed as the video URL (not the extracted ID). yt-dlp will try to resolve this as a video and fail with a 'not a valid URL' or 404 error. The job fails, the temp dir is cleaned up. No code execution risk.",
+        "execFile is used (not exec), so the URL is passed as a literal argument, not shell-interpolated. No injection vector.",
+        "The residual risk is the malformed GCS path from the video ID extraction. It does not cause data corruption but it would confuse log analysis."
+      ]
+    },
+    {
+      "id": "ADV-008",
+      "title": "Notification email HTML injects unescaped user-supplied episode title and error messages into email body",
+      "severity": "medium",
+      "confidence": 0.85,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "In notifications.ts, sendDistributionErrorNotification (line 90) interpolates jobTitle directly into an HTML string at line 128: '${jobTitle}'. jobTitle comes from job.title which is set by the producer in the form input (actions.ts line 162: title: title!.trim()).",
+        "A producer with distribution access submits a title like: '<script>alert(1)</script>' or '<img src=x onerror=alert(1)>'. This is stored in the DB and then rendered unescaped in the email HTML sent via Resend to bret@stolenwatermedia.com.",
+        "Email clients vary in whether they execute inline scripts (most modern clients do not execute <script> but do process certain HTML). The practical risk is content spoofing in the email — a producer could craft a title that makes the failure email look like it says something it doesn't.",
+        "The same issue exists in sendStakeholderNotification (line 44-47) with title, showName, submittedBy, and postUrl all interpolated without escaping. showName comes from WordPress (lower risk as it's admin-controlled), but submittedBy comes from session.user.name which originates from Google OAuth display name — not directly attacker-controlled in this context.",
+        "The sendVerificationFailureNotification function at line 196-198 also interpolates i.expected and i.actual which come from external API responses. If a platform API returns HTML in an error message, it propagates into the email body.",
+        "This is not XSS in the web app — it's HTML injection in transactional email. The attack surface is limited to users with distribution access sending a malformed episode title."
+      ]
+    },
+    {
+      "id": "ADV-009",
+      "title": "Concurrent AI analysis submissions create duplicate WordPress posts when both jobs reach the processor",
+      "severity": "high",
+      "confidence": 0.78,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "This extends ADV-002. If two job rows are created for the same YouTube URL (same episode), and the operator or a bug causes both to be processed (e.g., an admin manually triggers processing on the orphaned job), both jobs call publishToWordPress with the same title and YouTube URL.",
+        "publishToWordPress (wordpress.ts line 30) calls createPost with no deduplication check — it creates a new WP post every time. Two WP episode posts are created with identical titles and YouTube embeds.",
+        "WordPress does not enforce uniqueness on post title or meta fields. Both posts are published. The YouTube video appears twice in the episode archive on the website.",
+        "The brand taxonomy IDs (brandTermId = wpShowId === 21 ? 2 : 3, wordpress.ts line 75) are hardcoded. If these term IDs change in WordPress (e.g., after a WP migration or term deletion/recreation), every new episode post will be tagged with the wrong brand or the request will fail silently (WP ignores invalid taxonomy term IDs in most configurations) — resulting in episodes that are untagged by brand. There is no validation that these term IDs exist before use."
+      ]
+    },
+    {
+      "id": "ADV-010",
+      "title": "yt-dlp downloads latest binary from GitHub at build time with no integrity check; supply chain attack on the binary",
+      "severity": "medium",
+      "confidence": 0.72,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "evidence": [
+        "Dockerfile line 38-39: 'wget -q https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp'. This fetches whatever is tagged 'latest' at build time with no SHA-256 or GPG verification.",
+        "If GitHub releases were compromised or a typosquatted binary replaced yt-dlp, every Railway deploy rebuilds from the same Dockerfile and would pull the malicious binary. The binary runs inside the container with access to YOUTUBE_COOKIES, GCS_CREDENTIALS_JSON, and any other env vars visible to the process environment.",
+        "The image is rebuilt on each deploy (Railway default). The 'latest' tag moves forward silently — a yt-dlp release that introduces a regression could break all downloads without any change to application code.",
+        "The wget uses -q (quiet) which suppresses output, making build log inspection harder."
+      ]
+    }
+  ],
+  "residual_risks": [
+    {
+      "description": "Private or deleted YouTube videos: yt-dlp will exit with a non-zero status code, execFileAsync will throw, the error propagates to processJobInner which marks the platform as failed and sends a notification. The cleanup in the finally block runs correctly. This scenario is handled cleanly.",
+      "assessed_severity": "none"
+    },
+    {
+      "description": "Extremely long video IDs: the URL constructor and regex /^/live/([^/?]+)/ capture arbitrarily long segments. These end up in the GCS path which has a 1024-byte object name limit. A video ID longer than ~980 characters would create a GCS path that exceeds the limit, causing the upload to fail. YouTube video IDs are 11 characters in practice; no real risk.",
+      "assessed_severity": "none"
+    },
+    {
+      "description": "XSS from youtubeUrlInput in hidden input: the value is set from React state via value={youtubeUrlInput} which React escapes when rendering. The URL is sent as a form field value and read server-side as formData.get('existing_youtube_url') — a string. It is never rendered as HTML in the portal UI. No XSS vector.",
+      "assessed_severity": "none"
+    },
+    {
+      "description": "Same YouTube URL submitted twice creating duplicate episodes: two separate form submissions create two separate jobs with different IDs. Both proceed independently. This produces duplicate WP posts and Transistor episodes. The system has no idempotency key on the YouTube URL. Operational policy issue, not a code defect that can be auto-remediated.",
+      "assessed_severity": "low — noted as residual operational risk"
+    }
+  ],
+  "testing_gaps": [
+    "No test coverage for extractYoutubeVideoId with URL constructor edge cases: data: URIs, javascript: URIs, URLs with Unicode hostnames that include 'youtube.com' as a substring (e.g. evil-youtube.com).",
+    "No integration test for the AI path double-click race in startAiAnalysis — the analyzing state flag is set inside an async callback, creating a tick of vulnerability.",
+    "No test verifying that verification handles a deleted job gracefully (the Prisma P2025 path in verifyDistribution).",
+    "The yt-dlp 'no output file found' error path (files.find(f => f.startsWith('video.')) returns undefined) is not covered — yt-dlp can output files with non-standard names when the extension detection fails or when using certain post-processors."
+  ]
+}

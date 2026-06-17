@@ -1,0 +1,5 @@
+[     379ms] [LOG] JQMIGRATE: Migrate is installed, version 3.4.1 @ https://stolenwatermedia.com/wp-includes/js/jquery/jquery-migrate.min.js?ver=3.4.1:1
+[427332558ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ https://portal.stolenwatermedia.com/login:0
+[427375496ms] [LOG] %c%s color: red; background: yellow; font-size: 24px; WARNING! @ https://www.gstatic.com/_/mss/boq-identity/_/js/k=boq-identity.OAuthUi.en_US.nksnUizsXxE.es5.O/am=MgAAAADwD2AA8P__bwBBtgPvGUABAgAAAAAAAACAAQAgAg/d=1/excm=_b,_tp,errorview/ed=1/dg=0/wt=2/ujg=1/rs=AOaEmlHy9xpgKIAK2_hshXi50yJm_-05Pw/dti=1/m=_b,_tp:534
+[427375496ms] [LOG] %c%s font-size: 18px; Using this console may allow attackers to impersonate you and steal your information using an attack called Self-XSS.
+Do not enter or paste code that you do not understand. @ https://www.gstatic.com/_/mss/boq-identity/_/js/k=boq-identity.OAuthUi.en_US.nksnUizsXxE.es5.O/am=MgAAAADwD2AA8P__bwBBtgPvGUABAgAAAAAAAACAAQAgAg/d=1/excm=_b,_tp,errorview/ed=1/dg=0/wt=2/ujg=1/rs=AOaEmlHy9xpgKIAK2_hshXi50yJm_-05Pw/dti=1/m=_b,_tp:534

@@ -1,0 +1,191 @@
+- generic [active] [ref=e1]:
+  - complementary "Promotion" [ref=e2]:
+    - link "FIFA World Cup 2026 — Predictions, Lineups, Live Chat & More Explore →" [ref=e3] [cursor=pointer]:
+      - /url: https://stolenwatermedia.com/world-cup/
+      - generic [ref=e4]: ⚽
+      - generic [ref=e5]: FIFA World Cup 2026 — Predictions, Lineups, Live Chat & More
+      - generic [ref=e6]: Explore →
+    - button "Dismiss promotion" [ref=e7] [cursor=pointer]: ×
+  - banner [ref=e8]:
+    - generic [ref=e9]:
+      - link "Stolen Water Media" [ref=e10] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/
+        - img "Stolen Water Media" [ref=e11]
+      - navigation [ref=e12]:
+        - list [ref=e13]:
+          - listitem [ref=e14]:
+            - link "Home" [ref=e15] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/
+          - listitem [ref=e16]:
+            - link "Shows" [ref=e17] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/
+          - listitem [ref=e18]:
+            - link "Episodes" [ref=e19] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/episodes/
+          - listitem [ref=e20]:
+            - link "Archive" [ref=e21] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/archive/
+          - listitem [ref=e22]:
+            - link "Appearances" [ref=e23] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/appearances/
+          - listitem [ref=e24]:
+            - link "Blog" [ref=e25] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/blog/
+          - listitem [ref=e26]:
+            - link "Press" [ref=e27] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/press/
+          - listitem [ref=e28]:
+            - link "About" [ref=e29] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/about/
+          - listitem [ref=e30]:
+            - link "Our Community" [ref=e31] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/our-community/
+          - listitem [ref=e32]:
+            - link "Advertise" [ref=e33] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/advertise/
+          - listitem [ref=e34]:
+            - link "World Cup 2026" [ref=e35] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/world-cup/
+  - link "Skip to content" [ref=e36] [cursor=pointer]:
+    - /url: "#content"
+  - generic [ref=e40]:
+    - generic [ref=e43]:
+      - generic [ref=e44]: STOLEN WATER MEDIA
+      - heading "WORLD CUP 2026" [level=1] [ref=e45]
+      - paragraph [ref=e46]: Sunset Soccer Club's Tournament Coverage
+      - generic [ref=e47]: June 11 — July 19, 2026 • USA • Canada • Mexico
+      - generic [ref=e48]: TOURNAMENT IN PROGRESS
+      - generic [ref=e49]:
+        - link "Build Your Lineup" [ref=e50] [cursor=pointer]:
+          - /url: https://stolenwatermedia.com/world-cup-lineup/
+        - link "Prediction Bracket" [ref=e51] [cursor=pointer]:
+          - /url: https://stolenwatermedia.com/world-cup-bracket/
+    - generic [ref=e53]:
+      - link "Watch Parties" [ref=e54] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-watch-parties/
+        - generic [ref=e55]: 📺
+        - generic [ref=e56]: Watch Parties
+      - link "DFW Guide" [ref=e57] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/wc-guides/dfw-dallas-arlington/
+        - generic [ref=e58]: 📍
+        - generic [ref=e59]: DFW Guide
+      - link "World Cup Eats" [ref=e60] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-eats/
+        - generic [ref=e61]: 🍴
+        - generic [ref=e62]: World Cup Eats
+      - link "Cheat Sheet" [ref=e63] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-cheatsheet/
+        - generic [ref=e64]: 📋
+        - generic [ref=e65]: Cheat Sheet
+      - link "Team Quiz" [ref=e66] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-quiz/
+        - generic [ref=e67]: ❔
+        - generic [ref=e68]: Team Quiz
+    - generic [ref=e71]:
+      - generic [ref=e72]: NEW TO SOCCER?
+      - heading "Start with the Experience Guide" [level=2] [ref=e73]
+      - paragraph [ref=e74]: Cultural profiles for every nation. A DFW local survival guide. Food, music, watch parties, and a quiz to find your team — even if you don't follow the sport.
+      - link "Beyond the Pitch →" [ref=e75] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-experience/
+    - generic [ref=e78]:
+      - img "Sunset Soccer Club" [ref=e80]
+      - generic [ref=e81]:
+        - heading "Sunset Soccer Club" [level=2] [ref=e82]
+        - paragraph [ref=e83]: Tyler's World Cup coverage — nation profiles, cultural guides, and more.
+        - generic [ref=e84]:
+          - link "Nation Profiles" [ref=e85] [cursor=pointer]:
+            - /url: https://stolenwatermedia.com/world-cup-experience/
+          - link "Sunset Soccer Club" [ref=e86] [cursor=pointer]:
+            - /url: https://stolenwatermedia.com/shows/sunset-soccer-club/
+    - generic [ref=e87]:
+      - heading "Live Chat" [level=2] [ref=e88]
+      - paragraph [ref=e89]:
+        - text: Chat with other fans below. Posts from X tagged
+        - strong [ref=e90]: "#SWMWorldCup"
+        - text: will appear here too.
+      - generic [ref=e91]:
+        - generic [ref=e93]: Loading chat...
+        - generic [ref=e94]:
+          - textbox "Your name" [ref=e95]
+          - generic [ref=e96]:
+            - textbox "Say something..." [ref=e97]
+            - button "Send" [ref=e98] [cursor=pointer]
+          - generic [ref=e99]: 0 / 500
+    - generic [ref=e100]:
+      - heading "Scores & Standings" [level=2] [ref=e101]
+      - generic [ref=e102]:
+        - button "Scores & Results" [ref=e103] [cursor=pointer]
+        - button "Standings" [ref=e104] [cursor=pointer]
+        - button "Schedule" [ref=e105] [cursor=pointer]
+    - generic [ref=e110]:
+      - heading "Prediction Bracket Game" [level=2] [ref=e111]
+      - paragraph [ref=e112]: Pick your winners, compete against other fans, and share your bracket. Join at any round — it's never too late to play.
+      - link "Make Your Picks" [ref=e113] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-bracket/
+    - generic [ref=e117]:
+      - heading "Lineup Builder" [level=2] [ref=e118]
+      - paragraph [ref=e119]: Build your predicted starting XI for any World Cup team. Pick your formation, place your players, and share your lineup.
+      - link "Build a Lineup" [ref=e120] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-lineup/
+    - generic [ref=e122]:
+      - heading "About Sunset Soccer Club" [level=2] [ref=e123]
+      - paragraph [ref=e124]: Sunset Soccer Club is a show on the Stolen Water Media podcast network covering the beautiful game with passion, personality, and the fastest takes in independent soccer media.
+      - generic [ref=e125]:
+        - link "Explore SWM" [ref=e126] [cursor=pointer]:
+          - /url: https://stolenwatermedia.com/
+        - link "All Episodes" [ref=e127] [cursor=pointer]:
+          - /url: https://stolenwatermedia.com/episodes/
+  - contentinfo [ref=e128]:
+    - generic [ref=e129]:
+      - generic [ref=e130]:
+        - img "Stolen Water Media" [ref=e131]
+        - paragraph [ref=e132]: Sports. Entertainment. True Crime.
+      - generic [ref=e133]:
+        - heading "Our Shows" [level=4] [ref=e134]
+        - list [ref=e135]:
+          - listitem [ref=e136]:
+            - link "Your Dark Companion" [ref=e137] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/your-dark-companion/
+          - listitem [ref=e138]:
+            - link "Beer 30 Sports O'Clock" [ref=e139] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/beer-30-sports-oclock/
+          - listitem [ref=e140]:
+            - link "Engel Angle" [ref=e141] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/engle-angle/
+          - listitem [ref=e142]:
+            - link "Signal 51 Chronicles" [ref=e143] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/signal-51-chronicles/
+          - listitem [ref=e144]:
+            - link "Sunset Soccer Club" [ref=e145] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/sunset-soccer-club/
+          - listitem [ref=e146]:
+            - link "The Clubhouse Podcast" [ref=e147] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/the-clubhouse-podcast/
+          - listitem [ref=e148]:
+            - link "¡Al Maximo!" [ref=e149] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/al-maximo/
+      - generic [ref=e150]:
+        - heading "Explore" [level=4] [ref=e151]
+        - list [ref=e152]:
+          - listitem [ref=e153]:
+            - link "Home" [ref=e154] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=e155]:
+            - link "Shows" [ref=e156] [cursor=pointer]:
+              - /url: /shows/
+          - listitem [ref=e157]:
+            - link "Episodes" [ref=e158] [cursor=pointer]:
+              - /url: /episodes/
+          - listitem [ref=e159]:
+            - link "Archive" [ref=e160] [cursor=pointer]:
+              - /url: /archive/
+          - listitem [ref=e161]:
+            - link "Our Community" [ref=e162] [cursor=pointer]:
+              - /url: /our-community/
+          - listitem [ref=e163]:
+            - link "Advertise" [ref=e164] [cursor=pointer]:
+              - /url: /advertise/
+          - listitem [ref=e165]:
+            - link "Contact" [ref=e166] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/contact-us/
+    - paragraph [ref=e168]: © 2026 Stolen Water Media. All Rights Reserved.

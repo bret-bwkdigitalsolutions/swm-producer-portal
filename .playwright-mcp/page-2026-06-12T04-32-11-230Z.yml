@@ -1,0 +1,507 @@
+- generic [active] [ref=e1]:
+  - complementary "Promotion" [ref=e2]:
+    - link "FIFA World Cup 2026 — Predictions, Lineups, Live Chat & More Explore →" [ref=e3] [cursor=pointer]:
+      - /url: https://stolenwatermedia.com/world-cup/
+      - img [ref=e5]
+      - generic [ref=e6]: FIFA World Cup 2026 — Predictions, Lineups, Live Chat & More
+      - generic [ref=e7]: Explore →
+    - button "Dismiss promotion" [ref=e8] [cursor=pointer]: ×
+  - banner [ref=e9]:
+    - generic [ref=e10]:
+      - link "Stolen Water Media" [ref=e11] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/
+        - img "Stolen Water Media" [ref=e12]
+      - navigation [ref=e13]:
+        - list [ref=e14]:
+          - listitem [ref=e15]:
+            - link "Home" [ref=e16] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/
+          - listitem [ref=e17]:
+            - link "Shows" [ref=e18] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/
+          - listitem [ref=e19]:
+            - link "Episodes" [ref=e20] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/episodes/
+          - listitem [ref=e21]:
+            - link "Archive" [ref=e22] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/archive/
+          - listitem [ref=e23]:
+            - link "Appearances" [ref=e24] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/appearances/
+          - listitem [ref=e25]:
+            - link "Blog" [ref=e26] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/blog/
+          - listitem [ref=e27]:
+            - link "Press" [ref=e28] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/press/
+          - listitem [ref=e29]:
+            - link "About" [ref=e30] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/about/
+          - listitem [ref=e31]:
+            - link "Our Community" [ref=e32] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/our-community/
+          - listitem [ref=e33]:
+            - link "Advertise" [ref=e34] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/advertise/
+          - listitem [ref=e35]:
+            - link "World Cup 2026" [ref=e36] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/world-cup/
+  - link "Skip to content" [ref=e37] [cursor=pointer]:
+    - /url: "#content"
+  - generic [ref=e41]:
+    - generic [ref=e44]:
+      - link "← Beyond the Pitch" [ref=e45] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-experience/
+      - img [ref=e47]
+      - generic [ref=e48]: Group I
+      - heading "Norway" [level=1] [ref=e49]
+      - paragraph [ref=e50]: Erling Haaland has finally arrived at a major tournament — and he didn't come alone
+    - generic [ref=e51]:
+      - generic [ref=e52]:
+        - generic [ref=e53]: Group
+        - generic [ref=e54]: I
+      - generic [ref=e55]:
+        - generic [ref=e56]: Region
+        - generic [ref=e57]: UEFA
+      - generic [ref=e58]:
+        - generic [ref=e59]: World Cup Appearances
+        - generic [ref=e60]: "4"
+      - generic [ref=e61]:
+        - generic [ref=e62]: Code
+        - generic [ref=e63]: "NO"
+    - generic [ref=e64]:
+      - heading "The Story" [level=2] [ref=e65]
+      - generic [ref=e66]:
+        - paragraph [ref=e67]: Norway has been the longest-running 'why aren't they at a tournament' team in European football for almost a decade. They had Haaland. They had Ødegaard. They had Sørloth, Berge, Ajer, a generation of players good enough to make Premier League and La Liga starting elevens. And they kept finding ways to lose qualifiers to Serbia, to Turkey, to anyone who showed up organized. They missed Euro 2020. They missed Qatar. They missed Euro 2024. The joke around European football was that Norway had assembled the most talented squad never to play a meaningful summer match.
+        - paragraph [ref=e68]: That ended in November 2025. Norway went 8-for-8 in qualifying, scored 37 goals, beat Italy 4-1 in Oslo to clinch it, and Haaland did the post-match interview in Norwegian for what felt like the first time. Ståle Solbakken, the manager who took over in 2020 and patiently absorbed every loss while telling everyone the team would be ready when it mattered, got vindicated.
+        - paragraph [ref=e69]: Now the question is whether they're actually any good in a tournament context. Norway has never been past the Round of 16 at a World Cup. They've been drawn into a brutal group with France. Haaland has never played a knockout match on this stage. None of that matters today. They're here. Erling Haaland is here. The longest wait in European football is over, and the rest of us get to find out what happens when the sport's most ridiculous goalscorer finally shows up at the World Cup.
+    - generic [ref=e70]:
+      - heading "3 Players to Know" [level=2] [ref=e71]
+      - generic [ref=e72]:
+        - article [ref=e73]:
+          - generic [ref=e75]: E
+          - generic [ref=e76]:
+            - heading "Erling Haaland" [level=3] [ref=e77]
+            - paragraph [ref=e78]: The numbers stopped being believable a while ago. Haaland, 25, scored 16 goals in eight qualifiers u2014 scoring in every single game, doubling the next-best tally in Europe and equalling Lewandowski's all-time qualifying record u2014 to drag Norway to their first World Cup in 28 years. He was born in 2000; his country hadn't been back since. The Manchester City striker has won everything at club level except this stage, and it's the only one he's never played on. France's center-backs get him first. If Norway top Group I instead of finishing behind Les Bleus, it'll be because Haaland decided the math was negotiable.
+        - article [ref=e79]:
+          - generic [ref=e81]: M
+          - generic [ref=e82]:
+            - heading "Martin u00d8degaard" [level=3] [ref=e83]
+            - paragraph [ref=e84]: "He debuted for Real Madrid's first team at 16 and spent a decade being the future. Now he's 27, Arsenal's captain, Norway's captain u2014 and finally at a World Cup. His 2025-26 was brutal: a chronic shoulder problem in autumn, then a knee injury that limited him to 19 starts and kept resurfacing through spring. By May he was telling reporters he 'finally' felt right again. The timing matters: Norway's whole attacking idea is u00d8degaard finding Haaland. Against Senegal's physical midfield and France's press, a healthy u00d8degaard is the difference between a feel-good return and a genuinely dangerous team."
+        - article [ref=e85]:
+          - generic [ref=e87]: A
+          - generic [ref=e88]:
+            - heading "Antonio Nusa" [level=3] [ref=e89]
+            - paragraph [ref=e90]: "The 21-year-old RB Leipzig winger Norwegians have been comparing to Neymar since he was a teenager at Club Brugge u2014 and qualifying suggested they weren't exaggerating. Nusa produced two goals and three assists in the campaign, including a goal and assist in the 3-0 demolition of Italy and two assists in the 5-0 over Israel. He already has seven goals in 20 caps. Where Haaland is force and u00d8degaard is control, Nusa is pure mischief: a dribbler who attacks fullbacks like he's owed money. Iraq and Senegal will sit deep against Norway; Nusa is the one who unlocks that."
+    - generic [ref=e91]:
+      - heading "The Food" [level=2] [ref=e92]
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - generic [ref=e95]: Signature Dish
+          - paragraph [ref=e96]: "Norwegian food is built around what survives a long winter and a colder coast. The headliners: kjøttkaker (meatballs in brown gravy with lingonberry, the Sunday-dinner version of what IKEA serves), fårikål (slow-braised mutton and cabbage, the official national dish, which is just two ingredients and somehow works), and gravlaks — cured salmon with dill and mustard sauce that puts the standard American 'lox' to shame. Brunost, the brown caramelized whey cheese, is the divisive one. Norwegians put it on toast for breakfast and look at you like you're insane for asking why."
+        - generic [ref=e97]:
+          - generic [ref=e98]: Where to Eat in DFW
+          - paragraph [ref=e99]: "DFW does not have a Norwegian restaurant. It barely has a Scandinavian one. Your honest options: The Wooden Spoon in Plano (1617 K Ave), a Scandinavian market and café with Swedish and Norwegian groceries, kanelbullar, and proper fika in the afternoon, and the Smörgåsbørd Sandwich Table at the Dallas Farmers Market (weekends only, smørrebrød done right). And yes — the IKEA in Frisco cafe does Swedish meatballs and lingonberry, which is close enough to Norwegian that any Norwegian fan will smirk and order them. We will keep looking."
+    - generic [ref=e100]:
+      - heading "The Music" [level=2] [ref=e101]
+      - paragraph [ref=e102]: A soundtrack for the matches, the pregame, and the afterparty.
+      - iframe [ref=e104]:
+        - generic [active] [ref=f1e1]:
+          - generic [ref=f1e4]:
+            - generic [ref=f1e5]:
+              - img "This Is AURORA cover" [ref=f1e8] [cursor=pointer]
+              - button "Play on Spotify" [ref=f1e10] [cursor=pointer]:
+                - img [ref=f1e11]
+              - generic [ref=f1e13]:
+                - heading "This Is AURORA" [level=1] [ref=f1e14]:
+                  - link "This Is AURORA" [ref=f1e18] [cursor=pointer]:
+                    - /url: https://open.spotify.com/playlist/37i9dQZF1DZ06evO15Ttp6?go=1&sp_cid=211187180c7efe03260a2e0f8fdeb963&utm_source=embed_player_p&utm_medium=desktop
+                - generic [ref=f1e19]:
+                  - list "Tags" [ref=f1e20]:
+                    - generic "Preview" [ref=f1e21]
+                  - heading "Spotify" [level=2] [ref=f1e22]:
+                    - link "Spotify" [ref=f1e27] [cursor=pointer]:
+                      - /url: https://open.spotify.com/playlist/37i9dQZF1DZ06evO15Ttp6?go=1&sp_cid=211187180c7efe03260a2e0f8fdeb963&utm_source=embed_player_p&utm_medium=desktop
+                - button "Save on Spotify" [ref=f1e29] [cursor=pointer]:
+                  - img [ref=f1e31]
+                  - generic [ref=f1e34]: Save on Spotify
+              - generic [ref=f1e36]:
+                - generic [ref=f1e37]:
+                  - button "Previous" [disabled] [ref=f1e38]:
+                    - img [ref=f1e40]
+                  - button "Next" [disabled] [ref=f1e42]:
+                    - img [ref=f1e44]
+                - button "More" [ref=f1e46] [cursor=pointer]:
+                  - img [ref=f1e47]
+                - button "Play" [ref=f1e50] [cursor=pointer]:
+                  - img [ref=f1e51]
+            - list "Track list" [ref=f1e56]:
+              - listitem [ref=f1e57]:
+                - button "Play track" [ref=f1e59] [cursor=pointer]:
+                  - generic [ref=f1e60]: "1"
+                - heading "Through The Eyes Of A Child" [level=3] [ref=f1e61]
+                - heading "AURORA" [level=4] [ref=f1e62]
+                - generic [ref=f1e63]: 04:34
+              - listitem [ref=f1e64]:
+                - button "Play track" [ref=f1e66] [cursor=pointer]:
+                  - generic [ref=f1e67]: "2"
+                - heading "Runaway" [level=3] [ref=f1e68]
+                - heading "AURORA" [level=4] [ref=f1e69]
+                - generic [ref=f1e70]: 04:08
+              - listitem [ref=f1e71]:
+                - button "Play track" [ref=f1e73] [cursor=pointer]:
+                  - generic [ref=f1e74]: "3"
+                - heading "Into the Unknown" [level=3] [ref=f1e75]
+                - heading "Idina Menzel, AURORA" [level=4] [ref=f1e76]
+                - generic [ref=f1e77]: 03:14
+              - listitem [ref=f1e78]:
+                - button "Play track" [ref=f1e80] [cursor=pointer]:
+                  - generic [ref=f1e81]: "4"
+                - heading "The Seed" [level=3] [ref=f1e82]
+                - heading "AURORA" [level=4] [ref=f1e83]
+                - generic [ref=f1e84]: 04:26
+              - listitem [ref=f1e85]:
+                - button "Play track" [ref=f1e87] [cursor=pointer]:
+                  - generic [ref=f1e88]: "5"
+                - heading "liMOusIne (feat. AURORA)" [level=3] [ref=f1e89]
+                - heading "Explicit Bring Me The Horizon, AURORA" [level=4] [ref=f1e90]:
+                  - generic "Explicit" [ref=f1e91]: E
+                  - text: Bring Me The Horizon, AURORA
+                - generic [ref=f1e92]: 04:11
+              - listitem [ref=f1e93]:
+                - button "Play track" [ref=f1e95] [cursor=pointer]:
+                  - generic [ref=f1e96]: "6"
+                - heading "Nod-Krai" [level=3] [ref=f1e97]
+                - heading "HOYO-MiX, AURORA" [level=4] [ref=f1e98]
+                - generic [ref=f1e99]: 04:20
+              - listitem [ref=f1e100]:
+                - button "Play track" [ref=f1e102] [cursor=pointer]:
+                  - generic [ref=f1e103]: "7"
+                - heading "Running With The Wolves" [level=3] [ref=f1e104]
+                - heading "AURORA" [level=4] [ref=f1e105]
+                - generic [ref=f1e106]: 03:14
+              - listitem [ref=f1e107]:
+                - button "Play track" [ref=f1e109] [cursor=pointer]:
+                  - generic [ref=f1e110]: "8"
+                - heading "Butterflies (feat. AURORA)" [level=3] [ref=f1e111]
+                - heading "Tom Odell, AURORA" [level=4] [ref=f1e112]
+                - generic [ref=f1e113]: 02:10
+              - listitem [ref=f1e114]:
+                - button "Play track" [ref=f1e116] [cursor=pointer]:
+                  - generic [ref=f1e117]: "9"
+                - heading "Cure For Me" [level=3] [ref=f1e118]
+                - heading "AURORA" [level=4] [ref=f1e119]
+                - generic [ref=f1e120]: 03:18
+              - listitem [ref=f1e121]:
+                - button "Play track" [ref=f1e123] [cursor=pointer]:
+                  - generic [ref=f1e124]: "10"
+                - heading "Soft Universe" [level=3] [ref=f1e125]
+                - heading "AURORA" [level=4] [ref=f1e126]
+                - generic [ref=f1e127]: 03:59
+              - listitem [ref=f1e128]:
+                - button "Play track" [ref=f1e130] [cursor=pointer]:
+                  - generic [ref=f1e131]: "11"
+                - heading "Black Water Lilies" [level=3] [ref=f1e132]
+                - heading "AURORA" [level=4] [ref=f1e133]
+                - generic [ref=f1e134]: 04:42
+              - listitem [ref=f1e135]:
+                - button "Play track" [ref=f1e137] [cursor=pointer]:
+                  - generic [ref=f1e138]: "12"
+                - heading "You Can’t Run From Yourself - From \"Kaiju No. 8\"" [level=3] [ref=f1e139]
+                - heading "AURORA" [level=4] [ref=f1e140]
+                - generic [ref=f1e141]: 02:16
+              - listitem [ref=f1e142]:
+                - button "Play track" [ref=f1e144] [cursor=pointer]:
+                  - generic [ref=f1e145]: "13"
+                - heading "Everything Matters" [level=3] [ref=f1e146]
+                - heading "AURORA, Pomme" [level=4] [ref=f1e147]
+                - generic [ref=f1e148]: 03:33
+              - listitem [ref=f1e149]:
+                - button "Play track" [ref=f1e151] [cursor=pointer]:
+                  - generic [ref=f1e152]: "14"
+                - heading "My Sails Are Set (from the Netflix Series \"One Piece\")" [level=3] [ref=f1e153]
+                - heading "Sonya Belousova, Giona Ostinelli, AURORA" [level=4] [ref=f1e154]
+                - generic [ref=f1e155]: 02:51
+              - listitem [ref=f1e156]:
+                - button "Play track" [ref=f1e158] [cursor=pointer]:
+                  - generic [ref=f1e159]: "15"
+                - heading "PARAMOUR (feat. AURORA)" [level=3] [ref=f1e160]
+                - heading "Sub Urban, AURORA" [level=4] [ref=f1e161]
+                - generic [ref=f1e162]: 02:48
+              - listitem [ref=f1e163]:
+                - button "Play track" [ref=f1e165] [cursor=pointer]:
+                  - generic [ref=f1e166]: "16"
+                - heading "SOMEWHERE ELSE" [level=3] [ref=f1e167]
+                - heading "TOMORA, AURORA, Tom Rowlands" [level=4] [ref=f1e168]
+                - generic [ref=f1e169]: 04:11
+              - listitem [ref=f1e170]:
+                - button "Play track" [ref=f1e172] [cursor=pointer]:
+                  - generic [ref=f1e173]: "17"
+                - heading "Churchyard" [level=3] [ref=f1e174]
+                - heading "AURORA" [level=4] [ref=f1e175]
+                - generic [ref=f1e176]: 03:46
+              - listitem [ref=f1e177]:
+                - button "Play track" [ref=f1e179] [cursor=pointer]:
+                  - generic [ref=f1e180]: "18"
+                - heading "A Place To Call Home" [level=3] [ref=f1e181]
+                - heading "AURORA, Brendon Williams, World of Warcraft, Blizzard Entertainment" [level=4] [ref=f1e182]
+                - generic [ref=f1e183]: 02:11
+              - listitem [ref=f1e184]:
+                - button "Play track" [ref=f1e186] [cursor=pointer]:
+                  - generic [ref=f1e187]: "19"
+                - heading "A Dangerous Thing" [level=3] [ref=f1e188]
+                - heading "AURORA" [level=4] [ref=f1e189]
+                - generic [ref=f1e190]: 03:35
+              - listitem [ref=f1e191]:
+                - button "Play track" [ref=f1e193] [cursor=pointer]:
+                  - generic [ref=f1e194]: "20"
+                - heading "The River" [level=3] [ref=f1e195]
+                - heading "AURORA" [level=4] [ref=f1e196]
+                - generic [ref=f1e197]: 03:37
+              - listitem [ref=f1e198]:
+                - button "Play track" [ref=f1e200] [cursor=pointer]:
+                  - generic [ref=f1e201]: "21"
+                - heading "To Be Loved" [level=3] [ref=f1e202]
+                - heading "Askjell, AURORA" [level=4] [ref=f1e203]
+                - generic [ref=f1e204]: 03:48
+              - listitem [ref=f1e205]:
+                - button "Play track" [ref=f1e207] [cursor=pointer]:
+                  - generic [ref=f1e208]: "22"
+                - heading "The Frozen Planet" [level=3] [ref=f1e209]
+                - heading "Hans Zimmer, Adam Lukas, James Everingham, AURORA" [level=4] [ref=f1e210]
+                - generic [ref=f1e211]: 04:23
+              - listitem [ref=f1e212]:
+                - button "Play track" [ref=f1e214] [cursor=pointer]:
+                  - generic [ref=f1e215]: "23"
+                - heading "Blood In The Wine" [level=3] [ref=f1e216]
+                - heading "AURORA" [level=4] [ref=f1e217]
+                - generic [ref=f1e218]: 03:29
+              - listitem [ref=f1e219]:
+                - button "Play track" [ref=f1e221] [cursor=pointer]:
+                  - generic [ref=f1e222]: "24"
+                - heading "Daydreamer" [level=3] [ref=f1e223]
+                - heading "AURORA" [level=4] [ref=f1e224]
+                - generic [ref=f1e225]: 03:39
+              - listitem [ref=f1e226]:
+                - button "Play track" [ref=f1e228] [cursor=pointer]:
+                  - generic [ref=f1e229]: "25"
+                - heading "MY BABY" [level=3] [ref=f1e230]
+                - heading "TOMORA, AURORA, Tom Rowlands" [level=4] [ref=f1e231]
+                - generic [ref=f1e232]: 04:05
+              - listitem [ref=f1e233]:
+                - button "Play track" [ref=f1e235] [cursor=pointer]:
+                  - generic [ref=f1e236]: "26"
+                - heading "Queendom" [level=3] [ref=f1e237]
+                - heading "AURORA" [level=4] [ref=f1e238]
+                - generic [ref=f1e239]: 03:26
+              - listitem [ref=f1e240]:
+                - button "Play track" [ref=f1e242] [cursor=pointer]:
+                  - generic [ref=f1e243]: "27"
+                - heading "Heathens" [level=3] [ref=f1e244]
+                - heading "AURORA" [level=4] [ref=f1e245]
+                - generic [ref=f1e246]: 03:45
+              - listitem [ref=f1e247]:
+                - button "Play track" [ref=f1e249] [cursor=pointer]:
+                  - generic [ref=f1e250]: "28"
+                - heading "Winter Bird" [level=3] [ref=f1e251]
+                - heading "AURORA" [level=4] [ref=f1e252]
+                - generic [ref=f1e253]: 04:04
+              - listitem [ref=f1e254]:
+                - button "Play track" [ref=f1e256] [cursor=pointer]:
+                  - generic [ref=f1e257]: "29"
+                - heading "HAVE YOU SEEN ME DANCE ALONE?" [level=3] [ref=f1e258]
+                - heading "TOMORA, AURORA, Tom Rowlands" [level=4] [ref=f1e259]
+                - generic [ref=f1e260]: 04:21
+              - listitem [ref=f1e261]:
+                - button "Play track" [ref=f1e263] [cursor=pointer]:
+                  - generic [ref=f1e264]: "30"
+                - heading "All Is Soft Inside" [level=3] [ref=f1e265]
+                - heading "AURORA" [level=4] [ref=f1e266]
+                - generic [ref=f1e267]: 05:08
+              - listitem [ref=f1e268]:
+                - button "Play track" [ref=f1e270] [cursor=pointer]:
+                  - generic [ref=f1e271]: "31"
+                - heading "Exist for Love" [level=3] [ref=f1e272]
+                - heading "AURORA" [level=4] [ref=f1e273]
+                - generic [ref=f1e274]: 04:12
+              - listitem [ref=f1e275]:
+                - button "Play track" [ref=f1e277] [cursor=pointer]:
+                  - generic [ref=f1e278]: "32"
+                - heading "Warrior" [level=3] [ref=f1e279]
+                - heading "AURORA" [level=4] [ref=f1e280]
+                - generic [ref=f1e281]: 03:43
+              - listitem [ref=f1e282]:
+                - button "Play track" [ref=f1e284] [cursor=pointer]:
+                  - generic [ref=f1e285]: "33"
+                - heading "Starvation" [level=3] [ref=f1e286]
+                - heading "AURORA" [level=4] [ref=f1e287]
+                - generic [ref=f1e288]: 03:27
+              - listitem [ref=f1e289]:
+                - button "Play track" [ref=f1e291] [cursor=pointer]:
+                  - generic [ref=f1e292]: "34"
+                - heading "Forgotten Love" [level=3] [ref=f1e293]
+                - heading "AURORA" [level=4] [ref=f1e294]
+                - generic [ref=f1e295]: 03:28
+              - listitem [ref=f1e296]:
+                - button "Play track" [ref=f1e298] [cursor=pointer]:
+                  - generic [ref=f1e299]: "35"
+                - heading "Awakening" [level=3] [ref=f1e300]
+                - heading "AURORA" [level=4] [ref=f1e301]
+                - generic [ref=f1e302]: 03:40
+              - listitem [ref=f1e303]:
+                - button "Play track" [ref=f1e305] [cursor=pointer]:
+                  - generic [ref=f1e306]: "36"
+                - heading "Half The World Away" [level=3] [ref=f1e307]
+                - heading "AURORA" [level=4] [ref=f1e308]
+                - generic [ref=f1e309]: 03:18
+              - listitem [ref=f1e310]:
+                - button "Play track" [ref=f1e312] [cursor=pointer]:
+                  - generic [ref=f1e313]: "37"
+                - heading "When The Dark Dresses Lightly" [level=3] [ref=f1e314]
+                - heading "AURORA" [level=4] [ref=f1e315]
+                - generic [ref=f1e316]: 03:34
+              - listitem [ref=f1e317]:
+                - button "Play track" [ref=f1e319] [cursor=pointer]:
+                  - generic [ref=f1e320]: "38"
+                - heading "It Happened Quiet" [level=3] [ref=f1e321]
+                - heading "AURORA" [level=4] [ref=f1e322]
+                - generic [ref=f1e323]: 04:09
+              - listitem [ref=f1e324]:
+                - button "Play track" [ref=f1e326] [cursor=pointer]:
+                  - generic [ref=f1e327]: "39"
+                - heading "I DRINK THE LIGHT" [level=3] [ref=f1e328]
+                - heading "TOMORA, AURORA, Tom Rowlands" [level=4] [ref=f1e329]
+                - generic [ref=f1e330]: 07:56
+              - listitem [ref=f1e331]:
+                - button "Play track" [ref=f1e333] [cursor=pointer]:
+                  - generic [ref=f1e334]: "40"
+                - heading "Apple Tree" [level=3] [ref=f1e335]
+                - heading "AURORA" [level=4] [ref=f1e336]
+                - generic [ref=f1e337]: 03:08
+              - listitem [ref=f1e338]:
+                - button "Play track" [ref=f1e340] [cursor=pointer]:
+                  - generic [ref=f1e341]: "41"
+                - heading "Dreams" [level=3] [ref=f1e342]
+                - heading "AURORA" [level=4] [ref=f1e343]
+                - generic [ref=f1e344]: 04:24
+              - listitem [ref=f1e345]:
+                - button "Play track" [ref=f1e347] [cursor=pointer]:
+                  - generic [ref=f1e348]: "42"
+                - heading "Into the Unknown" [level=3] [ref=f1e349]
+                - heading "AURORA" [level=4] [ref=f1e350]
+                - generic [ref=f1e351]: 03:19
+              - listitem [ref=f1e352]:
+                - button "Play track" [ref=f1e354] [cursor=pointer]:
+                  - generic [ref=f1e355]: "43"
+                - heading "Stjernestøv" [level=3] [ref=f1e356]
+                - heading "AURORA" [level=4] [ref=f1e357]
+                - generic [ref=f1e358]: 03:18
+              - listitem [ref=f1e359]:
+                - button "Play track" [ref=f1e361] [cursor=pointer]:
+                  - generic [ref=f1e362]: "44"
+                - heading "Animal" [level=3] [ref=f1e363]
+                - heading "AURORA" [level=4] [ref=f1e364]
+                - generic [ref=f1e365]: 03:35
+              - listitem [ref=f1e366]:
+                - button "Play track" [ref=f1e368] [cursor=pointer]:
+                  - generic [ref=f1e369]: "45"
+                - heading "The Conflict Of The Mind" [level=3] [ref=f1e370]
+                - heading "AURORA" [level=4] [ref=f1e371]
+                - generic [ref=f1e372]: 04:14
+              - listitem [ref=f1e373]:
+                - button "Play track" [ref=f1e375] [cursor=pointer]:
+                  - generic [ref=f1e376]: "46"
+                - heading "A BOY LIKE YOU" [level=3] [ref=f1e377]
+                - heading "TOMORA, AURORA, Tom Rowlands" [level=4] [ref=f1e378]
+                - generic [ref=f1e379]: 05:00
+              - listitem [ref=f1e380]:
+                - button "Play track" [ref=f1e382] [cursor=pointer]:
+                  - generic [ref=f1e383]: "47"
+                - heading "Little Boy In The Grass" [level=3] [ref=f1e384]
+                - heading "AURORA" [level=4] [ref=f1e385]
+                - generic [ref=f1e386]: 04:16
+              - listitem [ref=f1e387]:
+                - button "Play track" [ref=f1e389] [cursor=pointer]:
+                  - generic [ref=f1e390]: "48"
+                - heading "Dance On The Moon" [level=3] [ref=f1e391]
+                - heading "AURORA" [level=4] [ref=f1e392]
+                - generic [ref=f1e393]: 03:36
+              - listitem [ref=f1e394]:
+                - button "Play track" [ref=f1e396] [cursor=pointer]:
+                  - generic [ref=f1e397]: "49"
+                - heading "Your Blood" [level=3] [ref=f1e398]
+                - heading "AURORA" [level=4] [ref=f1e399]
+                - generic [ref=f1e400]: 04:07
+              - listitem [ref=f1e401]:
+                - button "Play track" [ref=f1e403] [cursor=pointer]:
+                  - generic [ref=f1e404]: "50"
+                - heading "PLEASE" [level=3] [ref=f1e405]
+                - heading "TOMORA, AURORA, Tom Rowlands" [level=4] [ref=f1e406]
+                - generic [ref=f1e407]: 00:31
+          - alert [ref=f1e408]
+    - generic [ref=e105]:
+      - heading "Fan Culture" [level=2] [ref=e106]
+      - blockquote [ref=e107]: Norwegian supporters are quieter than the Scots, drier than the English, and absolutely deadly with a chorus when they decide to use it. Expect a sea of red shirts, Viking helmets that the wearers know are silly and wear anyway, and a chant book that leans heavily on "Norge, Norge, Norge" repeated until the building shakes. The traveling support won't match the Tartan Army next door in volume, but they'll match anyone in commitment — Norway hasn't been to a World Cup since 1998 and these fans have been waiting their entire adult lives. If Haaland scores, the noise is going to peel paint.
+    - generic [ref=e109]:
+      - text: 💡
+      - generic [ref=e110]: Fun Fact
+      - paragraph [ref=e111]: Before this summer, Norway had not qualified for a World Cup since 1998 — meaning Erling Haaland, the most prolific goalscorer in European club football, had played exactly zero minutes at a World Cup or Euros entering his age-25 season. He scored 16 in qualifying. He scored more goals in qualifying than most countries scored as a team.
+    - generic [ref=e112]:
+      - link "← Beyond the Pitch" [ref=e113] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-experience/
+      - link "All 48 Nations" [ref=e114] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/wc-guides/?type=nation
+  - contentinfo [ref=e115]:
+    - generic [ref=e116]:
+      - generic [ref=e117]:
+        - img "Stolen Water Media" [ref=e118]
+        - paragraph [ref=e119]: Sports. Entertainment. True Crime.
+      - generic [ref=e120]:
+        - heading "Our Shows" [level=4] [ref=e121]
+        - list [ref=e122]:
+          - listitem [ref=e123]:
+            - link "Your Dark Companion" [ref=e124] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/your-dark-companion/
+          - listitem [ref=e125]:
+            - link "Beer 30 Sports O'Clock" [ref=e126] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/beer-30-sports-oclock/
+          - listitem [ref=e127]:
+            - link "Engel Angle" [ref=e128] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/engle-angle/
+          - listitem [ref=e129]:
+            - link "Signal 51 Chronicles" [ref=e130] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/signal-51-chronicles/
+          - listitem [ref=e131]:
+            - link "Sunset Soccer Club" [ref=e132] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/sunset-soccer-club/
+          - listitem [ref=e133]:
+            - link "The Clubhouse Podcast" [ref=e134] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/the-clubhouse-podcast/
+          - listitem [ref=e135]:
+            - link "¡Al Maximo!" [ref=e136] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/al-maximo/
+      - generic [ref=e137]:
+        - heading "Explore" [level=4] [ref=e138]
+        - list [ref=e139]:
+          - listitem [ref=e140]:
+            - link "Home" [ref=e141] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=e142]:
+            - link "Shows" [ref=e143] [cursor=pointer]:
+              - /url: /shows/
+          - listitem [ref=e144]:
+            - link "Episodes" [ref=e145] [cursor=pointer]:
+              - /url: /episodes/
+          - listitem [ref=e146]:
+            - link "Archive" [ref=e147] [cursor=pointer]:
+              - /url: /archive/
+          - listitem [ref=e148]:
+            - link "Our Community" [ref=e149] [cursor=pointer]:
+              - /url: /our-community/
+          - listitem [ref=e150]:
+            - link "Advertise" [ref=e151] [cursor=pointer]:
+              - /url: /advertise/
+          - listitem [ref=e152]:
+            - link "Contact" [ref=e153] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/contact-us/
+    - paragraph [ref=e155]: © 2026 Stolen Water Media. All Rights Reserved.

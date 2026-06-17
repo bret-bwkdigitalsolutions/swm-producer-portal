@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://cairn:cairn_local@localhost:5434/swm_producer_portal"
+      ],
+      "env": {}
+    }
+  }
+}

@@ -1,0 +1,227 @@
+- generic [active] [ref=e1]:
+  - complementary "Promotion" [ref=e2]:
+    - link "FIFA World Cup 2026 — Predictions, Lineups, Live Chat & More Explore →" [ref=e3] [cursor=pointer]:
+      - /url: https://stolenwatermedia.com/world-cup/
+      - img [ref=e5]
+      - generic [ref=e6]: FIFA World Cup 2026 — Predictions, Lineups, Live Chat & More
+      - generic [ref=e7]: Explore →
+    - button "Dismiss promotion" [ref=e8] [cursor=pointer]: ×
+  - banner [ref=e9]:
+    - generic [ref=e10]:
+      - link "Stolen Water Media" [ref=e11] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/
+        - img "Stolen Water Media" [ref=e12]
+      - navigation [ref=e13]:
+        - list [ref=e14]:
+          - listitem [ref=e15]:
+            - link "Home" [ref=e16] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/
+          - listitem [ref=e17]:
+            - link "Shows" [ref=e18] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/
+          - listitem [ref=e19]:
+            - link "Episodes" [ref=e20] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/episodes/
+          - listitem [ref=e21]:
+            - link "Archive" [ref=e22] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/archive/
+          - listitem [ref=e23]:
+            - link "Appearances" [ref=e24] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/appearances/
+          - listitem [ref=e25]:
+            - link "Blog" [ref=e26] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/blog/
+          - listitem [ref=e27]:
+            - link "Press" [ref=e28] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/press/
+          - listitem [ref=e29]:
+            - link "About" [ref=e30] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/about/
+          - listitem [ref=e31]:
+            - link "Our Community" [ref=e32] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/our-community/
+          - listitem [ref=e33]:
+            - link "Advertise" [ref=e34] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/advertise/
+          - listitem [ref=e35]:
+            - link "World Cup 2026" [ref=e36] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/world-cup/
+  - link "Skip to content" [ref=e37] [cursor=pointer]:
+    - /url: "#content"
+  - generic [ref=e41]:
+    - generic [ref=e42]:
+      - link "← World Cup Hub" [ref=e43] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup/
+      - heading "Lineup Builder" [level=1] [ref=e44]
+      - paragraph [ref=e45]: Build your predicted starting XI for any World Cup 2026 team
+    - generic [ref=e46]:
+      - generic [ref=e47]:
+        - generic [ref=e48]: Team
+        - combobox "Team" [ref=e49] [cursor=pointer]:
+          - option "Select a team..." [selected]
+          - option "Algeria"
+          - option "Argentina"
+          - option "Australia"
+          - option "Austria"
+          - option "Belgium"
+          - option "Bosnia and Herzegovina"
+          - option "Brazil"
+          - option "Canada"
+          - option "Cape Verde"
+          - option "Colombia"
+          - option "Croatia"
+          - option "Curaçao"
+          - option "Czechia"
+          - option "DR Congo"
+          - option "Ecuador"
+          - option "Egypt"
+          - option "England"
+          - option "France"
+          - option "Germany"
+          - option "Ghana"
+          - option "Haiti"
+          - option "Iran"
+          - option "Iraq"
+          - option "Ivory Coast"
+          - option "Japan"
+          - option "Jordan"
+          - option "Mexico"
+          - option "Morocco"
+          - option "Netherlands"
+          - option "New Zealand"
+          - option "Norway"
+          - option "Panama"
+          - option "Paraguay"
+          - option "Portugal"
+          - option "Qatar"
+          - option "Saudi Arabia"
+          - option "Scotland"
+          - option "Senegal"
+          - option "South Africa"
+          - option "South Korea"
+          - option "Spain"
+          - option "Sweden"
+          - option "Switzerland"
+          - option "Tunisia"
+          - option "Turkiye"
+          - option "USA"
+          - option "Uruguay"
+          - option "Uzbekistan"
+      - generic [ref=e50]:
+        - generic [ref=e51]: Formation
+        - combobox "Formation" [ref=e52] [cursor=pointer]:
+          - option "4-3-3" [selected]
+          - option "4-4-2"
+          - option "3-5-2"
+          - option "4-2-3-1"
+          - option "3-4-3"
+          - option "5-3-2"
+      - generic [ref=e53]:
+        - button "Reset" [ref=e54] [cursor=pointer]
+        - button "Share Lineup" [ref=e55] [cursor=pointer]
+    - generic [ref=e56]:
+      - img [ref=e58]:
+        - generic [ref=e77]:
+          - generic [ref=e78] [cursor=pointer]:
+            - generic: GK
+          - generic [ref=e81] [cursor=pointer]:
+            - generic: LB
+          - generic [ref=e84] [cursor=pointer]:
+            - generic: CB
+          - generic [ref=e87] [cursor=pointer]:
+            - generic: CB
+          - generic [ref=e90] [cursor=pointer]:
+            - generic: RB
+          - generic [ref=e93] [cursor=pointer]:
+            - generic: CM
+          - generic [ref=e96] [cursor=pointer]:
+            - generic: CM
+          - generic [ref=e99] [cursor=pointer]:
+            - generic: CM
+          - generic [ref=e102] [cursor=pointer]:
+            - generic: LW
+          - generic [ref=e105] [cursor=pointer]:
+            - generic: ST
+          - generic [ref=e108] [cursor=pointer]:
+            - generic: RW
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - heading "Players" [level=3] [ref=e113]
+          - button "Close panel" [ref=e114] [cursor=pointer]: ×
+        - generic [ref=e115]:
+          - textbox "Type a player name..." [ref=e116]
+          - paragraph [ref=e118]: Select a team and tap a position on the pitch to assign a player.
+    - dialog "How the Lineup Builder works" [ref=e119]:
+      - generic [ref=e120]:
+        - heading "Build Your Starting XI" [level=2] [ref=e121]
+        - generic [ref=e122]:
+          - generic [ref=e123]:
+            - generic [ref=e124]: "1"
+            - paragraph [ref=e125]:
+              - strong [ref=e126]: Pick a team
+              - text: from the dropdown — all 48 World Cup nations are available.
+          - generic [ref=e127]:
+            - generic [ref=e128]: "2"
+            - paragraph [ref=e129]:
+              - strong [ref=e130]: Choose a formation
+              - text: and tap any position on the pitch to assign a player from the roster.
+          - generic [ref=e131]:
+            - generic [ref=e132]: "3"
+            - paragraph [ref=e133]:
+              - strong [ref=e134]: Share your lineup
+              - text: — hit the Share button to get a link with a custom image you can send to friends or post on social media.
+        - button "Got It — Let's Build" [ref=e135] [cursor=pointer]
+  - contentinfo [ref=e136]:
+    - generic [ref=e137]:
+      - generic [ref=e138]:
+        - img "Stolen Water Media" [ref=e139]
+        - paragraph [ref=e140]: Sports. Entertainment. True Crime.
+      - generic [ref=e141]:
+        - heading "Our Shows" [level=4] [ref=e142]
+        - list [ref=e143]:
+          - listitem [ref=e144]:
+            - link "Your Dark Companion" [ref=e145] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/your-dark-companion/
+          - listitem [ref=e146]:
+            - link "Beer 30 Sports O'Clock" [ref=e147] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/beer-30-sports-oclock/
+          - listitem [ref=e148]:
+            - link "Engel Angle" [ref=e149] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/engle-angle/
+          - listitem [ref=e150]:
+            - link "Signal 51 Chronicles" [ref=e151] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/signal-51-chronicles/
+          - listitem [ref=e152]:
+            - link "Sunset Soccer Club" [ref=e153] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/sunset-soccer-club/
+          - listitem [ref=e154]:
+            - link "The Clubhouse Podcast" [ref=e155] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/the-clubhouse-podcast/
+          - listitem [ref=e156]:
+            - link "¡Al Maximo!" [ref=e157] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/al-maximo/
+      - generic [ref=e158]:
+        - heading "Explore" [level=4] [ref=e159]
+        - list [ref=e160]:
+          - listitem [ref=e161]:
+            - link "Home" [ref=e162] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=e163]:
+            - link "Shows" [ref=e164] [cursor=pointer]:
+              - /url: /shows/
+          - listitem [ref=e165]:
+            - link "Episodes" [ref=e166] [cursor=pointer]:
+              - /url: /episodes/
+          - listitem [ref=e167]:
+            - link "Archive" [ref=e168] [cursor=pointer]:
+              - /url: /archive/
+          - listitem [ref=e169]:
+            - link "Our Community" [ref=e170] [cursor=pointer]:
+              - /url: /our-community/
+          - listitem [ref=e171]:
+            - link "Advertise" [ref=e172] [cursor=pointer]:
+              - /url: /advertise/
+          - listitem [ref=e173]:
+            - link "Contact" [ref=e174] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/contact-us/
+    - paragraph [ref=e176]: © 2026 Stolen Water Media. All Rights Reserved.

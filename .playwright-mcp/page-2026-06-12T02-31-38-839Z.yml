@@ -1,0 +1,336 @@
+- generic [active] [ref=e1]:
+  - complementary "Promotion" [ref=e2]:
+    - link "FIFA World Cup 2026 — Predictions, Lineups, Live Chat & More Explore →" [ref=e3] [cursor=pointer]:
+      - /url: https://stolenwatermedia.com/world-cup/
+      - img [ref=e5]
+      - generic [ref=e6]: FIFA World Cup 2026 — Predictions, Lineups, Live Chat & More
+      - generic [ref=e7]: Explore →
+    - button "Dismiss promotion" [ref=e8] [cursor=pointer]: ×
+  - banner [ref=e9]:
+    - generic [ref=e10]:
+      - link "Stolen Water Media" [ref=e11] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/
+        - img "Stolen Water Media" [ref=e12]
+      - navigation [ref=e13]:
+        - list [ref=e14]:
+          - listitem [ref=e15]:
+            - link "Home" [ref=e16] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/
+          - listitem [ref=e17]:
+            - link "Shows" [ref=e18] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/
+          - listitem [ref=e19]:
+            - link "Episodes" [ref=e20] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/episodes/
+          - listitem [ref=e21]:
+            - link "Archive" [ref=e22] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/archive/
+          - listitem [ref=e23]:
+            - link "Appearances" [ref=e24] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/appearances/
+          - listitem [ref=e25]:
+            - link "Blog" [ref=e26] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/blog/
+          - listitem [ref=e27]:
+            - link "Press" [ref=e28] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/press/
+          - listitem [ref=e29]:
+            - link "About" [ref=e30] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/about/
+          - listitem [ref=e31]:
+            - link "Our Community" [ref=e32] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/our-community/
+          - listitem [ref=e33]:
+            - link "Advertise" [ref=e34] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/advertise/
+          - listitem [ref=e35]:
+            - link "World Cup 2026" [ref=e36] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/world-cup/
+  - link "Skip to content" [ref=e37] [cursor=pointer]:
+    - /url: "#content"
+  - generic [ref=e41]:
+    - generic [ref=e44]:
+      - generic [ref=e45]: STOLEN WATER MEDIA
+      - heading "WORLD CUP 2026" [level=1] [ref=e46]
+      - paragraph [ref=e47]: Sunset Soccer Club's Tournament Coverage
+      - generic [ref=e48]: June 11 — July 19, 2026 • USA • Canada • Mexico
+      - generic [ref=e49]: TOURNAMENT IN PROGRESS
+      - generic [ref=e50]:
+        - link "Build Your Lineup" [ref=e51] [cursor=pointer]:
+          - /url: https://stolenwatermedia.com/world-cup-lineup/
+        - link "Prediction Bracket" [ref=e52] [cursor=pointer]:
+          - /url: https://stolenwatermedia.com/world-cup-bracket/
+    - generic [ref=e54]:
+      - link "Watch Parties" [ref=e55] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-watch-parties/
+        - img [ref=e57]
+        - generic [ref=e58]: Watch Parties
+      - link "DFW Guide" [ref=e59] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/wc-guides/dfw-dallas-arlington/
+        - img [ref=e61]
+        - generic [ref=e62]: DFW Guide
+      - link "World Cup Eats" [ref=e63] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-eats/
+        - img [ref=e65]
+        - generic [ref=e66]: World Cup Eats
+      - link "Cheat Sheet" [ref=e67] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-cheatsheet/
+        - img [ref=e69]
+        - generic [ref=e70]: Cheat Sheet
+      - link "Team Quiz" [ref=e71] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-quiz/
+        - img [ref=e73]
+        - generic [ref=e74]: Team Quiz
+    - generic [ref=e77]:
+      - generic [ref=e78]: NEW TO SOCCER?
+      - heading "Start with the Experience Guide" [level=2] [ref=e79]
+      - paragraph [ref=e80]: Cultural profiles for every nation. A DFW local survival guide. Food, music, watch parties, and a quiz to find your team — even if you don't follow the sport.
+      - link "Beyond the Pitch →" [ref=e81] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-experience/
+    - generic [ref=e84]:
+      - img "Sunset Soccer Club" [ref=e86]
+      - generic [ref=e87]:
+        - heading "Sunset Soccer Club" [level=2] [ref=e88]
+        - paragraph [ref=e89]: Tyler's World Cup coverage — nation profiles, cultural guides, and more.
+        - generic [ref=e90]:
+          - link "Nation Profiles" [ref=e91] [cursor=pointer]:
+            - /url: https://stolenwatermedia.com/world-cup-experience/
+          - link "Sunset Soccer Club" [ref=e92] [cursor=pointer]:
+            - /url: https://stolenwatermedia.com/shows/sunset-soccer-club/
+    - generic [ref=e93]:
+      - heading "Live Chat" [level=2] [ref=e94]
+      - paragraph [ref=e95]:
+        - text: Chat with other fans below. Posts from X tagged
+        - strong [ref=e96]: "#SWMWorldCup"
+        - text: will appear here too.
+      - generic [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e178]:
+            - generic [ref=e179]: C
+            - generic [ref=e180]:
+              - text: Bret Kramer
+              - generic [ref=e181]: "Really looking forward to #SunsetSoccerClub coverage of the World Cup at #SWMWorldCup"
+              - text: 5/3/2026
+          - generic [ref=e182]:
+            - generic [ref=e183]: X
+            - generic [ref=e184]:
+              - generic [ref=e185]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e186]: "Not going to a match? Neither are most of us. Find the best World Cup watch parties near you — bars, fan zones, outdoor screens. https://t.co/vpXn71oddp #FIFAWorldCup2026 #SWMWorldCup https://t.co/pmXfqtpTvD"
+              - text: 6/7/2026
+          - generic [ref=e187]:
+            - generic [ref=e188]: X
+            - generic [ref=e189]:
+              - generic [ref=e190]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e191]: "The lineup builder is live. Pick your World Cup XI for any nation — formation, starters, subs. Share it before your friends do. https://t.co/87Z2sp5x66 #FIFAWorldCup2026 #SWMWorldCup https://t.co/9AMC0QuTeC"
+              - text: 6/8/2026
+          - generic [ref=e192]:
+            - generic [ref=e193]: X
+            - generic [ref=e194]:
+              - generic [ref=e195]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e196]: "World Cup cities mean world-class food. Our eats guide maps the best spots in every host city — from stadium bites to the real stuff locals eat. https://t.co/Ng0y2vBh9i #FIFAWorldCup2026 #SWMWorldCup https://t.co/5EkchMgm1V"
+              - text: 6/8/2026
+          - generic [ref=e197]:
+            - generic [ref=e198]: X
+            - generic [ref=e199]:
+              - generic [ref=e200]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e201]: "The bracket challenge drops this week. 48 teams, expanded knockout rounds, bragging rights that last four years. Get ready. https://t.co/wCjzeVhfFQ #FIFAWorldCup2026 #SWMWorldCup https://t.co/eI4X4lvpVr"
+              - text: 6/9/2026
+          - generic [ref=e202]:
+            - generic [ref=e203]: X
+            - generic [ref=e204]:
+              - generic [ref=e205]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e206]: "100K people have taken the quiz. The most common result might surprise you. Find your World Cup team before the tournament starts. https://t.co/2g7DRYLVxZ #FIFAWorldCup2026 #SWMWorldCup https://t.co/iBGTW5tejW"
+              - text: 6/9/2026
+          - generic [ref=e207]:
+            - generic [ref=e208]: X
+            - generic [ref=e209]:
+              - generic [ref=e210]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e211]: "The bracket challenge is LIVE. Fill yours out before tomorrow's opening match. https://t.co/wCjzeVhfFQ #FIFAWorldCup2026 #SWMWorldCup https://t.co/1jmCqtKKnG"
+              - text: 6/10/2026
+          - generic [ref=e212]:
+            - generic [ref=e213]: X
+            - generic [ref=e214]:
+              - generic [ref=e215]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e216]: "Tomorrow it begins. Mexico vs South Africa in Mexico City. The hosts open the World Cup under enormous pressure. Here is everything you need to know about Group A. https://t.co/xTPXatAHcK #FIFAWorldCup2026 #SWMWorldCup https://t.co/Pz1TMmc0lR"
+              - text: 6/10/2026
+          - generic [ref=e217]:
+            - generic [ref=e218]: X
+            - generic [ref=e219]:
+              - generic [ref=e220]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e221]: "Four days until the World Cup comes to Arlington. Netherlands vs Japan on Saturday. The city guide has parking, food, transit, everything. https://t.co/0yE9Uskj1C #FIFAWorldCup2026 #DFWWorldCup #Dallas2026 #SWMWorldCup https://t.co/BHSD9Ru5NO"
+              - text: 6/10/2026
+          - generic [ref=e222]:
+            - generic [ref=e223]: X
+            - generic [ref=e224]:
+              - generic [ref=e225]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e226]: "The World Cup starts today. 48 nations. 104 matches. 16 cities across three countries. A month of the best sport on earth. Your guide to all of it: https://t.co/8t8yrDuSPX #FIFAWorldCup2026 #SWMWorldCup https://t.co/rrfr4IrX4Y"
+              - text: 12h ago
+          - generic [ref=e227]:
+            - generic [ref=e228]: X
+            - generic [ref=e229]:
+              - generic [ref=e230]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e231]: "The World Cup starts today. Last chance to lock in your bracket before the first ball is kicked. Free. Takes 5 minutes. Early entries get bonus points. https://t.co/wCjzeVhfFQ #FIFAWorldCup2026 #SWMWorldCup"
+              - text: 11h ago
+          - generic [ref=e232]:
+            - generic [ref=e233]: X
+            - generic [ref=e234]:
+              - generic [ref=e235]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e236]: "The World Cup kicks off tonight. You still haven't picked a team? Take the quiz. Two minutes. No wrong answers. https://t.co/2g7DRYLVxZ #FIFAWorldCup2026 #SWMWorldCup https://t.co/3nJ12noaiU"
+              - text: 9h ago
+          - generic [ref=e237]:
+            - generic [ref=e238]: X
+            - generic [ref=e239]:
+              - generic [ref=e240]: Sunset Lounge DFW @SunsetLoungeDFW
+              - generic [ref=e241]: "Mexico opens the World Cup at home against South Africa in an hour. The pressure on El Tri is enormous. Our full breakdown: https://t.co/xTPXatAHcK #FIFAWorldCup2026 #SWMWorldCup https://t.co/kPhBaz69Gv"
+              - text: 4h ago
+        - generic [ref=e100]:
+          - textbox "Your name" [ref=e101]
+          - generic [ref=e102]:
+            - textbox "Say something..." [ref=e103]
+            - button "Send" [ref=e104] [cursor=pointer]
+          - generic [ref=e105]: 0 / 500
+    - generic [ref=e106]:
+      - heading "Scores & Standings" [level=2] [ref=e107]
+      - generic [ref=e108]:
+        - button "Scores & Results" [ref=e109] [cursor=pointer]
+        - button "Standings" [ref=e110] [cursor=pointer]
+        - button "Schedule" [ref=e111] [cursor=pointer]
+      - generic [ref=e112]:
+        - generic [ref=e113]:
+          - table [ref=e242]:
+            - row "World - World Cup - Group Stage - 1 ❯" [ref=e243]:
+              - cell "World - World Cup - Group Stage - 1 ❯" [ref=e244]:
+                - text: World - World Cup - Group Stage - 1
+                - generic [ref=e245] [cursor=pointer]: ❯
+            - row "11.06.2026 21:00 31' South Korea South Korea logo 0 - 0 Czech Republic logo Czech Republic 0 - 0 ?" [ref=e302]:
+              - cell "11.06.2026 21:00" [ref=e247]
+              - cell "31'" [ref=e303] [cursor=pointer]
+              - cell "South Korea" [ref=e249]
+              - cell "South Korea logo" [ref=e250]:
+                - img "South Korea logo" [ref=e251]
+              - cell "0 - 0" [ref=e252]
+              - cell "Czech Republic logo" [ref=e253]:
+                - img "Czech Republic logo" [ref=e254]
+              - cell "Czech Republic" [ref=e255]
+              - cell "0 - 0" [ref=e256] [cursor=pointer]
+              - cell "?" [ref=e257] [cursor=pointer]:
+                - generic [ref=e258]: "?"
+            - row "11.06.2026 14:00 FT Mexico Mexico logo 2 - 0 South Africa logo South Africa 1 - 0 ?" [ref=e259]:
+              - cell "11.06.2026 14:00" [ref=e260]
+              - cell "FT" [ref=e261] [cursor=pointer]
+              - cell "Mexico" [ref=e262]
+              - cell "Mexico logo" [ref=e263]:
+                - img "Mexico logo" [ref=e264]
+              - cell "2 - 0" [ref=e265]
+              - cell "South Africa logo" [ref=e266]:
+                - img "South Africa logo" [ref=e267]
+              - cell "South Africa" [ref=e268]
+              - cell "1 - 0" [ref=e269] [cursor=pointer]
+              - cell "?" [ref=e270] [cursor=pointer]:
+                - generic [ref=e271]: "?"
+          - generic [ref=e273]:
+            - generic [ref=e274]: ×
+            - table [ref=e276]:
+              - row "World - World Cup Group Stage - 1 11.06.2026 21:00" [ref=e277]:
+                - cell "World - World Cup Group Stage - 1" [ref=e278]:
+                  - generic [ref=e279]:
+                    - text: World - World Cup
+                    - text: Group Stage - 1
+                - cell "11.06.2026 21:00" [ref=e280]
+              - row "South Korea logo South Korea 0 - 0 First Half 31' Czech Republic logo Czech Republic" [ref=e304]:
+                - cell "South Korea logo South Korea" [ref=e282]:
+                  - img "South Korea logo" [ref=e283]
+                  - generic [ref=e284]: South Korea
+                - cell "0 - 0 First Half 31'" [ref=e305]:
+                  - generic [ref=e286]: 0 - 0
+                  - generic [ref=e287]:
+                    - text: First Half
+                    - generic [ref=e306]: 31'
+                - cell "Czech Republic logo Czech Republic" [ref=e289]:
+                  - img "Czech Republic logo" [ref=e290]
+                  - generic [ref=e291]: Czech Republic
+              - row "Estadio Akron Guadalajara" [ref=e292]:
+                - cell "Estadio Akron Guadalajara" [ref=e293]:
+                  - generic [ref=e294]: Estadio Akron Guadalajara
+              - row "StatisticsLineupsPlayers" [ref=e295]:
+                - cell "StatisticsLineupsPlayers" [ref=e296]
+        - paragraph [ref=e114]:
+          - strong [ref=e115]: "Tip:"
+          - text: click the
+          - generic [ref=e116] [cursor=pointer]: "?"
+          - text: at the end of any match row for full details — goals, cards, lineups, and stats.
+    - generic [ref=e119]:
+      - heading "Prediction Bracket Game" [level=2] [ref=e120]
+      - paragraph [ref=e121]: Pick your winners, compete against other fans, and share your bracket. Join at any round — it's never too late to play.
+      - link "Make Your Picks" [ref=e122] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-bracket/
+    - generic [ref=e126]:
+      - heading "Lineup Builder" [level=2] [ref=e127]
+      - paragraph [ref=e128]: Build your predicted starting XI for any World Cup team. Pick your formation, place your players, and share your lineup.
+      - link "Build a Lineup" [ref=e129] [cursor=pointer]:
+        - /url: https://stolenwatermedia.com/world-cup-lineup/
+    - generic [ref=e131]:
+      - heading "About Sunset Soccer Club" [level=2] [ref=e132]
+      - paragraph [ref=e133]: Sunset Soccer Club is a show on the Stolen Water Media podcast network covering the beautiful game with passion, personality, and the fastest takes in independent soccer media.
+      - generic [ref=e134]:
+        - link "Explore SWM" [ref=e135] [cursor=pointer]:
+          - /url: https://stolenwatermedia.com/
+        - link "All Episodes" [ref=e136] [cursor=pointer]:
+          - /url: https://stolenwatermedia.com/episodes/
+  - contentinfo [ref=e137]:
+    - generic [ref=e138]:
+      - generic [ref=e139]:
+        - img "Stolen Water Media" [ref=e140]
+        - paragraph [ref=e141]: Sports. Entertainment. True Crime.
+      - generic [ref=e142]:
+        - heading "Our Shows" [level=4] [ref=e143]
+        - list [ref=e144]:
+          - listitem [ref=e145]:
+            - link "Your Dark Companion" [ref=e146] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/your-dark-companion/
+          - listitem [ref=e147]:
+            - link "Beer 30 Sports O'Clock" [ref=e148] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/beer-30-sports-oclock/
+          - listitem [ref=e149]:
+            - link "Engel Angle" [ref=e150] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/engle-angle/
+          - listitem [ref=e151]:
+            - link "Signal 51 Chronicles" [ref=e152] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/signal-51-chronicles/
+          - listitem [ref=e153]:
+            - link "Sunset Soccer Club" [ref=e154] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/sunset-soccer-club/
+          - listitem [ref=e155]:
+            - link "The Clubhouse Podcast" [ref=e156] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/the-clubhouse-podcast/
+          - listitem [ref=e157]:
+            - link "¡Al Maximo!" [ref=e158] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/shows/al-maximo/
+      - generic [ref=e159]:
+        - heading "Explore" [level=4] [ref=e160]
+        - list [ref=e161]:
+          - listitem [ref=e162]:
+            - link "Home" [ref=e163] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=e164]:
+            - link "Shows" [ref=e165] [cursor=pointer]:
+              - /url: /shows/
+          - listitem [ref=e166]:
+            - link "Episodes" [ref=e167] [cursor=pointer]:
+              - /url: /episodes/
+          - listitem [ref=e168]:
+            - link "Archive" [ref=e169] [cursor=pointer]:
+              - /url: /archive/
+          - listitem [ref=e170]:
+            - link "Our Community" [ref=e171] [cursor=pointer]:
+              - /url: /our-community/
+          - listitem [ref=e172]:
+            - link "Advertise" [ref=e173] [cursor=pointer]:
+              - /url: /advertise/
+          - listitem [ref=e174]:
+            - link "Contact" [ref=e175] [cursor=pointer]:
+              - /url: https://stolenwatermedia.com/contact-us/
+    - paragraph [ref=e177]: © 2026 Stolen Water Media. All Rights Reserved.
+  - generic [ref=e297] [cursor=pointer]:
+    - img [ref=e299]
+    - generic [ref=e301]: Scroll to Top
