@@ -19,6 +19,7 @@ vi.mock("next/navigation", () => ({
 
 const mockUserContentTypeAccessFindUnique = vi.fn();
 const mockUserShowAccessFindUnique = vi.fn();
+const mockUserFindUnique = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -29,6 +30,9 @@ vi.mock("@/lib/db", () => ({
     userShowAccess: {
       findUnique: (...args: unknown[]) =>
         mockUserShowAccessFindUnique(...args),
+    },
+    user: {
+      findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
     },
   },
 }));
@@ -188,7 +192,16 @@ describe("auth-guard", () => {
   // -----------------------------------------------------------------------
 
   describe("verifyShowAccess", () => {
-    it("returns true when the user has show access", async () => {
+    it("returns true for admin users without checking show access table", async () => {
+      mockUserFindUnique.mockResolvedValue({ role: "admin" });
+
+      const result = await verifyShowAccess("user-1", 42);
+      expect(result).toBe(true);
+      expect(mockUserShowAccessFindUnique).not.toHaveBeenCalled();
+    });
+
+    it("returns true when a producer has show access", async () => {
+      mockUserFindUnique.mockResolvedValue({ role: "producer" });
       mockUserShowAccessFindUnique.mockResolvedValue({
         id: "sa-1",
         userId: "user-1",
@@ -202,7 +215,8 @@ describe("auth-guard", () => {
       });
     });
 
-    it("returns false when the user does not have show access", async () => {
+    it("returns false when a producer does not have show access", async () => {
+      mockUserFindUnique.mockResolvedValue({ role: "producer" });
       mockUserShowAccessFindUnique.mockResolvedValue(null);
 
       const result = await verifyShowAccess("user-1", 99);

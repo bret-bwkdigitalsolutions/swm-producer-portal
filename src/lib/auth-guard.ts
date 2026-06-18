@@ -48,6 +48,13 @@ export async function verifyShowAccess(
   userId: string,
   wpShowId: number
 ): Promise<boolean> {
+  // Check if user is admin — admins can access all shows
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  if (user?.role === "admin") return true;
+
   const access = await db.userShowAccess.findUnique({
     where: { userId_wpShowId: { userId, wpShowId } },
   });
