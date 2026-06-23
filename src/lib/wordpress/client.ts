@@ -67,7 +67,9 @@ async function wpFetch<T>(
 export async function getShows(): Promise<WpShow[]> {
   const shows = await wpFetch<WpShow[]>("/swm_show?per_page=100&_fields=id,title,slug,status,meta,acf");
   for (const s of shows) s.title.rendered = decodeHtmlEntities(s.title.rendered);
-  return shows;
+  // Exclude archive shows — they duplicate real shows and cause producers
+  // to submit content under the wrong show ID.
+  return shows.filter((s) => !s.meta?.is_archive_show);
 }
 
 export async function getShow(id: number): Promise<WpShow> {
