@@ -67,9 +67,25 @@ async function wpFetch<T>(
 export async function getShows(): Promise<WpShow[]> {
   const shows = await wpFetch<WpShow[]>("/swm_show?per_page=100&_fields=id,title,slug,status,meta,acf");
   for (const s of shows) s.title.rendered = decodeHtmlEntities(s.title.rendered);
-  // Exclude archive shows — they duplicate real shows and cause producers
-  // to submit content under the wrong show ID.
-  return shows.filter((s) => !s.meta?.is_archive_show);
+  // Exclude duplicate show entries that shadow real shows. The
+  // is_archive_show flag is unreliable (set on active shows too), so we
+  // detect duplicates by checking for another show with the same name.
+  const nameCount = new Map<string, number>();
+  for (const s of shows) {
+    const name = s.title.rendered.toLowerCase();
+    nameCount.set(name, (nameCount.get(name) ?? 0) + 1);
+  }
+  return shows.filter((s) => {
+    const name = s.title.rendered.toLowerCase();
+    // If there's only one show with this name, keep it regardless of flags
+    if ((nameCount.get(name) ?? 1) <= 1) return true;
+    // Multiple shows share this name — keep the one with the lowest ID
+    // (the original), drop the duplicates
+    const lowestId = Math.min(
+      ...shows.filter((o) => o.title.rendered.toLowerCase() === name).map((o) => o.id)
+    );
+    return s.id === lowestId;
+  });
 }
 
 export async function getShow(id: number): Promise<WpShow> {
