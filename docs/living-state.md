@@ -1,114 +1,67 @@
 # swm-producer-portal — Living State
 
 ## What This Is
-A comprehensive podcast producer portal that transforms audio episodes into multi-platform digital assets through automated AI-powered workflows. Podcast producers use this to ingest episodes from hosting platforms, generate blog posts from transcripts with human collaboration and style learning, distribute content across WordPress and YouTube, manage live recording lifecycles from stream creation to podcast publication, and handle premium content distribution to private shows and gated platforms.
+A podcast producer portal that turns raw episode audio into distributed, multi-platform content. Podcast producers use it to pull episodes in from Transistor.fm, generate transcripts, produce AI-assisted blog posts with human-in-the-loop editing, and push finished content out to WordPress, YouTube, and Transistor — including a premium track that gates content behind private shows, unlisted videos, and paywalled posts. It also manages the live-recording lifecycle (YouTube livestream → podcast episode) and tracks user access across shows for a small internal producer team.
 
 ## How to Run & Access
-Development server runs with `npm run dev` on http://localhost:3000. The application containerizes with Docker using Next.js standalone output, including FFmpeg, yt-dlp v2026.05.24.234402, and Deno v2.7.12 for media processing. The container automatically runs database migrations via `scripts/migrate.mjs` before starting the server on port 3000. Premium content synchronization operates through nightly cron jobs and webhook receivers. Production deployment configuration is complete but no live deployment URLs are evident in the codebase.
+Run locally with `npm run dev` (Next.js dev server on http://localhost:3000). Database migrations and seeding go through Prisma (`npx prisma migrate`, `npx tsx prisma/seed.ts`). Tests run via `npm run test` (Vitest) and `npm run test:smoke` (a standalone smoke-test script). Linting is `npm run lint`.
+
+The production image is a multi-stage Docker build producing a Next.js standalone server. It bakes in FFmpeg, a pinned yt-dlp nightly build, and Deno (both needed for video/audio processing and the transistor-scraper subsystem), and runs pending Prisma migrations automatically via `scripts/migrate.mjs` before starting `server.js` on port 3000. No deployment target (Vercel, Cloud Run, Fly, etc.) is declared in the repo — there's no vercel.json, no cloud deploy workflow, and no documented production URL. The `.github/workflows/notify-obsidian-hub.yml` workflow only pings this documentation hub; it does not deploy. Given the GCS and Postgres dependencies, the app is presumably deployed to a container platform, but this is not evidenced in-repo.
 
 ## Site Map / Content Structure
-- `/` — Public landing page introducing the portal
-- `/privacy` — Privacy policy page
-- `/terms` — Terms of service page
-- `/admin` — Administrative dashboard with activity overview and navigation
-- `/admin/shows` — Show configuration with platform links, host management, AI style guides, and premium content settings
-- `/admin/shows/sync` — Episode synchronization from Transistor.fm and other platforms
-- `/admin/credentials` — Platform credential management with OAuth health monitoring
-- `/admin/credentials/[showId]` — Per-show API credentials with YouTube channel verification
-- `/admin/blog-ideas` — AI-generated blog ideas organized by episode with collapsible grouping
-- `/admin/blog-ideas/import` — Direct blog post import from Google Docs with AI metadata extraction
-- `/admin/live-recordings` — Live recording management with YouTube-to-podcast workflow state tracking and premium toggles
-- `/admin/social-accounts` — Social media platform integration and analytics management (shell interface)
-- `/admin/users` — User invitation system and access control
-- `/admin/users/[id]` — Individual user profile and permission management
-- `/admin/activity` — System activity logs and user behavior tracking
-- `/reaction` — Content reaction submission form with show-specific filtering
-- `/api/distribute/analyze` — AI content analysis for titles and metadata suggestions
-- `/api/distribute/[id]` — Multi-platform content distribution pipeline with premium content routing
-- `/api/upload/thumbnail` — Image processing with EXIF handling and compression
-- `/api/scraper/trigger` — Automated Transistor dashboard scraping
-- `/api/webhooks/subscription` — Webhook receiver for premium subscription events
+- `/` — public landing page
+- `/privacy`, `/terms` — static legal pages
+- `/admin` — dashboard home with activity overview
+- `/admin/shows` — show configuration: platform links, hosts, AI style guides, season numbering scheme, premium settings
+- `/admin/shows/sync` — episode sync trigger from Transistor.fm
+- `/admin/credentials` — platform credential list with OAuth health status
+- `/admin/credentials/[showId]` — per-show credentials, YouTube channel verification, connected account display
+- `/admin/blog-ideas` — AI-generated blog ideas grouped by episode, collapsible
+- `/admin/blog-ideas/import` — manual blog import from Google Docs with AI-assisted metadata extraction
+- `/admin/live-recordings` — livestream-to-podcast workflow tracker, premium toggle per recording
+- `/admin/social-accounts` — social platform connection UI (shell; analytics not yet wired up)
+- `/admin/users`, `/admin/users/[id]` — invite flow, role/access management
+- `/admin/activity` — activity/audit log
+- `/reaction` — public-facing content reaction submission form
+- `/api/distribute/analyze` — AI content analysis (titles, metadata suggestions)
+- `/api/distribute/[id]` — distribution pipeline endpoint, premium-aware routing across platforms
+- `/api/upload/thumbnail` — image upload with EXIF correction and compression
+- `/api/scraper/trigger` — Transistor scraper trigger
+- `/api/webhooks/subscription` — inbound webhook for website subscription events, synced to Transistor
 
 ## Current Architecture
-Next.js 16 application with App Router using PostgreSQL via Prisma ORM with connection pooling for multi-tenant podcast data. Authentication flows through NextAuth v5 with Google OAuth and invite-based user management. Core integrations include a standalone Transistor.fm scraper with Playwright for episode ingestion, Deepgram SDK for transcription services, Anthropic Claude for content generation with show-specific style guides, Google Drive integration for collaborative editing workflows, WordPress REST API for SEO-optimized publishing with premium content gating, YouTube Data API v3 with OAuth channel verification and per-identity cookie support for yt-dlp, Google Cloud Storage for media asset management, and Transistor API for premium subscriber synchronization. Upstash Redis provides caching and rate limiting. The system emphasizes automated content workflows with human review checkpoints, comprehensive edit tracking to measure AI vs. human contributions, per-show customization including seasonal numbering schemes and dynamic style guide synthesis, and premium content distribution to private podcast feeds, unlisted YouTube videos, and gated WordPress posts.
+Next.js 16 (App Router) on React 19, PostgreSQL via Prisma 7 with the `pg` adapter (`@prisma/adapter-pg`), NextAuth v5 for auth (Google OAuth + invite-based accounts). Content generation runs on Anthropic Claude through the official SDK — the model is now read from `ANTHROPIC_MODEL` rather than hardcoded, and a startup health check pings the configured model and emails an admin if it comes back retired, a direct response to a recent production incident where a hardcoded model ID (`claude-sonnet-4-20250514`) was retired without warning.
+
+Episode ingestion runs through a standalone Playwright-based scraper (`scripts/transistor-scraper`) that logs into the Transistor dashboard and pulls episode data the API doesn't expose. Transcription uses Deepgram. Video handling uses `@distube/ytdl-core` plus a containerized yt-dlp binary (pinned nightly, since YouTube's player API outpaces yt-dlp's stable releases) with per-YouTube-identity cookie isolation to avoid cross-account auth conflicts. Media assets live in Google Cloud Storage; images go through `sharp` for EXIF-safe resizing. WordPress publishing goes through its REST API with SEO fields and premium-gating support. Upstash Redis handles caching/rate limiting. Resend sends transactional email (invites, health-check alerts). Tiptap powers the rich-text editing surfaces; `mammoth` handles docx import for manually-authored posts.
+
+The premium content model threads an `isPremiumOnly` flag from live recordings through to distribution jobs, which then route to a private Transistor show, an unlisted YouTube upload, and a gated WordPress post — with verification logic aware enough to skip public-URL checks for gated content. A Transistor subscriber API client and a nightly reconciliation cron keep premium show access in sync with website subscription state, driven by an inbound webhook receiver.
+
+Distribution jobs are the system's most concurrency-sensitive area: recent work has added atomic guards on retries, race-safe metadata merges across all job writers, and persisted verification schedules — evidence that the original design under-accounted for concurrent writes and process restarts, and the team is actively hardening it rather than redesigning it.
 
 ## What Works Today
-- Automated episode ingestion from Transistor.fm with metadata extraction, thumbnail processing, and transcript generation
-- AI blog post generation from episode transcripts using Claude with dynamically learned style guides after 2+ human edits
-- Google Docs collaborative editing integration with automatic change detection and edit percentage tracking
-- Multi-platform content distribution to WordPress with SEO optimization, category assignment, formatted transcripts, and premium gating
-- YouTube video publishing with AI-suggested titles, thumbnail cropping, 100-character title limits, and premium routing to unlisted videos
-- Host-written blog post import directly from Google Docs with AI metadata auto-fill and file upload support
-- Live recording lifecycle management from YouTube stream creation through podcast episode handoff with premium content toggles
-- Season and episode numbering driven by configurable per-show schemes with conditional season display
-- Pre-distribution duplicate detection across YouTube, Transistor, and WordPress platforms
-- Premium-aware verification system that skips public URL checks for gated content
-- Tiered post-distribution verification at 30-second, 2-minute, 10-minute, and 30-minute intervals with scheduling accommodation
-- Appearance gallery management with per-file upload and 16:9 hero image cropping
-- Auto-syncing style guides that learn from accumulated human edits on AI-generated content
-- User invitation system with role-based access and last login tracking
-- Image processing pipeline with EXIF rotation correction and WordPress media library integration
-- YouTube OAuth with channel verification and connected Google account email display
-- Content reaction submission system with show association and categorization
-- Auto-reload functionality preventing stale server actions after deployments
-- High-intent keyword generation and WordPress tag attachment for SEO optimization
-- Vimeo URL support as video source for distribution pipeline
-- In-place blog post regeneration for iterative content improvement
-- Per-YouTube-identity cookie management for yt-dlp downloads to prevent authentication conflicts
-- Host name spelling injection into AI prompts to prevent transcript misspellings
-- Show thumbnail removal from blog posts upon publishing to avoid duplication
-- Transistor subscriber API integration for premium private show management
-- Webhook receiver for website subscription events with automatic Transistor synchronization
-- Nightly cron job for premium subscriber reconciliation across platforms
-- YouTube Studio reminder notifications for premium content manual upload steps
-- Race-safe metadata merges across all distribution job writers with atomic guards
-- Background AI analysis to avoid proxy timeouts on URL-sourced jobs
-- Recovered analyze pipelines that survive server restarts
-- Verification schedule persistence across system restarts
+- Episode ingestion from Transistor.fm with metadata extraction, thumbnail processing, and transcript generation
+- AI blog post generation from transcripts using Claude, with per-show style guides that adapt after 2+ human edits
+- Google Docs-based collaborative editing with automated edit-percentage tracking (AI vs. human contribution)
+- Distribution to WordPress (SEO fields, categories, formatted transcript, premium gating) and YouTube (AI-suggested titles capped at 100 characters, thumbnail cropping, premium routing to unlisted uploads)
+- Full Vimeo video download as a source for YouTube uploads in the distribution pipeline
+- Manual blog import directly from Google Docs with AI-assisted metadata auto-fill
+- Live recording lifecycle tracking from YouTube stream creation through podcast handoff, with a premium toggle
+- Configurable per-show season/episode numbering schemes
+- Pre-distribution duplicate detection across YouTube, Transistor, and WordPress
+- Premium-aware verification that skips public-URL checks for gated content, with tiered verification checks (30s/2m/10m/30m) that survive process restarts
+- Race-safe, atomically-guarded distribution job writes that prevent duplicate uploads under concurrent retries
+- Background AI analysis for URL-sourced jobs (avoids proxy timeouts) with recovery for pipelines interrupted by restarts
+- Configurable Anthropic model selection with a startup health check that emails an admin if the model is retired
+- Transistor subscriber sync: webhook-driven updates plus a nightly reconciliation cron for premium shows
+- YouTube Studio reminder surfaced for premium distributions requiring a manual step
+- Show list correctly excludes archived shows and de-duplicates by name (moved off an unreliable `is_archive_show` flag)
+- Admin users bypass per-show access checks correctly in `verifyShowAccess`
+- User invitation flow with role-based access and last-login tracking
+- Content reaction submission form with show association
+- Appearance gallery management with 16:9 hero cropping
 
 ## Recent Activity
-Development focus has centered on **critical reliability and security hardening** with race-safe metadata merges, atomic guards preventing duplicate uploads, and credential exposure fixes. **System resilience improvements** include verification schedule persistence across restarts, background AI analysis to prevent proxy timeouts, and pipeline recovery for server restart scenarios. **Platform integration refinements** feature failed publish/schedule detection for Transistor, premium-aware verification for private content, and enhanced subscriber reconciliation. **Security enhancements** add show access requirements on aggregated analytics actions and proper credential isolation. **Test infrastructure repair** addresses stale tests across processor modules, AI components, GCS integration, and WordPress types to maintain code quality.
-
-## Known Gaps & Limitations
-- Social media analytics models exist but lack data collection automation and dashboard visualization
-- Live recording feature requires manual operator setup and coordination with WordPress publishing workflows
-- YouTube OAuth tokens require manual intervention when expired without automated refresh workflows
-- Distribution pipeline lacks comprehensive retry mechanisms for handling complex platform upload failures
-- Style guide synthesis measures edit percentages but cannot assess semantic quality improvements
-- Google Drive integration has minimal error handling for API quota exhaustion and permission failures
-- Content validation for reaction submissions lacks quality control and spam prevention measures
-- Premium subscription webhook processing has authentication mechanisms but limited validation depth
-- Cross-platform synchronization timing can still produce verification edge cases despite recent improvements
-- Error reporting for premium subscriber reconciliation failures needs admin interface exposure
-
-## Next Meaningful Capabilities
-- Social media follower analytics dashboard with historical tracking and cross-platform growth insights
-- Automated social media snippet generation optimized for platform-specific character limits and engagement patterns
-- Advanced content calendar with strategic scheduling based on audience behavior analytics and optimal posting times
-- Cross-platform performance analytics combining podcast metrics with blog engagement and video view data
-- Template-driven blog post structures allowing custom formats beyond simple prompt-based generation
-- Enhanced collaborative workflows with approval chains, granular reviewer permissions, and change request systems
-
-## Open Technical Questions
-- Premium subscriber synchronization strategy for handling complex webhook delivery failures and maintaining eventual consistency
-- Optimal job queuing architecture for high-concurrency episode processing with proper backpressure and resource allocation
-- Long-term media storage strategy balancing Google Cloud Storage costs with CDN performance and retention policies
-- Social media API integration approach for automated follower data collection across platforms with varying rate limits and quotas
-- Comprehensive error recovery framework for gracefully handling partial distribution failures with rollback capabilities
-- Content quality assessment metrics for measuring semantic improvements in AI-generated content beyond edit percentages
-- Premium content access control implementation for protecting gated WordPress content with proper authentication layers
-
-## Key Files & Entry Points
-- `src/app/admin/blog-ideas/page.tsx` — Primary blog content management with episode-based organization and collapsible grouping
-- `src/app/admin/live-recordings/page.tsx` — Live recording management interface with YouTube workflow state tracking and premium toggles
-- `src/app/api/distribute/analyze/route.ts` — AI-powered content analysis for title suggestions and metadata extraction
-- `scripts/transistor-scraper/index.ts` — Automated episode ingestion with Playwright authentication and data parsing
-- `src/app/admin/shows/page.tsx` — Show configuration interface with platform integration, style guide management, and premium settings
-- `prisma/schema.prisma` — Complete data model defining shows, episodes, users, credentials, social media analytics, live recordings, and premium content
-- `src/app/admin/blog-ideas/actions.ts` — Blog generation workflows with atomic processing and error handling
-- `src/app/api/webhooks/subscription/route.ts` — Premium subscription webhook receiver with Transistor synchronization
-- `Dockerfile` — Production container with pinned media processing tools and automated migration runner
-- `src/app/admin/credentials/[showId]/page.tsx` — Platform credential management with OAuth verification and health monitoring
+The last few weeks show a clear pivot from **feature buildout** to **reliability and correctness hardening** on the distribution pipeline.
 
 ---
-_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-06-15_
+_Auto-generated by [obsidian-hub](https://github.com/bret-bwkdigitalsolutions/obsidian-hub) · 2026-07-16_
