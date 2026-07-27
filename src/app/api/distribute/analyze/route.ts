@@ -8,17 +8,34 @@ import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
 import { getRecentEpisodeTitles, getLatestEpisodeNumbers, getShow } from "@/lib/wordpress/client";
 
-// Map raw yt-dlp / pipeline errors to a user-actionable message. "Sign in to
-// confirm" and "cookies" both point at a missing/expired/untrusted session.
-// "Requested format is not available" is what yt-dlp returns when YouTube
-// served no usable audio formats — usually a still-processing live VOD, a
-// gated video, or (per past incident) an empty YOUTUBE_COOKIES env making
-// YouTube downgrade the player response on datacenter IPs.
-function friendlyAnalyzeError(raw: string): string {
-  if (raw.includes("Sign in to confirm") || raw.includes("cookies")) {
+type SourceKind = "youtube" | "vimeo" | "upload";
+
+// Map raw yt-dlp / pipeline errors to a user-actionable message.
+//
+// CRITICAL: both YouTube and Vimeo downloads run through the same yt-dlp call,
+// and yt-dlp's failure output for *any* source routinely includes a generic
+// "...use --cookies for authentication..." hint. Matching bare "cookies"
+// therefore mislabels Vimeo failures as expired-YouTube-cookie problems, which
+// sends producers/admins chasing a cookie refresh that can't help. So the
+// mapper is source-aware: a Vimeo source gets a Vimeo-specific message, and
+// only genuine YouTube auth signals map to the cookie message.
+//
+// "Sign in to confirm" is YouTube's bot-check. "Requested format is not
+// available" is what yt-dlp returns when YouTube served no usable audio
+// formats — usually a still-processing live VOD, a gated video, or (per past
+// incident) an empty YOUTUBE_COOKIES env making YouTube downgrade the player
+// response on datacenter IPs.
+function friendlyAnalyzeError(raw: string, source: SourceKind): string {
+  const looksLikeAuth = raw.includes("Sign in to confirm") || raw.includes("cookies");
+  const looksLikeNoFormat = raw.includes("Requested format is not available");
+
+  if (source === "vimeo" && (looksLikeAuth || looksLikeNoFormat || /vimeo/i.test(raw))) {
+    return "Vimeo download failed — the server couldn't download this video. Make sure the Vimeo video is public, or unlisted with downloads enabled (on Vimeo: video Settings → Privacy → enable Download), then try again. Or use the “Upload video file” option to upload the video directly.";
+  }
+  if (looksLikeAuth) {
     return "YouTube download failed — authentication cookies have expired or are missing. Please contact an admin to refresh them, or use a Vimeo URL instead.";
   }
-  if (raw.includes("Requested format is not available")) {
+  if (looksLikeNoFormat) {
     return "YouTube download failed — no downloadable audio was offered for this video. It may still be processing after the livestream, be members-only/age-gated for the configured account, or the YouTube cookies on the server may be empty or malformed. Try again in a bit, or contact an admin.";
   }
   return raw;
@@ -54,12 +71,19 @@ async function setAnalyzeState(jobId: string, analyze: AnalyzeState) {
  * then returns a plain-text "upstream error" page that broke the client.
  */
 async function runAnalysis(jobId: string, startState: AnalyzeState) {
+  // Tracked across the try/catch so a download failure is reported with the
+  // right source-specific message (see friendlyAnalyzeError).
+  let sourceKind: SourceKind = "upload";
   try {
     const job = await db.distributionJob.findUnique({
       where: { id: jobId },
       select: { gcsPath: true, metadata: true, wpShowId: true },
     });
     if (!job) throw new Error("Job disappeared during analysis.");
+
+    const jobMetaForSource = (job.metadata as Record<string, unknown>) ?? {};
+    if (jobMetaForSource.existingVimeoUrl) sourceKind = "vimeo";
+    else if (jobMetaForSource.existingYoutubeUrl) sourceKind = "youtube";
 
     // For URL-sourced episodes (YouTube or Vimeo): download the audio to GCS
     // if not already done.
@@ -144,7 +168,7 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
     await setAnalyzeState(jobId, {
       state: "failed",
       startedAt: startState.startedAt,
-      error: friendlyAnalyzeError(rawMessage),
+      error: friendlyAnalyzeError(rawMessage, sourceKind),
     }).catch((e) => console.error(`[analyze] Failed to record failure for job ${jobId}:`, e));
   }
 }
