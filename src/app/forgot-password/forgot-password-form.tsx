@@ -2,10 +2,16 @@
 
 import { useActionState } from "react";
 import Link from "next/link";
-import { requestPasswordReset, GENERIC_SUCCESS } from "./actions";
+import { requestPasswordReset } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+// Shown on submit regardless of whether the email maps to a real account, to
+// avoid leaking which emails are registered (account enumeration). Lives here,
+// not in actions.ts, because a "use server" file can't export a string.
+const GENERIC_SUCCESS =
+  "If an account exists for that email, we've sent a link to reset the password. Check your inbox.";
 
 export function ForgotPasswordForm() {
   const [state, formAction, isPending] = useActionState(requestPasswordReset, null);

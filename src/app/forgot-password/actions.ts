@@ -4,16 +4,13 @@ import { db } from "@/lib/db";
 import { createAndSendPasswordReset } from "@/lib/password-reset";
 
 interface ForgotPasswordState {
-  // Always the same generic success message on submit, regardless of whether
-  // the email maps to an account — see below.
+  // On success we return { sent: true } and let the form render the generic
+  // message. The message lives in the client form, not here: a "use server"
+  // file may only export async functions, so a shared string constant can't be
+  // exported from this module.
   sent?: boolean;
   error?: string;
 }
-
-// Deliberately identical whether or not the account exists, to avoid leaking
-// which emails are registered (account enumeration).
-const GENERIC_SUCCESS =
-  "If an account exists for that email, we've sent a link to reset the password. Check your inbox.";
 
 export async function requestPasswordReset(
   _prevState: ForgotPasswordState | null,
@@ -47,5 +44,3 @@ export async function requestPasswordReset(
 
   return { sent: true };
 }
-
-export { GENERIC_SUCCESS };
