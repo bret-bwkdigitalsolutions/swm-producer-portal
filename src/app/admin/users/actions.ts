@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAndSendInvite } from "@/lib/invite";
+import { createAndSendPasswordReset } from "@/lib/password-reset";
 
 async function requireAdminSession() {
   const session = await auth();
@@ -64,6 +65,33 @@ export async function sendInvite(formData: FormData) {
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/admin/users");
   redirect(`/admin/users/${userId}?invited=true`);
+}
+
+export async function sendPasswordReset(formData: FormData) {
+  await requireAdminSession();
+
+  const userId = formData.get("userId") as string;
+  if (!userId) {
+    throw new Error("User ID is required");
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true },
+  });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  await createAndSendPasswordReset({
+    userId: user.id,
+    userName: user.name,
+    userEmail: user.email,
+  });
+
+  revalidatePath(`/admin/users/${userId}`);
+  redirect(`/admin/users/${userId}?reset=true`);
 }
 
 export async function updateUserPermissions(formData: FormData) {
