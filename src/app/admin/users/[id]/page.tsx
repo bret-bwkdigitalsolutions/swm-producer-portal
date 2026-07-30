@@ -6,7 +6,7 @@ import { getCachedShows } from "@/lib/wordpress/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { updateUserPermissions, deleteUser, sendInvite } from "../actions";
+import { updateUserPermissions, deleteUser, sendInvite, sendPasswordReset } from "../actions";
 import { ConfirmDeleteButton } from "@/components/admin/confirm-delete-button";
 
 const ALL_CONTENT_TYPES = Object.values(ContentType);
@@ -16,10 +16,10 @@ export default async function UserEditPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string; invited?: string }>;
+  searchParams: Promise<{ saved?: string; invited?: string; reset?: string }>;
 }) {
   const { id } = await params;
-  const { saved, invited } = await searchParams;
+  const { saved, invited, reset } = await searchParams;
 
   const user = await db.user.findUnique({
     where: { id },
@@ -74,6 +74,12 @@ export default async function UserEditPage({
       {invited && (
         <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
           Invite email sent successfully.
+        </div>
+      )}
+
+      {reset && (
+        <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+          Password reset link sent successfully.
         </div>
       )}
 
@@ -188,68 +194,89 @@ export default async function UserEditPage({
         </Card>
       </form>
 
-      {/* Invite */}
+      {/* Invite & password */}
       <Card>
         <CardHeader>
-          <CardTitle>Invite</CardTitle>
+          <CardTitle>Invite &amp; Password</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {user.accounts.some((a) => a.provider === "google") ? (
             <p className="text-sm text-muted-foreground">
-              This user has signed in with Google. No invite needed.
+              This user has signed in with Google. No invite or password needed.
             </p>
-          ) : user.inviteToken?.usedAt ? (
-            <p className="text-sm text-muted-foreground">
-              Invite accepted on{" "}
-              {user.inviteToken.usedAt.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-                timeZone: "America/Chicago",
-              })}
-              .
-            </p>
-          ) : user.inviteSentAt ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Invite sent on{" "}
-                {user.inviteSentAt.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                  timeZone: "America/Chicago",
-                })}
-                .
-                {user.inviteToken &&
-                  user.inviteToken.expiresAt < new Date() && (
-                    <span className="text-red-600 font-medium">
-                      {" "}
-                      Link expired.
-                    </span>
-                  )}
-              </p>
-              <form action={sendInvite}>
-                <input type="hidden" name="userId" value={user.id} />
-                <Button type="submit" variant="outline" size="sm">
-                  Resend Invite
-                </Button>
-              </form>
-            </div>
           ) : (
-            <div className="space-y-3">
-              {user.allowedContentTypes.length === 0 && (
-                <p className="text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">
-                  This user has no content types assigned yet. Consider
-                  configuring permissions above before sending the invite.
+            <>
+              {user.inviteToken?.usedAt ? (
+                <p className="text-sm text-muted-foreground">
+                  Invite accepted on{" "}
+                  {user.inviteToken.usedAt.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    timeZone: "America/Chicago",
+                  })}
+                  .
                 </p>
+              ) : user.inviteSentAt ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Invite sent on{" "}
+                    {user.inviteSentAt.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                      timeZone: "America/Chicago",
+                    })}
+                    .
+                    {user.inviteToken &&
+                      user.inviteToken.expiresAt < new Date() && (
+                        <span className="text-red-600 font-medium">
+                          {" "}
+                          Link expired.
+                        </span>
+                      )}
+                  </p>
+                  <form action={sendInvite}>
+                    <input type="hidden" name="userId" value={user.id} />
+                    <Button type="submit" variant="outline" size="sm">
+                      Resend Invite
+                    </Button>
+                  </form>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {user.allowedContentTypes.length === 0 && (
+                    <p className="text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">
+                      This user has no content types assigned yet. Consider
+                      configuring permissions above before sending the invite.
+                    </p>
+                  )}
+                  <form action={sendInvite}>
+                    <input type="hidden" name="userId" value={user.id} />
+                    <Button type="submit" size="sm">
+                      Send Invite
+                    </Button>
+                  </form>
+                </div>
               )}
-              <form action={sendInvite}>
-                <input type="hidden" name="userId" value={user.id} />
-                <Button type="submit" size="sm">
-                  Send Invite
-                </Button>
-              </form>
-            </div>
+
+              {/* Password reset — available for any credentials user, including
+                  those who already accepted their invite and later forgot their
+                  password. Emails a short-lived set-a-new-password link. */}
+              <div className="space-y-2 border-t pt-4">
+                <p className="text-sm text-muted-foreground">
+                  Send a password reset link to{" "}
+                  <span className="font-medium">{user.email}</span>. The link
+                  expires in 60 minutes.
+                </p>
+                <form action={sendPasswordReset}>
+                  <input type="hidden" name="userId" value={user.id} />
+                  <Button type="submit" variant="outline" size="sm">
+                    Send Password Reset Link
+                  </Button>
+                </form>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

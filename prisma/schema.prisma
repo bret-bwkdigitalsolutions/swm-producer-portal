@@ -28,6 +28,7 @@ model User {
   lastLoginAt           DateTime?
   inviteSentAt          DateTime?
   inviteToken           InviteToken?
+  passwordResetTokens   PasswordResetToken[]
 
   @@map("users")
 }
@@ -263,6 +264,25 @@ model InviteToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("invite_tokens")
+}
+
+// Self-serve + admin-initiated password resets. Separate from InviteToken so a
+// reset never disturbs a user's invite state, and so reset links can be
+// short-lived. Not @unique on userId: issuing a new reset invalidates prior
+// ones by deletion (see createAndSendPasswordReset), but the column allows the
+// brief window where old + new coexist without a constraint violation.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model TransistorScrapedOverview {
