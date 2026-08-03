@@ -129,6 +129,15 @@ export function DistributionForm({
   const [analysisStep, setAnalysisStep] = useState("");
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  // True once analysis has finished (complete state), regardless of whether any
+  // AI suggestions came back. Drives the editable review step so producers can
+  // still fill in fields and distribute even when the AI provider returned
+  // nothing (e.g. usage limit / rate limit). See aiWarning.
+  const [aiComplete, setAiComplete] = useState(false);
+  // Non-fatal notice shown when analysis completed but AI suggestions were
+  // unavailable (usage/rate limit, transient provider error). The producer can
+  // still proceed manually.
+  const [aiWarning, setAiWarning] = useState<string | null>(null);
 
   // Episode/season number state (auto-populated from last episode)
   const [episodeNumber, setEpisodeNumber] = useState("");
@@ -307,6 +316,8 @@ export function DistributionForm({
 
     setAnalyzing(true);
     setAnalysisError(null);
+    setAiWarning(null);
+    setAiComplete(false);
     setSuggestions([]);
     setAnalysisStep("Creating job...");
 
@@ -399,6 +410,7 @@ export function DistributionForm({
         suggestions?: AiSuggestion[];
         episodeNumber?: number | null;
         seasonNumber?: number | null;
+        aiWarning?: string | null;
       };
       for (;;) {
         if (Date.now() > deadline) {
@@ -435,6 +447,18 @@ export function DistributionForm({
       }
       const aiSuggestions: AiSuggestion[] = data.suggestions ?? [];
       setSuggestions(aiSuggestions);
+
+      // Analysis finished. Mark complete so the editable review step renders
+      // even if the AI provider returned nothing — the producer can fill in
+      // the fields manually and still distribute the already-uploaded job.
+      setAiComplete(true);
+      if (data.aiWarning) {
+        setAiWarning(data.aiWarning);
+      } else if (aiSuggestions.length === 0) {
+        setAiWarning(
+          "AI suggestions are temporarily unavailable. Your video was uploaded and transcribed — please fill in the title, description, and any chapters below, then distribute as usual."
+        );
+      }
 
       const summarySuggestion = aiSuggestions.find((s) => s.type === "summary");
       if (summarySuggestion) {
@@ -695,7 +719,10 @@ export function DistributionForm({
         : isValidYoutubeUrl(youtubeUrlInput);
   const showModeChoice = videoSourceReady && !descriptionMode;
 
-  const aiReady = descriptionMode === "ai" && suggestions.length > 0 && !analyzing;
+  // Ready to review/distribute the AI-path job once analysis has finished —
+  // even with zero suggestions, so a usage/rate-limited AI provider doesn't
+  // dead-end the producer on a blank form (the job + upload already exist).
+  const aiReady = descriptionMode === "ai" && aiComplete && !analyzing;
 
   return (
     <Card className="mx-auto w-full max-w-2xl">
@@ -812,6 +839,15 @@ export function DistributionForm({
             <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               <AlertCircleIcon className="size-4 shrink-0" />
               {analysisError}
+            </div>
+          )}
+
+          {/* Non-fatal AI warning (e.g. suggestions unavailable due to usage
+              limit) — the producer can still fill fields in and distribute. */}
+          {aiWarning && !analysisError && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <AlertCircleIcon className="size-4 shrink-0" />
+              {aiWarning}
             </div>
           )}
 
@@ -1296,8 +1332,10 @@ export function DistributionForm({
             </>
           )}
 
-          {/* AI suggestions review */}
-          {descriptionMode === "ai" && suggestions.length > 0 && (
+          {/* AI suggestions review — shown once analysis completes, even if the
+              AI provider returned no suggestions (fields fall back to empty and
+              the producer fills them in manually). */}
+          {aiReady && (
             <div className="space-y-4">
               {/* AI-suggested title */}
               <div className="space-y-2">

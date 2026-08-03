@@ -3,6 +3,29 @@ import { db } from "@/lib/db";
 
 export type AiSuggestionType = "chapters" | "summary" | "blog" | "keywords" | "title";
 
+export interface AiGenerationResult {
+  /** How many non-blog suggestions were generated and saved. */
+  generated: number;
+  /** How many non-blog suggestion calls failed. */
+  failed: number;
+  /** True when the provider signalled an over-quota / usage-limit condition. */
+  quotaExhausted: boolean;
+}
+
+/**
+ * Detect an Anthropic usage-limit / rate-limit error so the pipeline can tell
+ * the producer "AI is temporarily unavailable" rather than failing silently.
+ * The over-quota response is a 400 whose message mentions usage limits; 429 is
+ * the standard rate-limit status.
+ */
+export function isAiQuotaError(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  if (status === 429) return true;
+  const message =
+    err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return /usage limit|rate limit|quota|overloaded/i.test(message);
+}
+
 interface AnalysisContext {
   title: string;
   description?: string;
@@ -190,20 +213,20 @@ export async function generateAiSuggestions(
   types?: AiSuggestionType[],
   recentTitles?: string[],
   showName?: string
-): Promise<void> {
+): Promise<AiGenerationResult> {
   const client = getClient();
 
   if (!client) {
     console.warn(
       "[ai-processor] ANTHROPIC_API_KEY is not set. Skipping AI suggestions."
     );
-    return;
+    return { generated: 0, failed: 0, quotaExhausted: false };
   }
 
   const job = await db.distributionJob.findUnique({ where: { id: jobId } });
   if (!job) {
     console.error(`[ai-processor] Job ${jobId} not found.`);
-    return;
+    return { generated: 0, failed: 0, quotaExhausted: false };
   }
 
   const showMetadata = await db.showMetadata.findUnique({
@@ -273,9 +296,16 @@ export async function generateAiSuggestions(
     })
   );
 
+  let generated = 0;
+  let failed = 0;
+  let quotaExhausted = false;
   for (const result of results) {
     if (result.status === "rejected") {
+      failed++;
+      if (isAiQuotaError(result.reason)) quotaExhausted = true;
       console.error("[ai-processor] Failed:", result.reason);
+    } else {
+      generated++;
     }
   }
 
@@ -319,7 +349,10 @@ export async function generateAiSuggestions(
         );
       } catch (error) {
         console.error("[ai-processor] Blog ideas failed:", error);
+        if (isAiQuotaError(error)) quotaExhausted = true;
       }
     }
   }
+
+  return { generated, failed, quotaExhausted };
 }
