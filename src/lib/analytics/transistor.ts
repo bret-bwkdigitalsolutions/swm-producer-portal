@@ -17,10 +17,42 @@ import type {
 
 const BASE_URL = "https://api.transistor.fm/v1";
 
+// Transistor rate-limits to ~10 requests / 10 seconds and returns 429 when
+// exceeded. A cache-cold dashboard load, a "Refresh Data" click, or the
+// background scraper running concurrently can burst past that. Rather than let
+// a transient 429 throw and blank the podcast panels, retry with backoff.
+const MAX_ATTEMPTS = 4;
+
 /** Convert yyyy-mm-dd to dd-mm-yyyy for Transistor API */
 function toTransistorDate(isoDate: string): string {
   const [y, m, d] = isoDate.split("-");
   return `${d}-${m}-${y}`;
+}
+
+/** 429 (rate limit) and 5xx (server) are transient — worth retrying. */
+export function isRetryableTransistorStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/**
+ * Backoff before the next attempt. Honors a `Retry-After` header (seconds) when
+ * present and sane; otherwise exponential 1s/2s/4s with jitter to avoid a
+ * thundering herd when several calls back off together. `attempt` is 1-based.
+ */
+export function computeTransistorBackoffMs(
+  attempt: number,
+  retryAfterHeader: string | null,
+  jitterMs = 0
+): number {
+  const retryAfter = Number(retryAfterHeader);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return Math.round(retryAfter * 1000);
+  }
+  return 2 ** (attempt - 1) * 1000 + jitterMs;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function transistorFetch<T>(
@@ -35,15 +67,35 @@ async function transistorFetch<T>(
     }
   }
 
-  const res = await fetch(url.toString(), {
-    headers: { "x-api-key": apiKey },
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
-    throw new Error(`Transistor API error: ${res.status} ${res.statusText}`);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(url.toString(), {
+      headers: { "x-api-key": apiKey },
+    });
+
+    if (res.ok) return res.json();
+
+    lastError = new Error(
+      `Transistor API error: ${res.status} ${res.statusText}`
+    );
+
+    if (!isRetryableTransistorStatus(res.status) || attempt === MAX_ATTEMPTS) {
+      throw lastError;
+    }
+
+    const backoffMs = computeTransistorBackoffMs(
+      attempt,
+      res.headers.get("retry-after"),
+      Math.floor(Math.random() * 250)
+    );
+    console.warn(
+      `[transistor] ${res.status} on ${path} — retry ${attempt}/${MAX_ATTEMPTS - 1} in ${backoffMs}ms`
+    );
+    await sleep(backoffMs);
   }
 
-  return res.json();
+  throw lastError ?? new Error("Transistor API error: exhausted retries");
 }
 
 async function requireApiKey(wpShowId: number): Promise<string> {
