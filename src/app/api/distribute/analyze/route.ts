@@ -54,6 +54,9 @@ type AnalyzeState = {
   startedAt?: string;
   episodeNumber?: number | null;
   seasonNumber?: number | null;
+  // Non-fatal notice surfaced to the producer when analysis completed but AI
+  // suggestions couldn't be generated (e.g. Anthropic usage/rate limit).
+  aiWarning?: string | null;
 };
 
 /** Merge analyze progress into job metadata without clobbering other keys. */
@@ -138,7 +141,7 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
     // 4. Generate AI suggestions (including title)
     await setAnalyzeState(jobId, { ...startState, step: "generating" });
     console.log(`[analyze] Generating AI suggestions for job ${jobId}`);
-    await generateAiSuggestions(
+    const aiResult = await generateAiSuggestions(
       jobId,
       formattedTranscript,
       transcription.language,
@@ -147,11 +150,26 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
       showName
     );
 
+    // AI suggestions are best-effort: the transcript succeeded and the video is
+    // uploaded, so we still complete the job. But if the provider produced
+    // nothing (usually its usage/rate limit), surface a clear notice so the
+    // producer knows to fill fields in manually rather than seeing a blank form.
+    const aiWarning =
+      aiResult.generated === 0
+        ? aiResult.quotaExhausted
+          ? "AI suggestions are temporarily unavailable — the AI usage limit has been reached. Your video was uploaded and transcribed; please fill in the title, description, and any chapters manually, then distribute as usual."
+          : "AI suggestions couldn't be generated this time. Your video was uploaded and transcribed; please fill in the title, description, and any chapters manually, then distribute as usual."
+        : null;
+    if (aiWarning) {
+      console.warn(`[analyze] Completing job ${jobId} without AI suggestions: ${aiResult.quotaExhausted ? "quota exhausted" : "generation failed"}`);
+    }
+
     await setAnalyzeState(jobId, {
       state: "complete",
       startedAt: startState.startedAt,
       episodeNumber: nextEpisodeNumber,
       seasonNumber,
+      aiWarning,
     });
     console.log(`[analyze] Analysis complete for job ${jobId}`);
   } catch (error) {
@@ -321,5 +339,6 @@ export async function GET(request: NextRequest) {
     suggestions,
     episodeNumber: analyze.episodeNumber ?? null,
     seasonNumber: analyze.seasonNumber ?? null,
+    aiWarning: analyze.aiWarning ?? null,
   });
 }
