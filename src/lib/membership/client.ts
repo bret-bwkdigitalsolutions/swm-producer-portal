@@ -123,18 +123,18 @@ export async function listSubscribers(
   filters: SubscriberListFilters = {}
 ): Promise<SubscriberListResponse> {
   const qs = buildSubscribersQuery(filters);
-  return membershipFetch<SubscriberListResponse>(`/subscribers?${qs}`);
+  return membershipFetch<SubscriberListResponse>(`/portal/subscribers?${qs}`);
 }
 
 export async function getSubscriber(id: number): Promise<Subscriber> {
-  return membershipFetch<Subscriber>(`/subscribers/${id}`);
+  return membershipFetch<Subscriber>(`/portal/subscribers/${id}`);
 }
 
 export async function updateSubscriber(
   id: number,
   patch: SubscriberPatch
 ): Promise<Subscriber> {
-  return membershipFetch<Subscriber>(`/subscribers/${id}`, {
+  return membershipFetch<Subscriber>(`/portal/subscribers/${id}`, {
     method: "PATCH",
     body: JSON.stringify(patch),
   });
