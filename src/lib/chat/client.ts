@@ -7,6 +7,11 @@ import type {
   ModerationMessage,
   TeamMessagePayload,
 } from "./types";
+import {
+  normalizeConversation,
+  normalizeDmMessage,
+  normalizeMessage,
+} from "./normalize";
 
 // The community chat lives on the WordPress `swm-chat` plugin. We read/write it
 // live with the same portal bearer token as the Subscribers dashboard — every
@@ -110,10 +115,10 @@ export async function listModerationMessages(
   reportedOnly: boolean
 ): Promise<ModerationMessage[]> {
   const qs = reportedOnly ? "?reported=1" : "";
-  const data = await chatFetch<{ messages: ModerationMessage[] }>(
+  const data = await chatFetch<{ messages: Record<string, unknown>[] }>(
     `/portal/moderation/messages${qs}`
   );
-  return data.messages ?? [];
+  return (data.messages ?? []).map(normalizeMessage);
 }
 
 export async function setMessageStatus(
@@ -155,17 +160,24 @@ export async function banSubscriber(payload: BanPayload): Promise<void> {
 // --- Team inbox (DMs) ---
 
 export async function listDmConversations(): Promise<DmConversationSummary[]> {
-  const data = await chatFetch<{ conversations: DmConversationSummary[] }>(
+  const data = await chatFetch<{ conversations: Record<string, unknown>[] }>(
     `/portal/dm/conversations`
   );
-  return data.conversations ?? [];
+  return (data.conversations ?? []).map(normalizeConversation);
 }
 
 /** Fetching a conversation marks it read by the team (WP side side-effect). */
 export async function getDmConversation(
   id: number
 ): Promise<DmConversationDetail> {
-  return chatFetch<DmConversationDetail>(`/portal/dm/conversations/${id}`);
+  const data = await chatFetch<{
+    conversation: Record<string, unknown>;
+    messages: Record<string, unknown>[];
+  }>(`/portal/dm/conversations/${id}`);
+  return {
+    conversation: normalizeConversation(data.conversation ?? {}),
+    messages: (data.messages ?? []).map(normalizeDmMessage),
+  };
 }
 
 export async function replyToDm(id: number, body: string): Promise<void> {
