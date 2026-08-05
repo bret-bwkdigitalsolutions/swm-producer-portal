@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import type { DistributionJobPlatform } from "@prisma/client";
 import { generateAiSuggestions } from "./ai-processor";
 import { extractAudio } from "./audio-extractor";
-import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay } from "@/lib/transcription";
+import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay, formatTranscriptAsVtt } from "@/lib/transcription";
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
@@ -217,6 +217,7 @@ async function processJobInner(
       const transcriptionResult = await transcribeAudio(gcsAudioPath);
       const formattedTranscript = formatTranscriptForAI(transcriptionResult.segments);
       const displayTranscript = formatTranscriptForDisplay(transcriptionResult.segments);
+      const transcriptVtt = formatTranscriptAsVtt(transcriptionResult.segments);
       transcript = displayTranscript;
 
       // Store transcript in job metadata
@@ -224,6 +225,8 @@ async function processJobInner(
         transcript: transcriptionResult.fullText,
         transcriptDisplay: displayTranscript,
         transcriptTimestamped: formattedTranscript,
+        // Timestamped WebVTT for the website's "Mark That" scanner.
+        ...(transcriptVtt ? { transcriptVtt } : {}),
         detectedLanguage: transcriptionResult.language,
         audioDuration: transcriptionResult.duration,
       });
@@ -681,6 +684,7 @@ async function processJobInner(
         youtubeUrl,
         thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
         transcript: (updatedMetadata.transcriptDisplay as string) || (updatedMetadata.transcript as string) || undefined,
+        transcriptVtt: (updatedMetadata.transcriptVtt as string) || undefined,
         status: wpStatus,
         scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
         portalUserId: job.userId,
