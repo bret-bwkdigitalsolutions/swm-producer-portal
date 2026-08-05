@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { label: "Overview", href: "/admin" },
   { label: "Users", href: "/admin/users" },
+  { label: "Subscribers", href: "/admin/subscribers" },
   { label: "Shows", href: "/admin/shows" },
   { label: "Credentials", href: "/admin/credentials" },
   { label: "YouTube Identities", href: "/admin/youtube-identities" },
