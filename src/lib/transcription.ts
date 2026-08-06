@@ -111,6 +111,44 @@ function formatTimestamp(seconds: number): string {
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Format seconds as a WebVTT timestamp: HH:MM:SS.mmm */
+function formatVttTime(seconds: number): string {
+  const total = Math.max(0, seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = Math.floor(total % 60);
+  const ms = Math.round((total - Math.floor(total)) * 1000);
+  return (
+    `${h.toString().padStart(2, "0")}:` +
+    `${m.toString().padStart(2, "0")}:` +
+    `${s.toString().padStart(2, "0")}.` +
+    `${ms.toString().padStart(3, "0")}`
+  );
+}
+
+/**
+ * Build a valid WebVTT transcript from timestamped segments. The website's
+ * "Mark That" scanner parses each cue's START time to place a bookmark, so the
+ * cue text must be the spoken words (no speaker prefixes that could interfere
+ * with phrase matching). Segment-level cues are sufficient — word-level is not
+ * needed. Returns "" when there are no usable segments (caller then skips the
+ * WordPress field entirely).
+ */
+export function formatTranscriptAsVtt(segments: TranscriptSegment[]): string {
+  const cues: string[] = [];
+  for (const seg of segments) {
+    const text = seg.text?.trim();
+    if (!text) continue;
+    const start = Number.isFinite(seg.start) ? seg.start : 0;
+    // WebVTT requires end > start; nudge degenerate/zero-length cues.
+    const end =
+      Number.isFinite(seg.end) && seg.end > start ? seg.end : start + 2;
+    cues.push(`${formatVttTime(start)} --> ${formatVttTime(end)}\n${text}`);
+  }
+  if (cues.length === 0) return "";
+  return `WEBVTT\n\n${cues.join("\n\n")}\n`;
+}
+
 /**
  * Format transcript segments as speaker-labeled plain text for WordPress display.
  * Groups consecutive segments by the same speaker into single paragraphs.

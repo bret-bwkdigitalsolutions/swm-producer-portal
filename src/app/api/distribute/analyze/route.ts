@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { extractAudio } from "@/lib/jobs/audio-extractor";
-import { transcribeAudio, formatTranscriptForAI } from "@/lib/transcription";
+import {
+  transcribeAudio,
+  formatTranscriptForAI,
+  formatTranscriptAsVtt,
+} from "@/lib/transcription";
 import { generateAiSuggestions } from "@/lib/jobs/ai-processor";
 import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
@@ -118,6 +122,10 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
     console.log(`[analyze] Transcribing audio for job ${jobId}`);
     const transcription = await transcribeAudio(gcsAudioPath);
     const formattedTranscript = formatTranscriptForAI(transcription.segments);
+    // Timestamped WebVTT for the website's "Mark That" scanner. Built here so
+    // the AI-assist path (which skips re-transcription in the processor) still
+    // produces it. Empty string when there are no usable segments.
+    const transcriptVtt = formatTranscriptAsVtt(transcription.segments);
 
     // Store transcript in job metadata (race-safe merge — doesn't clobber
     // the analyze progress writes above)
@@ -126,6 +134,7 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
       transcriptLanguage: transcription.language,
       audioDuration: transcription.duration,
       gcsAudioPath,
+      ...(transcriptVtt ? { transcriptVtt } : {}),
     });
 
     // 3. Fetch show context for title generation

@@ -14,6 +14,8 @@ export interface WordPressPublishParams {
   seasonNumber?: number;
   durationMinutes?: number;
   transcript?: string;
+  /** Timestamped WebVTT — powers the website's "Mark That" bookmark scanner. */
+  transcriptVtt?: string;
   isPremiumOnly?: boolean;
   status: "publish" | "draft" | "future";
   scheduledDate?: string; // ISO date for future posts
@@ -42,6 +44,7 @@ export async function publishToWordPress(
     seasonNumber,
     durationMinutes,
     transcript,
+    transcriptVtt,
     isPremiumOnly,
     status,
     scheduledDate,
@@ -107,6 +110,9 @@ export async function publishToWordPress(
         ? { duration_minutes: durationMinutes }
         : {}),
       ...(transcript ? { episode_transcript: transcript } : {}),
+      // Timestamped WebVTT — the website auto-scans this for "Mark That"
+      // bookmarks the moment it arrives. Only send when non-empty.
+      ...(transcriptVtt ? { _swm_transcript_vtt: transcriptVtt } : {}),
       ...(isPremiumOnly ? { is_premium_only: true } : {}),
     },
   };
