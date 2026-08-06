@@ -3,6 +3,7 @@
 import { requireAdmin } from "@/lib/auth-guard";
 import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicModel } from "@/lib/ai/model";
 import { createGoogleDoc } from "@/lib/google/docs";
 
 export type { ParsedBlogOutput } from "./parse-blog-output";
@@ -321,7 +322,7 @@ export async function generateCustomBlogPost(
   try {
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: getAnthropicModel(),
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     });
@@ -513,7 +514,7 @@ export async function runSuggestionBlogAi(
 
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: getAnthropicModel(),
     max_tokens: 4096,
     messages: [{ role: "user", content: prompt }],
   });
