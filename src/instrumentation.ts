@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
+import { getAnthropicModel } from "@/lib/ai/model";
 
 /**
  * Next.js instrumentation — runs once on server startup before handling requests.
@@ -84,7 +85,7 @@ async function checkAiModelHealth() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return; // AI features disabled entirely — nothing to check
 
-  const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+  const model = getAnthropicModel();
 
   try {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
@@ -125,7 +126,7 @@ async function checkAiModelHealth() {
                 <h3 style="font-size: 14px; margin: 16px 0 8px;">How to fix</h3>
                 <ol>
                   <li>Go to <strong>Railway → SWM Producer Portal → Variables</strong></li>
-                  <li>Set <code>ANTHROPIC_MODEL</code> to a current model (e.g. <code>claude-sonnet-4-6</code>)</li>
+                  <li>Set <code>ANTHROPIC_MODEL</code> to a current model (e.g. <code>claude-sonnet-5</code>)</li>
                   <li>Railway will redeploy automatically</li>
                 </ol>
                 <p style="margin-top: 24px; font-size: 12px; color: #999;">

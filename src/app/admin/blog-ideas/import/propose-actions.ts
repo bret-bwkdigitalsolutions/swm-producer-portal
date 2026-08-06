@@ -15,6 +15,7 @@ import {
   type MetadataLanguage,
 } from "@/lib/blog/metadata-prompt";
 import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicModel } from "@/lib/ai/model";
 
 export interface ProposeResult {
   success?: boolean;
@@ -99,7 +100,7 @@ export async function proposeBlogMetadata(
   try {
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
-      model: "claude-sonnet-5",
+      model: getAnthropicModel(),
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });

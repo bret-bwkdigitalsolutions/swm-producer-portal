@@ -2,6 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicModel } from "@/lib/ai/model";
 
 const MAX_EDIT_PAIRS = 15;
 const FIRST_SYNTHESIS_AT_EDITS = 2;
@@ -150,7 +151,7 @@ export async function synthesizeForShow(
   try {
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
-      model: "claude-sonnet-5",
+      model: getAnthropicModel(),
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
     });

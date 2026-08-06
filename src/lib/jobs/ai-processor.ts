@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
+import { getAnthropicModel } from "@/lib/ai/model";
 
 export type AiSuggestionType = "chapters" | "summary" | "blog" | "keywords" | "title";
 
@@ -34,9 +35,9 @@ interface AnalysisContext {
   hosts?: string; // comma-separated host names for correct spelling
 }
 
-/** Model used for AI suggestions. Override via ANTHROPIC_MODEL env var in Railway
- *  when Anthropic retires/renames a model — no redeploy needed. */
-const AI_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+/** Model used for AI suggestions — resolved from the shared source of truth
+ *  (ANTHROPIC_MODEL env var, else the current default). See src/lib/ai/model.ts. */
+const AI_MODEL = getAnthropicModel();
 
 let _client: Anthropic | null = null;
 
