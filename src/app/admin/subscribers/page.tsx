@@ -53,22 +53,37 @@ function parseFilters(sp: RawParams): SubscriberListFilters {
 function StatTile({
   label,
   value,
+  href,
 }: {
   label: string;
   value: number | null;
+  /** When set, the tile is a link that applies the matching filter. */
+  href?: string;
 }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-1 text-2xl font-bold">
-          {value == null ? "—" : value.toLocaleString()}
-        </p>
-      </CardContent>
-    </Card>
+  const body = (
+    <CardContent className="p-4">
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-bold">
+        {value == null ? "—" : value.toLocaleString()}
+      </p>
+      {href && (
+        <p className="mt-0.5 text-[11px] text-primary">View &rarr;</p>
+      )}
+    </CardContent>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="block">
+        <Card className="transition-colors hover:border-primary/50 hover:bg-muted/40">
+          {body}
+        </Card>
+      </Link>
+    );
+  }
+  return <Card>{body}</Card>;
 }
 
 export default async function AdminSubscribersPage({
@@ -138,12 +153,24 @@ export default async function AdminSubscribersPage({
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Total" value={counts?.total ?? null} />
-        <StatTile label="Active" value={counts?.active ?? null} />
+        <StatTile
+          label="Total"
+          value={counts?.total ?? null}
+          href="/admin/subscribers"
+        />
+        <StatTile
+          label="Active"
+          value={counts?.active ?? null}
+          href="/admin/subscribers?status=active"
+        />
+        {/* Not clickable: Migrators = Patreon + Apple-legacy, but the API's
+            source filter is single-value, so no one URL returns the exact set.
+            Use the Source filter (Patreon / Apple) to drill in. */}
         <StatTile label="Migrators" value={counts?.migrators ?? null} />
         <StatTile
           label="Shirts to ship"
           value={counts?.shirtsAwaiting ?? null}
+          href="/admin/subscribers?shirt=claimed"
         />
       </div>
 
