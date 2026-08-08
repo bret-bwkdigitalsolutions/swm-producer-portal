@@ -11,6 +11,7 @@ import { generateAiSuggestions } from "@/lib/jobs/ai-processor";
 import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
 import { getRecentEpisodeTitles, getLatestEpisodeNumbers, getShow } from "@/lib/wordpress/client";
+import { enqueueJob } from "@/lib/jobs/job-queue";
 
 type SourceKind = "youtube" | "vimeo" | "upload";
 
@@ -285,10 +286,9 @@ export async function POST(request: NextRequest) {
   };
   await setAnalyzeState(jobId, startState);
 
-  // Fire-and-forget — same pattern as processJob in /api/upload/confirm.
-  runAnalysis(jobId, startState).catch((error) => {
-    console.error(`[analyze] Background analysis crashed for job ${jobId}:`, error);
-  });
+  // Fire-and-forget, under the global concurrency cap (shared with processJob)
+  // so download + transcription + processing don't stack memory and OOM.
+  enqueueJob(`analyze:${jobId}`, () => runAnalysis(jobId, startState));
 
   return NextResponse.json({ started: true }, { status: 202 });
 }
