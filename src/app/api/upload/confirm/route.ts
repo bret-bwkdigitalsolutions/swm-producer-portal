@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { processJob } from "@/lib/jobs/processor";
+import { enqueueJob } from "@/lib/jobs/job-queue";
 import { checkForDuplicates } from "@/lib/jobs/duplicate-check";
 
 export async function POST(request: NextRequest) {
@@ -130,10 +131,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Trigger processing (non-blocking)
-  processJob(jobId).catch((error) => {
-    console.error(`[confirm] Background processing failed for job ${jobId}:`, error);
-  });
+  // Trigger processing (non-blocking) under the global concurrency cap so
+  // overlapping distribution jobs don't stack memory and OOM the container.
+  enqueueJob(`processJob:${jobId}`, () => processJob(jobId));
 
   return NextResponse.json({ success: true, status: "processing" });
 }
