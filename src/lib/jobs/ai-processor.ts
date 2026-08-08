@@ -65,8 +65,13 @@ function buildChapterPrompt(ctx: AnalysisContext): string {
       "Based on the title and description, suggest a logical chapter structure.",
       "Format each chapter as: HH:MM:SS - Chapter Title",
       "Include a brief one-sentence description for each chapter.",
+      ctx.language === "es"
+        ? "Write all chapter titles and descriptions in Spanish since the episode is in Spanish."
+        : "",
       "Output ONLY the chapters. No preamble, no introduction, no explanation — just the chapter list.",
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   return [
@@ -75,13 +80,18 @@ function buildChapterPrompt(ctx: AnalysisContext): string {
     "Format each chapter as: HH:MM:SS - Chapter Title",
     "Use the actual timestamps from the transcript. Aim for chapters every 5-15 minutes depending on topic changes.",
     "Include a brief one-sentence description for each chapter.",
+    ctx.language === "es"
+      ? "Write all chapter titles and descriptions in Spanish since the episode is in Spanish."
+      : "",
     "Output ONLY the chapters. No preamble, no introduction, no explanation — just the chapter list.",
     hostSpellingNote(ctx),
     `Episode title: "${ctx.title}"`,
     "",
     "Transcript:",
     ctx.transcript,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildSummaryPrompt(ctx: AnalysisContext): string {
