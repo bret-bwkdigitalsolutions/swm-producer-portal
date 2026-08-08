@@ -214,7 +214,13 @@ async function processJobInner(
   } else if (gcsAudioPath) {
     try {
       console.log("[processor] Starting transcription...");
-      const transcriptionResult = await transcribeAudio(gcsAudioPath);
+      // Force the transcription language for shows configured to a specific
+      // non-English language (e.g. ¡Al Maximo! in Spanish); otherwise auto-detect.
+      const forceLang =
+        showMeta?.language && showMeta.language !== "en"
+          ? showMeta.language
+          : undefined;
+      const transcriptionResult = await transcribeAudio(gcsAudioPath, forceLang);
       const formattedTranscript = formatTranscriptForAI(transcriptionResult.segments);
       const displayTranscript = formatTranscriptForDisplay(transcriptionResult.segments);
       const transcriptVtt = formatTranscriptAsVtt(transcriptionResult.segments);

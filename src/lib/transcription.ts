@@ -20,10 +20,16 @@ export interface TranscriptionResult {
  * Transcribe an audio file stored in GCS using Deepgram.
  *
  * @param gcsAudioPath - GCS path of the audio file
+ * @param forceLanguage - BCP-47 code (e.g. "es") to force the transcription
+ *   language. When set, Deepgram transcribes in that language instead of
+ *   auto-detecting — used for shows configured to a specific language (e.g.
+ *   ¡Al Maximo! in Spanish) so the transcript is reliably in that language.
+ *   When omitted, language is auto-detected (default for most shows).
  * @returns Transcription result with timestamped segments
  */
 export async function transcribeAudio(
-  gcsAudioPath: string
+  gcsAudioPath: string,
+  forceLanguage?: string
 ): Promise<TranscriptionResult> {
   const apiKey = process.env.DEEPGRAM_API_KEY;
   if (!apiKey) {
@@ -32,18 +38,27 @@ export async function transcribeAudio(
 
   const downloadUrl = await generateSignedDownloadUrl(gcsAudioPath);
 
-  console.log(`[transcription] Transcribing: ${gcsAudioPath}`);
+  console.log(
+    `[transcription] Transcribing: ${gcsAudioPath}` +
+      (forceLanguage ? ` (forced language: ${forceLanguage})` : " (auto-detect)")
+  );
+
+  // Deepgram takes either an explicit `language` OR `detect_language`, not both.
+  const params: Record<string, string> = {
+    model: "nova-3",
+    smart_format: "true",
+    diarize: "true",
+    paragraphs: "true",
+    utterances: "true",
+  };
+  if (forceLanguage) {
+    params.language = forceLanguage;
+  } else {
+    params.detect_language = "true";
+  }
 
   const response = await fetch(
-    "https://api.deepgram.com/v1/listen?" +
-      new URLSearchParams({
-        model: "nova-3",
-        smart_format: "true",
-        detect_language: "true",
-        diarize: "true",
-        paragraphs: "true",
-        utterances: "true",
-      }),
+    "https://api.deepgram.com/v1/listen?" + new URLSearchParams(params),
     {
       method: "POST",
       headers: {
@@ -75,8 +90,12 @@ export async function transcribeAudio(
     })
   );
 
+  // When we forced a language, report that (Deepgram omits detected_language in
+  // that case); otherwise use the detected value.
   const detectedLanguage =
-    data.results?.channels?.[0]?.detected_language ?? "en";
+    forceLanguage ??
+    data.results?.channels?.[0]?.detected_language ??
+    "en";
   const duration = data.metadata?.duration ?? 0;
 
   console.log(

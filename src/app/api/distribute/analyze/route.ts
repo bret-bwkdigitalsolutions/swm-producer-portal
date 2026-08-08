@@ -121,7 +121,17 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
     // 2. Transcribe
     await setAnalyzeState(jobId, { ...startState, step: "transcribing" });
     console.log(`[analyze] Transcribing audio for job ${jobId}`);
-    const transcription = await transcribeAudio(gcsAudioPath);
+    // Force the transcription language for shows configured to a specific
+    // non-English language (e.g. ¡Al Maximo! in Spanish); else auto-detect.
+    const showMeta = await db.showMetadata.findUnique({
+      where: { wpShowId: job.wpShowId },
+      select: { language: true },
+    });
+    const forceLang =
+      showMeta?.language && showMeta.language !== "en"
+        ? showMeta.language
+        : undefined;
+    const transcription = await transcribeAudio(gcsAudioPath, forceLang);
     const formattedTranscript = formatTranscriptForAI(transcription.segments);
     // Timestamped WebVTT for the website's "Mark That" scanner. Built here so
     // the AI-assist path (which skips re-transcription in the processor) still
