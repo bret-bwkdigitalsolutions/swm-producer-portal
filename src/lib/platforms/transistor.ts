@@ -149,13 +149,29 @@ export async function uploadToTransistor(
     throw new Error("Failed to download audio from GCS.");
   }
 
-  const audioBuffer = await audioResponse.arrayBuffer();
-
-  const uploadRes = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": "audio/mpeg" },
-    body: audioBuffer,
-  });
+  // Stream GCS -> Transistor's S3 instead of buffering the whole episode in
+  // memory. A multi-hour MP3 is hundreds of MB; buffering it per job (jobs run
+  // concurrently, fire-and-forget) was a primary OOM contributor on Railway.
+  // S3 presigned PUTs require a Content-Length, which GCS returns on the GET.
+  const contentLength = audioResponse.headers.get("content-length");
+  let uploadRes: Response;
+  if (contentLength) {
+    uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "audio/mpeg", "Content-Length": contentLength },
+      body: audioResponse.body as unknown as BodyInit,
+      // @ts-expect-error -- Node fetch supports duplex for streaming request bodies
+      duplex: "half",
+    });
+  } else {
+    // Fallback (GCS normally returns Content-Length): buffer so S3 has a length.
+    const audioBuffer = await audioResponse.arrayBuffer();
+    uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "audio/mpeg" },
+      body: audioBuffer,
+    });
+  }
 
   if (!uploadRes.ok) {
     throw new Error(`Transistor audio upload failed (${uploadRes.status})`);
