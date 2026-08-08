@@ -12,14 +12,17 @@ export const NETWORKS: Network[] = [
     name: "Sunset Lounge DFW",
     wpShowIds: [22, 23, 24, 25, 26, 27, 28],
     credentialWpShowId: 0,
+    // Names must match WordPress (source of truth). The previous map had several
+    // IDs wrong (22/24 swapped, 23/26/28 mislabeled), which mislabeled analytics
+    // and caused a show to be misidentified. Verified against GET /swm_show.
     showNames: {
-      22: "The Clubhouse Podcast",
-      23: "Sunset SC",
-      24: "¡Al Maximo!",
+      22: "¡Al Maximo!",
+      23: "Beer 30 Sports O'Clock",
+      24: "The Clubhouse Podcast",
       25: "Engel Angle",
-      26: "Beer 30 Sports O'clock",
+      26: "Just Wondering… with Norm Hitzges",
       27: "Signal 51 Chronicles",
-      28: "Just Wondering... with Norm Hitzges",
+      28: "Sunset Soccer Club",
     },
   },
   {
