@@ -4,6 +4,7 @@ import {
   getNetworkBySlug,
   getNetworksForRole,
   getNetworkForShow,
+  getShowName,
   showHasOwnYouTube,
 } from "@/lib/analytics/networks";
 
@@ -54,6 +55,20 @@ describe("getNetworkForShow", () => {
 
   it("returns undefined for a wpShowId not in any network", () => {
     expect(getNetworkForShow(99999)).toBeUndefined();
+  });
+});
+
+describe("Three Wide at Scout (wpShowId 4218)", () => {
+  it("belongs to the Sunset Lounge DFW network", () => {
+    expect(getNetworkForShow(4218)?.slug).toBe("sunset-lounge-dfw");
+  });
+
+  it("resolves to its WordPress display name", () => {
+    expect(getShowName(4218)).toBe("Three Wide at Scout, Live at The Statler");
+  });
+
+  it("uses network credentials rather than its own YouTube channel", () => {
+    expect(showHasOwnYouTube(4218)).toBe(false);
   });
 });
 
