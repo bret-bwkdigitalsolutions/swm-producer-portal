@@ -8,6 +8,11 @@ import {
   WpApiError,
 } from "./types";
 import { ContentType } from "@/lib/constants";
+import { withRetry } from "./retry";
+
+// Fail fast instead of hanging if the WP host is unreachable from the server
+// (e.g. an egress/WAF block that only affects the Railway host, not a browser).
+const WP_FETCH_TIMEOUT_MS = 15_000;
 
 /** Decode HTML numeric & named entities that WordPress injects into rendered titles. */
 function decodeHtmlEntities(html: string): string {
@@ -39,29 +44,79 @@ const POST_TYPE_MAP: Record<string, string> = {
   [ContentType.REACTION]: "swm_reaction",
 };
 
-async function wpFetch<T>(
+async function wpFetchOnce<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit
 ): Promise<T> {
   const url = `${WP_API_URL()}${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: WP_AUTH(),
-      ...options.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WP_FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Authorization: WP_AUTH(),
+        ...options.headers,
+      },
+    });
+  } catch (err) {
+    // Network-level failure (DNS, connection refused/reset, TLS, or the
+    // abort timeout above). Previously this propagated with no context and was
+    // swallowed upstream — wrap it so the failing endpoint is identifiable.
+    const reason =
+      err instanceof Error
+        ? err.name === "AbortError"
+          ? `timed out after ${WP_FETCH_TIMEOUT_MS}ms`
+          : err.message
+        : String(err);
+    throw new WpApiError(`WP API network error: ${reason}`, 0, endpoint);
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "Unknown error");
     throw new WpApiError(
-      `WP API error: ${response.status} — ${body}`,
+      `WP API error: ${response.status} — ${body.slice(0, 500)}`,
       response.status,
       endpoint
     );
   }
 
   return response.json();
+}
+
+async function wpFetch<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const method = (options.method ?? "GET").toUpperCase();
+
+  // Only retry idempotent reads. Writes (uploads, post creation) must never be
+  // auto-retried, or a "failed" request that actually landed could double-post.
+  if (method !== "GET") {
+    return wpFetchOnce<T>(endpoint, options);
+  }
+
+  return withRetry<T>(() => wpFetchOnce<T>(endpoint, options), {
+    retries: 2,
+    delayMs: 500,
+    onError: (error, attempt) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[wp] GET ${endpoint} failed (attempt ${attempt}/3): ${msg}`
+      );
+    },
+    // Retry only transient failures: network/timeout (status 0), rate limiting
+    // (429), and server errors (5xx). A 4xx (404/401/403) is permanent.
+    shouldRetry: (error) => {
+      if (!(error instanceof WpApiError)) return true;
+      return error.status === 0 || error.status === 429 || error.status >= 500;
+    },
+  });
 }
 
 export async function getShows(): Promise<WpShow[]> {
