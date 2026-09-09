@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildSubscribersQuery } from "../client";
 import { csvField, subscribersToCsv } from "../csv";
-import { shirtFulfillment } from "../types";
+import { shirtFulfillment, canShipShirt } from "../types";
 import type { Subscriber, SubscriberSummary } from "../types";
 
 describe("buildSubscribersQuery", () => {
@@ -46,6 +46,17 @@ describe("shirtFulfillment", () => {
     expect(shirtFulfillment({ size: "L", shipped_at: "2026-08-01" })).toBe(
       "shipped"
     );
+  });
+});
+
+describe("canShipShirt", () => {
+  it("is shippable only once a shirt has been claimed with a size", () => {
+    // Nothing to ship: no shirt record, or claimed without a size yet.
+    expect(canShipShirt(null)).toBe(false);
+    expect(canShipShirt({ size: null, shipped_at: null })).toBe(false);
+    // Something to ship: a size is on file (awaiting), or already shipped.
+    expect(canShipShirt({ size: "L", shipped_at: null })).toBe(true);
+    expect(canShipShirt({ size: "L", shipped_at: "2026-08-01" })).toBe(true);
   });
 });
 

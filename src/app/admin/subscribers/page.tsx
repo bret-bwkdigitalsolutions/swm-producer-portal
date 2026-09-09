@@ -17,8 +17,9 @@ import {
   MembershipApiError,
 } from "@/lib/membership/client";
 import type { SubscriberListFilters } from "@/lib/membership/types";
-import { shirtFulfillment } from "@/lib/membership/types";
+import { shirtFulfillment, canShipShirt } from "@/lib/membership/types";
 import { SubscribersFilters } from "./subscribers-filters";
+import { ShirtShippedCheckbox } from "./shirt-shipped-checkbox";
 import {
   AccessBadge,
   ShirtBadge,
@@ -233,7 +234,14 @@ export default async function AdminSubscribersPage({
                         {shortDate(s.subscription?.current_period_end)}
                       </TableCell>
                       <TableCell>
-                        <ShirtBadge status={shirtFulfillment(s.shirt)} />
+                        {canShipShirt(s.shirt) ? (
+                          <ShirtShippedCheckbox
+                            id={s.id}
+                            shipped={!!s.shirt?.shipped_at}
+                          />
+                        ) : (
+                          <ShirtBadge status={shirtFulfillment(s.shirt)} />
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

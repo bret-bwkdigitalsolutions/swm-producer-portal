@@ -131,3 +131,15 @@ export function shirtFulfillment(
   if (shirt.size) return "awaiting";
   return "unclaimed";
 }
+
+/**
+ * Whether a shirt is far enough along to have a "shipped" toggle: it must have
+ * been claimed with a size (awaiting) or already shipped. Unclaimed shirts and
+ * subscribers with no shirt have nothing to ship.
+ */
+export function canShipShirt(
+  shirt: Pick<Shirt, "size" | "shipped_at"> | null | undefined
+): boolean {
+  const status = shirtFulfillment(shirt);
+  return status === "awaiting" || status === "shipped";
+}
