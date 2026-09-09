@@ -10,7 +10,7 @@ export const NETWORKS: Network[] = [
   {
     slug: "sunset-lounge-dfw",
     name: "Sunset Lounge DFW",
-    wpShowIds: [22, 23, 24, 25, 26, 27, 28],
+    wpShowIds: [22, 23, 24, 25, 26, 27, 28, 4218],
     credentialWpShowId: 0,
     // Names must match WordPress (source of truth). The previous map had several
     // IDs wrong (22/24 swapped, 23/26/28 mislabeled), which mislabeled analytics
@@ -23,6 +23,10 @@ export const NETWORKS: Network[] = [
       26: "Just Wondering… with Norm Hitzges",
       27: "Signal 51 Chronicles",
       28: "Sunset Soccer Club",
+      // Live show recorded at Scout / The Statler (downtown Dallas). Production
+      // swm_show ID 4218 (slug: three-wide-at-scout). Uses network default
+      // credentials (wpShowId=0) like the other Sunset Lounge shows.
+      4218: "Three Wide at Scout, Live at The Statler",
     },
   },
   {
