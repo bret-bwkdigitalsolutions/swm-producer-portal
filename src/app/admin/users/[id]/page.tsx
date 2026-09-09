@@ -35,7 +35,10 @@ export default async function UserEditPage({
 
   const allowedTypes = user.allowedContentTypes.map((ct) => ct.contentType);
   const allowedShowIds = new Set(user.allowedShows.map((s) => s.wpShowId));
-  const allShows = await getCachedShows().catch(() => []);
+  const allShows = await getCachedShows().catch((err) => {
+    console.error("[admin/users] failed to load shows from WordPress:", err);
+    return [];
+  });
 
 
   return (

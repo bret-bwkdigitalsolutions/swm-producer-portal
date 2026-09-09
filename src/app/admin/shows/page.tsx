@@ -16,7 +16,10 @@ import { ArrowRightLeftIcon } from "lucide-react";
 
 export default async function AdminShowsPage() {
   const [shows, allStakeholders, allPlatformLinks, allShowMetadata, editRecordCounts] = await Promise.all([
-    getCachedShows().catch(() => []),
+    getCachedShows().catch((err) => {
+      console.error("[admin/shows] failed to load shows from WordPress:", err);
+      return [];
+    }),
     db.showStakeholder.findMany({
       orderBy: { name: "asc" },
     }),
