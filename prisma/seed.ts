@@ -1,6 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
+import { assertSeedAllowed, seedPassword } from "../src/lib/seed-guard";
+
+// Never seed production: this creates login-capable accounts.
+assertSeedAllowed();
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
@@ -8,33 +12,42 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  // Create admin user
-  const adminPassword = await bcrypt.hash("admin123", 10);
+  // Passwords come from SEED_ADMIN_PASSWORD / SEED_PRODUCER_PASSWORD, or are
+  // generated randomly. Existing users are never modified.
+  const adminEmail = "bret@bwkdigital.com";
+  const producerEmail = "rob@stolenwatermedia.com";
+  const generated: string[] = [];
+
+  const adminExists = await prisma.user.findUnique({ where: { email: adminEmail }, select: { id: true } });
+  const adminPw = seedPassword("SEED_ADMIN_PASSWORD");
   const admin = await prisma.user.upsert({
-    where: { email: "bret@bwkdigital.com" },
+    where: { email: adminEmail },
     update: {},
     create: {
       name: "Bret Kramer",
-      email: "bret@bwkdigital.com",
-      hashedPassword: adminPassword,
+      email: adminEmail,
+      hashedPassword: await bcrypt.hash(adminPw.password, 10),
       role: "admin",
       hasDistributionAccess: true,
     },
   });
+  if (!adminExists && adminPw.generated) generated.push(`  ${adminEmail}: ${adminPw.password}`);
 
   // Create a test producer
-  const producerPassword = await bcrypt.hash("producer123", 10);
+  const producerExists = await prisma.user.findUnique({ where: { email: producerEmail }, select: { id: true } });
+  const producerPw = seedPassword("SEED_PRODUCER_PASSWORD");
   const producer = await prisma.user.upsert({
-    where: { email: "rob@stolenwatermedia.com" },
+    where: { email: producerEmail },
     update: {},
     create: {
       name: "Rob (Test Producer)",
-      email: "rob@stolenwatermedia.com",
-      hashedPassword: producerPassword,
+      email: producerEmail,
+      hashedPassword: await bcrypt.hash(producerPw.password, 10),
       role: "producer",
       hasDistributionAccess: false,
     },
   });
+  if (!producerExists && producerPw.generated) generated.push(`  ${producerEmail}: ${producerPw.password}`);
 
   // Give admin access to all content types
   const allTypes = [
@@ -81,6 +94,12 @@ async function main() {
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.email}`);
   console.log(`  Producer: ${producer.email}`);
+  if (generated.length > 0) {
+    // Shown once, only for accounts this run created with a random password
+    // (local/dev databases only — see assertSeedAllowed).
+    console.log("Generated passwords for newly created local accounts (not stored anywhere else):");
+    for (const line of generated) console.log(line);
+  }
 }
 
 main()

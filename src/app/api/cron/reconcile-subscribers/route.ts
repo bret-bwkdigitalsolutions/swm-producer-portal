@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { bearerTokenMatches } from "@/lib/secure-compare";
 import { db } from "@/lib/db";
 import {
   listTransistorSubscribers,
@@ -28,8 +29,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const authHeader = request.headers.get("authorization") ?? "";
-  if (authHeader !== `Bearer ${expected}`) {
+  if (!bearerTokenMatches(request.headers.get("authorization"), expected)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 

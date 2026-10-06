@@ -37,7 +37,7 @@ import { revalidateTag } from "next/cache";
 import { uploadMedia } from "@/lib/wordpress/client";
 import { resolveTagTermIds, SWM_BLOG_TAG_REST_BASE } from "@/lib/wordpress/tags";
 import { prepareForWordPress } from "@/lib/image";
-import { runSuggestionBlogAi } from "./actions";
+import { runSuggestionBlogAi } from "./blog-helpers";
 
 const WP_API_URL = () => process.env.WP_API_URL!;
 const WP_AUTH = () =>

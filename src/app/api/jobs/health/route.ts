@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { bearerTokenMatches } from "@/lib/secure-compare";
 import { db } from "@/lib/db";
 
 /**
@@ -23,12 +24,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : null;
-
-  if (token !== secret) {
+  if (!bearerTokenMatches(request.headers.get("authorization"), secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
