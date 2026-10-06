@@ -19,10 +19,19 @@ export async function register() {
   // Re-schedule post-distribution verification tiers that were pending when
   // the previous container died (their setTimeout timers don't survive).
   try {
-    const { resumeVerificationSchedules } = await import("@/lib/jobs/processor");
+    const { resumeVerificationSchedules } = await import("@/lib/jobs/verification-schedule");
     await resumeVerificationSchedules();
   } catch (error) {
     console.error("[instrumentation] Verification resume failed:", error);
+  }
+
+  // Same for deferred thumbnail backfills (YouTube thumbnail → website
+  // featured image + Transistor artwork).
+  try {
+    const { resumeThumbnailBackfills } = await import("@/lib/jobs/thumbnail-backfill");
+    await resumeThumbnailBackfills();
+  } catch (error) {
+    console.error("[instrumentation] Thumbnail backfill resume failed:", error);
   }
 
   // Non-blocking: verify the AI model is still reachable so we find out on

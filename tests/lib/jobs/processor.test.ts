@@ -112,6 +112,25 @@ vi.mock("@/lib/jobs/ai-processor", () => ({
   generateAiSuggestions: vi.fn(),
 }));
 
+// Background follow-ups (timers) — assert they're scheduled, don't run them.
+const mockScheduleVerificationTiers = vi.fn();
+const mockScheduleThumbnailBackfill = vi.fn();
+const mockRecordDistributionIssue = vi.fn();
+
+vi.mock("@/lib/jobs/verification-schedule", () => ({
+  scheduleVerificationTiers: (...args: unknown[]) => mockScheduleVerificationTiers(...args),
+  resumeVerificationSchedules: vi.fn(),
+}));
+
+vi.mock("@/lib/jobs/thumbnail-backfill", () => ({
+  scheduleThumbnailBackfill: (...args: unknown[]) => mockScheduleThumbnailBackfill(...args),
+}));
+
+vi.mock("@/lib/jobs/distribution-issues", () => ({
+  recordDistributionIssue: (...args: unknown[]) => mockRecordDistributionIssue(...args),
+  errorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
+}));
+
 // ---------------------------------------------------------------------------
 // Import module under test
 // ---------------------------------------------------------------------------
@@ -186,6 +205,9 @@ describe("processJob", () => {
     mockPlatformCredentialFindUnique.mockResolvedValue(null);
     mockShowPlatformLinkFindUnique.mockResolvedValue(null);
     mockQueryRaw.mockResolvedValue([{ metadata: {} }]);
+    mockScheduleVerificationTiers.mockResolvedValue(undefined);
+    mockScheduleThumbnailBackfill.mockResolvedValue(undefined);
+    mockRecordDistributionIssue.mockResolvedValue(undefined);
 
     // Suppress console output during tests
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -670,5 +692,216 @@ describe("processJob", () => {
     expect(signedDownloadCount()).toBe(1);
     expect(mockExtractAudio).not.toHaveBeenCalled();
     expect(leftoverVideoDirs()).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Distribution follow-ups: recorded issues, thumbnail backfill, verification
+  // -------------------------------------------------------------------------
+
+  it("does not fail YouTube when the show playlist add fails after upload, and records a warning", async () => {
+    const job = makeJob();
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
+    mockResolvePlatformId.mockResolvedValue("https://youtube.com/playlist?list=PL123");
+    mockAddToPlaylist.mockRejectedValue(new Error("playlist quota exceeded"));
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "youtube")?.status).toBe("completed");
+    expect(mockPlatformUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) })
+    );
+    expect(mockRecordDistributionIssue).toHaveBeenCalledWith(
+      "job-1",
+      expect.objectContaining({
+        source: "youtube_playlist",
+        severity: "warning",
+        message: expect.stringContaining("playlist quota exceeded"),
+      })
+    );
+  });
+
+  it("records a failed network Transistor cross-post as a critical issue", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+        thumbnailGcsPath: "uploads/thumb.jpg",
+      },
+      platforms: [{ id: "plat-tr", platform: "transistor" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockShowPlatformLinkFindUnique.mockResolvedValue({ url: "network-show" });
+    mockUploadToTransistor
+      .mockResolvedValueOnce({ episodeId: "ep-1", episodeUrl: "https://share.transistor.fm/ep-1" })
+      .mockRejectedValueOnce(new Error("network feed 500"));
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("completed");
+    expect(mockRecordDistributionIssue).toHaveBeenCalledWith(
+      "job-1",
+      expect.objectContaining({
+        source: "network_transistor",
+        platform: "transistor_network",
+        severity: "critical",
+        message: expect.stringContaining("network feed 500"),
+      })
+    );
+  });
+
+  it("stores the network Transistor episode id so verification can check it", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+        thumbnailGcsPath: "uploads/thumb.jpg",
+      },
+      platforms: [{ id: "plat-tr", platform: "transistor" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockShowPlatformLinkFindUnique.mockResolvedValue({ url: "network-show" });
+    mockUploadToTransistor
+      .mockResolvedValueOnce({ episodeId: "ep-1", episodeUrl: "https://share.transistor.fm/ep-1" })
+      .mockResolvedValueOnce({ episodeId: "net-9", episodeUrl: "https://share.transistor.fm/net-9" });
+
+    await processJob("job-1");
+
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          metadata: expect.objectContaining({ networkTransistorEpisodeId: "net-9" }),
+        },
+      })
+    );
+    expect(mockRecordDistributionIssue).not.toHaveBeenCalled();
+  });
+
+  it("records a warning and schedules artwork backfill when the network episode image fails", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+        thumbnailGcsPath: "uploads/thumb.jpg",
+      },
+      platforms: [{ id: "plat-tr", platform: "transistor" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockShowPlatformLinkFindUnique.mockResolvedValue({ url: "network-show" });
+    mockUploadToTransistor
+      .mockResolvedValueOnce({ episodeId: "ep-1", episodeUrl: "https://share.transistor.fm/ep-1" })
+      .mockResolvedValueOnce({
+        episodeId: "net-9",
+        episodeUrl: "https://share.transistor.fm/net-9",
+        imageError: "square crop failed",
+      });
+
+    await processJob("job-1");
+
+    expect(mockRecordDistributionIssue).toHaveBeenCalledWith(
+      "job-1",
+      expect.objectContaining({
+        source: "network_transistor_image",
+        platform: "transistor_network",
+        severity: "warning",
+        message: expect.stringContaining("square crop failed"),
+      })
+    );
+    expect(mockScheduleThumbnailBackfill).toHaveBeenCalledWith("job-1");
+  });
+
+  it("records a warning when the website post was published without its featured image", async () => {
+    const job = makeJob({
+      metadata: { description: "A test episode", thumbnailGcsPath: "uploads/thumb.jpg" },
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "yt-abc",
+          externalUrl: "https://youtube.com/watch?v=yt-abc",
+        },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 7,
+      postUrl: "https://example.com/ep",
+      featuredImageError: "media upload 413",
+    });
+
+    await processJob("job-1");
+
+    expect(mockRecordDistributionIssue).toHaveBeenCalledWith(
+      "job-1",
+      expect.objectContaining({ source: "website_featured_image", severity: "warning" })
+    );
+    // The backfill retries the featured image in the background.
+    expect(mockScheduleThumbnailBackfill).toHaveBeenCalledWith("job-1");
+  });
+
+  it("schedules the thumbnail backfill when YouTube had no thumbnail yet", async () => {
+    const job = makeJob({
+      metadata: { description: "A test episode", isDraft: true },
+      platforms: [
+        { id: "plat-yt", platform: "youtube" },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    // Video download works; the i.ytimg.com thumbnail isn't there yet (404).
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string) =>
+      String(url).includes("i.ytimg.com")
+        ? { ok: false, status: 404 }
+        : videoFetchResponse()
+    ) as unknown as typeof fetch;
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
+    mockPublishToWordPress.mockResolvedValue({ postId: 7, postUrl: "https://example.com/ep" });
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("completed");
+    expect(mockScheduleThumbnailBackfill).toHaveBeenCalledWith("job-1");
+    expect(mockScheduleVerificationTiers).toHaveBeenCalledWith(
+      "job-1",
+      expect.objectContaining({ wpShowId: 42, title: "Episode 1", isDraft: true, isLiveRecording: false })
+    );
+  });
+
+  it("does not schedule the thumbnail backfill when a thumbnail was uploaded", async () => {
+    const job = makeJob({
+      metadata: { description: "A test episode", thumbnailGcsPath: "uploads/thumb.jpg" },
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "yt-abc",
+          externalUrl: "https://youtube.com/watch?v=yt-abc",
+        },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockPublishToWordPress.mockResolvedValue({ postId: 7, postUrl: "https://example.com/ep" });
+
+    await processJob("job-1");
+
+    expect(mockScheduleThumbnailBackfill).not.toHaveBeenCalled();
+    expect(mockScheduleVerificationTiers).toHaveBeenCalledTimes(1);
   });
 });

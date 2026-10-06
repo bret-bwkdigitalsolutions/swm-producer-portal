@@ -32,6 +32,8 @@ export interface DistributionJobSummary {
   status: string;
   createdAt: string;
   platforms: PlatformStatus[];
+  /** Final post-distribution verification verdict, once it has run. */
+  verification?: "passed" | "warnings" | "failed" | null;
 }
 
 const STATUS_STYLES: Record<string, { variant: string; label: string }> = {
@@ -112,6 +114,24 @@ function PlatformBadge({
   );
 }
 
+function VerificationBadge({ verification }: { verification: DistributionJobSummary["verification"] }) {
+  if (verification === "failed") {
+    return (
+      <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" title="Final verification found problems — open the job for details">
+        Verification failed
+      </Badge>
+    );
+  }
+  if (verification === "warnings") {
+    return (
+      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" title="Published with minor (cosmetic) issues">
+        Warnings
+      </Badge>
+    );
+  }
+  return null;
+}
+
 export function JobCard({ job }: { job: DistributionJobSummary }) {
   const date = new Date(job.createdAt);
   const formattedDate = date.toLocaleDateString("en-US", {
@@ -131,7 +151,10 @@ export function JobCard({ job }: { job: DistributionJobSummary }) {
               <CardTitle className="truncate text-base">{job.title}</CardTitle>
               <p className="text-sm text-muted-foreground">{job.showName}</p>
             </div>
-            <StatusBadge status={job.status} />
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <StatusBadge status={job.status} />
+              <VerificationBadge verification={job.verification} />
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">

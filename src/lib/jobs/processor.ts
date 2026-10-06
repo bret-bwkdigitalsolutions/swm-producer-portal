@@ -6,9 +6,11 @@ import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay, for
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
-import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
-import { runVerificationTier, type TierResult } from "./verify-distribution";
+import { sendDistributionErrorNotification } from "@/lib/notifications";
 import { mergeJobMetadata } from "./job-metadata";
+import { scheduleVerificationTiers } from "./verification-schedule";
+import { scheduleThumbnailBackfill } from "./thumbnail-backfill";
+import { errorMessage, recordDistributionIssue } from "./distribution-issues";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { gcsObjectExists, generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
@@ -142,6 +144,11 @@ async function processJobInner(
 
   const metadata = job.metadata as Record<string, unknown>;
   const platformResults: ProcessingResult["platformResults"] = [];
+
+  // Issues recorded during a previous run (retry) no longer apply.
+  if (Array.isArray(metadata.distributionIssues) && metadata.distributionIssues.length > 0) {
+    await mergeJobMetadata(job.id, { distributionIssues: undefined }).catch(() => {});
+  }
 
   const existingYoutubeUrl = metadata.existingYoutubeUrl as string | undefined;
   const existingVimeoUrl = metadata.existingVimeoUrl as string | undefined;
@@ -504,21 +511,42 @@ async function processJobInner(
             await unlink(thumbPath).catch(() => {});
             console.log(`[processor] YouTube thumbnail set from ${thumbnailGcsPath}`);
           } else {
-            console.error(`[processor] Failed to download thumbnail from GCS (${thumbResponse.status})`);
+            await recordDistributionIssue(job.id, {
+              source: "youtube_thumbnail",
+              platform: "youtube",
+              severity: "warning",
+              message: `Custom thumbnail not set on YouTube: could not download it from storage (HTTP ${thumbResponse.status})`,
+            });
           }
         } catch (error) {
-          console.error("[processor] Thumbnail set failed (non-fatal):", error);
+          await recordDistributionIssue(job.id, {
+            source: "youtube_thumbnail",
+            platform: "youtube",
+            severity: "warning",
+            message: `Custom thumbnail not set on YouTube: ${errorMessage(error)}`,
+          });
         }
       }
 
-      // Add to show playlist if configured
-      const playlistUrl = await resolvePlatformId(
-        job.wpShowId,
-        "youtube_playlist"
-      );
-      if (playlistUrl && youtubeVideoId) {
-        const playlistId = playlistUrl.split("list=").pop() ?? playlistUrl;
-        await addToPlaylist(job.wpShowId, playlistId, youtubeVideoId);
+      // Add to show playlist if configured. Non-fatal: the video is already
+      // uploaded, so a playlist failure must not mark YouTube as failed (a
+      // retry would then upload a duplicate video).
+      try {
+        const playlistUrl = await resolvePlatformId(
+          job.wpShowId,
+          "youtube_playlist"
+        );
+        if (playlistUrl && youtubeVideoId) {
+          const playlistId = playlistUrl.split("list=").pop() ?? playlistUrl;
+          await addToPlaylist(job.wpShowId, playlistId, youtubeVideoId);
+        }
+      } catch (playlistErr) {
+        await recordDistributionIssue(job.id, {
+          source: "youtube_playlist",
+          platform: "youtube",
+          severity: "warning",
+          message: `Video uploaded but not added to the show playlist: ${errorMessage(playlistErr)}`,
+        });
       }
 
       // Also add to the network YouTube playlist if this show is part of
@@ -544,8 +572,13 @@ async function processJobInner(
             }
           }
         } catch (networkErr) {
-          // Non-fatal: log but don't fail the job
-          console.error("[processor] Network YouTube playlist add failed:", networkErr);
+          // Non-fatal: record but don't fail the job
+          await recordDistributionIssue(job.id, {
+            source: "youtube_network_playlist",
+            platform: "youtube",
+            severity: "warning",
+            message: `Video not added to the network (Sunset Lounge) playlist: ${errorMessage(networkErr)}`,
+          });
         }
       }
 
@@ -574,6 +607,9 @@ async function processJobInner(
 
   // Fallback: if no thumbnail was uploaded but we have a YouTube video ID,
   // pull the thumbnail from YouTube and store it in GCS for Transistor/WordPress.
+  // This only works when YouTube has already produced thumbnails (e.g. live
+  // recordings). For a fresh upload it usually 404s; the deferred thumbnail
+  // backfill (scheduled below) fills the artwork in once YouTube is ready.
   if (!updatedMetadata.thumbnailGcsPath && youtubeVideoId) {
     try {
       // Try maxresdefault first (1280x720), fall back to hqdefault (480x360)
@@ -602,14 +638,21 @@ async function processJobInner(
         console.log(
           `[processor] YouTube thumbnail fallback saved to GCS: ${gcsPath}`
         );
+      } else {
+        console.log(
+          `[processor] YouTube thumbnail not ready yet for ${youtubeVideoId} (HTTP ${thumbResponse.status}) — deferring to thumbnail backfill`
+        );
       }
     } catch (error) {
-      console.error(
-        "[processor] YouTube thumbnail fallback failed (non-fatal):",
+      console.warn(
+        "[processor] YouTube thumbnail fallback failed (non-fatal, deferring to thumbnail backfill):",
         error
       );
     }
   }
+
+  // Set when a platform published without its image so the backfill retries it.
+  let artworkMissing = false;
 
   // --- Phase 2: Transistor (independent of YouTube) ---
   const transistorPlatform = job.platforms.find(
@@ -686,6 +729,16 @@ async function processJobInner(
 
       platformResults.push({ platform: "transistor", status: "completed" });
 
+      if (result.imageError) {
+        artworkMissing = true;
+        await recordDistributionIssue(job.id, {
+          source: "transistor_image",
+          platform: "transistor",
+          severity: "warning",
+          message: `Episode published without its artwork: ${result.imageError}`,
+        });
+      }
+
       // Also publish to the network Transistor feed if this show is part of
       // the Sunset Lounge network (any show that uses the network default
       // Transistor credentials — i.e. doesn't have its own override).
@@ -710,7 +763,7 @@ async function processJobInner(
               // Sunset Lounge (the network feed) is not Clubhouse or Signal 51,
               // so the season must be cleared on the cross-post regardless of
               // what the source show's metadata had set.
-              await uploadToTransistor({
+              const networkResult = await uploadToTransistor({
                 wpShowId: 0, // Use network credentials
                 title: job.title,
                 description: (updatedMetadata.description as string) ?? "",
@@ -730,11 +783,37 @@ async function processJobInner(
                   : undefined,
               });
               console.log("[processor] Network Transistor cross-post succeeded");
+              if (networkResult.imageError) {
+                artworkMissing = true;
+                await recordDistributionIssue(job.id, {
+                  source: "network_transistor_image",
+                  platform: "transistor_network",
+                  severity: "warning",
+                  message: `Network episode published without its artwork: ${networkResult.imageError}`,
+                });
+              }
+              // Recorded so verification checks the network episode too and
+              // the thumbnail backfill can set its artwork.
+              await mergeJobMetadata(job.id, {
+                networkTransistorEpisodeId: networkResult.episodeId,
+                networkTransistorEpisodeUrl: networkResult.episodeUrl,
+              });
+              updatedMetadata = {
+                ...updatedMetadata,
+                networkTransistorEpisodeId: networkResult.episodeId,
+                networkTransistorEpisodeUrl: networkResult.episodeUrl,
+              };
             }
           }
         } catch (networkErr) {
-          // Non-fatal: log but don't fail the job
-          console.error("[processor] Network Transistor cross-post failed:", networkErr);
+          // Doesn't fail the job (the show's own feed succeeded), but the
+          // episode is missing from the network feed — that needs action.
+          await recordDistributionIssue(job.id, {
+            source: "network_transistor",
+            platform: "transistor_network",
+            severity: "critical",
+            message: `Episode was NOT cross-posted to the network (Sunset Lounge) Transistor feed: ${errorMessage(networkErr)}`,
+          });
         }
       }
     } catch (error) {
@@ -808,6 +887,16 @@ async function processJobInner(
       });
 
       platformResults.push({ platform: "website", status: "completed" });
+
+      if (result.featuredImageError) {
+        artworkMissing = true;
+        await recordDistributionIssue(job.id, {
+          source: "website_featured_image",
+          platform: "website",
+          severity: "warning",
+          message: `Post published without its featured image: ${result.featuredImageError}`,
+        });
+      }
     } catch (error) {
       const errMsg =
         error instanceof Error ? error.message : "WordPress publish failed";
@@ -882,157 +971,42 @@ async function processJobInner(
 
   console.log(`[processor] Job ${job.id} ${finalStatus}.`);
 
-  // --- Schedule tiered post-distribution verification (fire-and-forget) ---
-  // Each tier checks deeper: tier 1 = "did the resource land at all", tier 4 =
-  // "is the public URL actually serving". Timers run via setTimeout, but the
-  // schedule is persisted to job metadata so a server restart can resume
-  // pending tiers (see resumeVerificationSchedules, called at startup).
-  if (finalStatus === "completed" || (!allFailed && anyFailed)) {
-    await scheduleVerificationTiers(job.id, job.wpShowId, job.title, !!existingYoutubeUrl, isPremium);
+  const verifiable = finalStatus === "completed" || (!allFailed && anyFailed);
+
+  // --- Deferred thumbnail backfill (fire-and-forget) ---
+  // No producer thumbnail and YouTube hadn't generated one yet at upload
+  // time: fetch it once YouTube is ready and set the website featured image
+  // and Transistor artwork. Also retries when an image upload failed above.
+  // Runs in the background so publishing isn't held up.
+  const thumbnailMissing = !updatedMetadata.thumbnailGcsPath && !!youtubeVideoId;
+  if (verifiable && (thumbnailMissing || artworkMissing)) {
+    const needsArtwork = platformResults.some(
+      (r) => (r.platform === "website" || r.platform === "transistor") && r.status === "completed"
+    );
+    if (needsArtwork) {
+      await scheduleThumbnailBackfill(job.id).catch((err) =>
+        console.error(`[processor] could not schedule thumbnail backfill for job ${job.id}:`, err)
+      );
+    }
+  }
+
+  // --- Schedule post-distribution verification (fire-and-forget) ---
+  // Tiers 1–4 check progressively (exists → metadata → processing → public
+  // URL); tier 5 at 60 min re-checks everything and decides whether to alert.
+  // The schedule is persisted so a restart can resume (see
+  // resumeVerificationSchedules, called at startup).
+  if (verifiable) {
+    await scheduleVerificationTiers(job.id, {
+      wpShowId: job.wpShowId,
+      title: job.title,
+      isLiveRecording: !!existingYoutubeUrl,
+      isPremium,
+      isDraft: (updatedMetadata.isDraft as boolean) ?? false,
+    });
   }
 
   return { jobId: job.id, status: finalStatus, platformResults };
 }
 
-const VERIFICATION_TIER_DELAYS_MS: Record<1 | 2 | 3 | 4, number> = {
-  1: 30_000,        // 30 seconds — does the resource exist at all?
-  2: 2 * 60_000,    // 2 minutes — title + thumbnail are correct
-  3: 10 * 60_000,   // 10 minutes — uploaded/processed status, audio/post reachable
-  4: 30 * 60_000,   // 30 minutes — public URL HEAD check
-};
-
-type VerificationSchedule = {
-  scheduledAt: string;
-  wpShowId: number;
-  title: string;
-  isLiveRecording: boolean;
-  isPremium: boolean;
-  done: boolean;
-};
-
-async function scheduleVerificationTiers(
-  jobId: string,
-  wpShowId: number,
-  title: string,
-  isLiveRecording: boolean,
-  isPremium: boolean,
-) {
-  const schedule: VerificationSchedule = {
-    scheduledAt: new Date().toISOString(),
-    wpShowId,
-    title,
-    isLiveRecording,
-    isPremium,
-    done: false,
-  };
-
-  // Persist before scheduling so a restart can resume pending tiers.
-  await mergeJobMetadata(jobId, { verificationSchedule: schedule }).catch((err) =>
-    console.error(`[verify] could not persist verification schedule for job ${jobId}:`, err)
-  );
-
-  for (const tier of [1, 2, 3, 4] as const) {
-    scheduleVerificationTier(jobId, schedule, tier, VERIFICATION_TIER_DELAYS_MS[tier]);
-  }
-}
-
-function scheduleVerificationTier(
-  jobId: string,
-  schedule: VerificationSchedule,
-  tier: 1 | 2 | 3 | 4,
-  delayMs: number,
-) {
-  setTimeout(() => {
-    runVerificationTier(tier, jobId, schedule.wpShowId, schedule.title, schedule.isLiveRecording, schedule.isPremium)
-      .then((result) => maybeNotifyTierFailure(jobId, schedule.wpShowId, schedule.title, result))
-      .then(() => {
-        // Final tier done — mark the schedule complete so the startup sweep
-        // stops considering this job.
-        if (tier === 4) {
-          return mergeJobMetadata(jobId, {
-            verificationSchedule: { ...schedule, done: true },
-          });
-        }
-      })
-      .catch((err) => {
-        console.error(`[verify] tier ${tier} failed for job ${jobId}:`, err);
-      });
-  }, delayMs).unref?.(); // don't keep the process alive past job completion
-}
-
-/**
- * Called from instrumentation on server startup. Re-schedules verification
- * tiers that were pending when the previous container died (setTimeout-based
- * timers don't survive restarts). Tiers whose delay already elapsed run
- * shortly after startup; schedules older than 24h are abandoned.
- */
-export async function resumeVerificationSchedules(): Promise<void> {
-  const jobs = await db.distributionJob.findMany({
-    where: { metadata: { path: ["verificationSchedule", "done"], equals: false } },
-    select: { id: true, metadata: true },
-  });
-
-  for (const job of jobs) {
-    const meta = (job.metadata as Record<string, unknown>) ?? {};
-    const schedule = meta.verificationSchedule as VerificationSchedule | undefined;
-    if (!schedule) continue;
-
-    const elapsed = Date.now() - Date.parse(schedule.scheduledAt);
-    if (Number.isNaN(elapsed) || elapsed > 24 * 60 * 60 * 1000) {
-      await mergeJobMetadata(job.id, {
-        verificationSchedule: { ...schedule, done: true },
-      }).catch(() => {});
-      continue;
-    }
-
-    const ranTiers = new Set(
-      ((meta.verifications as Array<{ tier: number }> | undefined) ?? []).map((v) => v.tier)
-    );
-    const remaining = ([1, 2, 3, 4] as const).filter((t) => !ranTiers.has(t));
-    if (remaining.length === 0) {
-      await mergeJobMetadata(job.id, {
-        verificationSchedule: { ...schedule, done: true },
-      }).catch(() => {});
-      continue;
-    }
-
-    console.log(
-      `[verify] Resuming verification for job ${job.id} — tiers ${remaining.join(", ")} pending`
-    );
-    for (const tier of remaining) {
-      // Stagger overdue tiers slightly so they don't all fire at once.
-      const delay = Math.max(VERIFICATION_TIER_DELAYS_MS[tier] - elapsed, tier * 10_000);
-      scheduleVerificationTier(job.id, schedule, tier, delay);
-    }
-  }
-}
-
-async function maybeNotifyTierFailure(
-  jobId: string,
-  wpShowId: number,
-  jobTitle: string,
-  result: TierResult,
-) {
-  // Only notify on the final tier — earlier tiers catch transient states
-  // (e.g. YouTube still processing, Transistor not yet published)
-  if (result.tier < 4) return;
-
-  const failed = result.platforms.filter((p) => !p.passed);
-  if (failed.length === 0) return;
-
-  const issues = failed.flatMap((p) => p.issues);
-  let showName = `Show #${wpShowId}`;
-  try {
-    const { getShow } = await import("@/lib/wordpress/client");
-    const show = await getShow(wpShowId);
-    showName = show.title.rendered;
-  } catch {}
-
-  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  await sendVerificationFailureNotification({
-    jobTitle,
-    showName,
-    issues,
-    jobUrl: `${baseUrl}/dashboard/distribute/${jobId}`,
-  });
-}
+// Re-exported for instrumentation.ts (startup resume).
+export { resumeVerificationSchedules } from "./verification-schedule";

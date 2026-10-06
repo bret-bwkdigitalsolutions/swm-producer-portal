@@ -35,3 +35,31 @@ export async function mergeJobMetadata(
     });
   });
 }
+
+/**
+ * Append one item to an array stored under `key` in distributionJob.metadata,
+ * under the same row lock as mergeJobMetadata so concurrent writers can't drop
+ * each other's entries. Keeps at most `maxItems` (newest last).
+ */
+export async function appendJobMetadataItem(
+  jobId: string,
+  key: string,
+  item: unknown,
+  maxItems = 50
+): Promise<void> {
+  await db.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ metadata: unknown }>>`
+      SELECT metadata FROM distribution_jobs WHERE id = ${jobId} FOR UPDATE
+    `;
+    if (rows.length === 0) return;
+
+    const metadata = (rows[0].metadata as Record<string, unknown>) ?? {};
+    const existing = Array.isArray(metadata[key]) ? (metadata[key] as unknown[]) : [];
+    const next = [...existing, item].slice(-maxItems);
+
+    await tx.distributionJob.update({
+      where: { id: jobId },
+      data: { metadata: JSON.parse(JSON.stringify({ ...metadata, [key]: next })) },
+    });
+  });
+}

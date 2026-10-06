@@ -341,3 +341,20 @@ export async function updatePost(
     body: JSON.stringify(payload),
   });
 }
+
+/**
+ * Fetch a single post (edit context fields such as featured_media and status).
+ * GET — retried on transient errors by wpFetch.
+ */
+export async function getPost<T = WpPost>(
+  contentType: string,
+  postId: number,
+  fields?: string[]
+): Promise<T> {
+  const postType = POST_TYPE_MAP[contentType];
+  if (!postType) {
+    throw new Error(`Unknown content type: ${contentType}`);
+  }
+  const query = fields?.length ? `?_fields=${fields.join(",")}` : "";
+  return wpFetch<T>(`/${postType}/${postId}${query}`);
+}

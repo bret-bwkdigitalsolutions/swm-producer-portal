@@ -63,6 +63,7 @@ export default async function DistributePage() {
     status: job.status,
     createdAt: job.createdAt.toISOString(),
     platforms: job.platforms,
+    verification: verificationStatus(job.metadata),
   }));
 
   // Group jobs by day
@@ -115,4 +116,12 @@ export default async function DistributePage() {
       )}
     </div>
   );
+}
+
+function verificationStatus(metadata: unknown): DistributionJobSummary["verification"] {
+  const verdict = (metadata as Record<string, unknown> | null)?.verificationVerdict as
+    | { status?: string }
+    | undefined;
+  const status = verdict?.status;
+  return status === "passed" || status === "warnings" || status === "failed" ? status : null;
 }

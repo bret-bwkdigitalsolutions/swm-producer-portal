@@ -24,6 +24,8 @@ export interface WordPressPublishParams {
 
 export interface WordPressPublishResult {
   postId: number;
+  /** Set when a thumbnail was supplied but the featured image could not be attached. */
+  featuredImageError?: string;
   postUrl: string;
 }
 
@@ -60,6 +62,7 @@ export async function publishToWordPress(
 
   // Upload thumbnail as featured image if available (resized to 1200px wide)
   let featuredMediaId: number | undefined;
+  let featuredImageError: string | undefined;
   if (thumbnailGcsPath) {
     try {
       const processed = await prepareForWordPress(thumbnailGcsPath);
@@ -72,6 +75,7 @@ export async function publishToWordPress(
       console.log(`[wordpress] Uploaded featured image: ${media.id} (${processed.width}×${processed.height})`);
     } catch (error) {
       console.error("[wordpress] Featured image upload failed (non-fatal):", error);
+      featuredImageError = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -121,5 +125,9 @@ export async function publishToWordPress(
 
   console.log(`[wordpress] Episode post created: ${post.link}`);
 
-  return { postId: post.id, postUrl: post.link };
+  return {
+    postId: post.id,
+    postUrl: post.link,
+    ...(featuredImageError ? { featuredImageError } : {}),
+  };
 }
