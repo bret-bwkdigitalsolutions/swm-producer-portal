@@ -2,6 +2,18 @@
 
 import { useActionState, useState, useEffect, useCallback } from "react";
 import { updateAiSuggestion, retryPlatform, deleteJob } from "./actions";
+import {
+  ALL_TIERS,
+  TIER_INFO,
+  computeVerdict,
+  describeIssue,
+  issueSeverity,
+  type DistributionIssue,
+  type PlatformTierResult,
+  type TierNumber,
+  type TierResult,
+  type VerificationVerdict,
+} from "@/lib/jobs/verification-types";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -252,6 +264,7 @@ function AiSuggestionCard({ suggestion }: { suggestion: AiSuggestion }) {
 
 const TERMINAL_STATUSES = ["completed", "failed"];
 const POLL_INTERVAL_MS = 5_000;
+const VERIFICATION_POLL_INTERVAL_MS = 30_000;
 
 export function JobDetailView({ job }: { job: SerializedJob }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -261,13 +274,21 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const [liveVerifications, setLiveVerifications] = useState<TierResult[] | null>(
     (job.metadata.verifications as TierResult[] | undefined) ?? null
   );
+  const [liveIssues, setLiveIssues] = useState<DistributionIssue[]>(
+    (job.metadata.distributionIssues as DistributionIssue[] | undefined) ?? []
+  );
+  const [scheduleVersion, setScheduleVersion] = useState<number | null>(
+    ((job.metadata.verificationSchedule as { version?: number } | undefined)?.version) ?? null
+  );
+  const [backfill, setBackfill] = useState<{ status: string } | null>(
+    (job.metadata.thumbnailBackfill as { status: string } | undefined) ?? null
+  );
 
   const isTerminal = TERMINAL_STATUSES.includes(liveStatus);
-  // Verification fires up to 30 min after distribution completes, so keep
-  // polling until tier 4 has run (or 35 min from job creation as a backstop).
-  const verificationsComplete =
-    Array.isArray(liveVerifications) &&
-    [1, 2, 3, 4].every((t) => liveVerifications.some((v) => v.tier === t));
+  const verdict = computeVerdict(liveVerifications, liveIssues, scheduleVersion ?? undefined);
+  // Verification runs up to ~60 min after distribution completes. Once the
+  // job itself is terminal, poll slowly until the final verdict is in.
+  const verificationsComplete = verdict.status !== "pending";
 
   const pollStatus = useCallback(async () => {
     try {
@@ -277,6 +298,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
       setLiveStatus(data.status);
       setLivePlatforms(data.platforms);
       if (data.verifications !== undefined) setLiveVerifications(data.verifications);
+      if (Array.isArray(data.distributionIssues)) setLiveIssues(data.distributionIssues);
+      if (data.verificationScheduleVersion !== undefined) setScheduleVersion(data.verificationScheduleVersion);
+      if (data.thumbnailBackfill !== undefined) setBackfill(data.thumbnailBackfill);
     } catch {
       // Silently ignore — next poll will retry
     }
@@ -284,7 +308,10 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
 
   useEffect(() => {
     if (isTerminal && verificationsComplete) return;
-    const interval = setInterval(pollStatus, POLL_INTERVAL_MS);
+    const interval = setInterval(
+      pollStatus,
+      isTerminal ? VERIFICATION_POLL_INTERVAL_MS : POLL_INTERVAL_MS
+    );
     return () => clearInterval(interval);
   }, [isTerminal, verificationsComplete, pollStatus]);
 
@@ -434,8 +461,14 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         </CardContent>
       </Card>
 
-      {/* Post-distribution verification — tiered checks at 30s/2m/10m/30m */}
-      <VerificationPanel verifications={liveVerifications} platforms={livePlatforms} />
+      {/* Post-distribution verification — checks at 30s/2m/10m/30m + final re-check at 60m */}
+      <VerificationPanel
+        verifications={liveVerifications}
+        platforms={livePlatforms}
+        verdict={verdict}
+        scheduleVersion={scheduleVersion}
+        backfillStatus={backfill?.status ?? null}
+      />
 
       {/* AI suggestions (description, chapters, blog) are reviewed during
           distribution and managed in Admin > Blog Ideas — no need to show
@@ -444,88 +477,111 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   );
 }
 
-const TIER_LABELS: Record<number, { label: string; whenLabel: string }> = {
-  1: { label: "Smoke",      whenLabel: "30 sec" },
-  2: { label: "Metadata",   whenLabel: "2 min" },
-  3: { label: "Processing", whenLabel: "10 min" },
-  4: { label: "Public URL", whenLabel: "30 min" },
-};
+function cellFor(platRes: PlatformTierResult | undefined, ran: boolean): React.ReactNode {
+  if (!ran || !platRes) return <span className="text-muted-foreground">—</span>;
+  const details = platRes.issues
+    .map((i) => `${issueSeverity(i) === "critical" ? "✗" : "⚠"} ${describeIssue(i)}`)
+    .join("\n");
+  const hasCritical = platRes.issues.some((i) => issueSeverity(i) === "critical");
+  if (hasCritical) {
+    return <span className="text-red-600" title={details}>✗</span>;
+  }
+  if (platRes.issues.length > 0) {
+    return <span className="text-amber-600" title={details}>⚠</span>;
+  }
+  return <span className="text-green-600">✓</span>;
+}
 
-interface PlatformTierResult {
-  platform: string;
-  passed: boolean;
-  issues: Array<{ platform: string; field: string; expected: string; actual: string }>;
-}
-interface TierResult {
-  tier: 1 | 2 | 3 | 4;
-  ranAt: string;
-  platforms: PlatformTierResult[];
-}
+const VERDICT_STYLES: Record<VerificationVerdict["status"], { className: string; text: string }> = {
+  pending: {
+    className: "border-muted bg-muted/40 text-muted-foreground",
+    text: "Verification in progress — final check runs about 60 minutes after publishing.",
+  },
+  passed: {
+    className: "border-green-200 bg-green-50 text-green-800",
+    text: "✓ Verified — everything landed correctly.",
+  },
+  warnings: {
+    className: "border-amber-200 bg-amber-50 text-amber-800",
+    text: "⚠ Published, with minor issues (no action required).",
+  },
+  failed: {
+    className: "border-red-200 bg-red-50 text-red-800",
+    text: "❌ Verification failed — something needs attention.",
+  },
+};
 
 function VerificationPanel({
   verifications,
   platforms,
+  verdict,
+  scheduleVersion,
+  backfillStatus,
 }: {
   verifications: TierResult[] | null;
   platforms: Array<{ platform: string; status: string }>;
+  verdict: VerificationVerdict;
+  scheduleVersion: number | null;
+  backfillStatus: string | null;
 }) {
   const tierResults = verifications ?? [];
   const completedPlatforms = platforms.filter((p) => p.status === "completed");
 
   if (completedPlatforms.length === 0) return null;
 
+  // Legacy jobs (before the final re-check existed) only ran tiers 1–4.
+  const tiers: TierNumber[] =
+    (scheduleVersion ?? 1) >= 2 || tierResults.some((v) => v.tier === 5) ? ALL_TIERS : [1, 2, 3, 4];
+
+  // Rows: each completed platform, plus the network Transistor cross-post if checked.
+  const rowPlatforms = completedPlatforms.map((p) => p.platform);
+  if (tierResults.some((v) => v.platforms.some((pl) => pl.platform === "transistor_network"))) {
+    rowPlatforms.push("transistor_network");
+  }
+
+  const style = VERDICT_STYLES[verdict.status];
+  const showIssues = verdict.critical.length > 0 || verdict.warnings.length > 0;
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Verification</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
+        <div className={`rounded-md border px-3 py-2 text-sm ${style.className}`}>
+          {style.text}
+          {backfillStatus === "pending" || backfillStatus === "running" ? (
+            <div className="mt-1 text-xs opacity-80">
+              Fetching the YouTube thumbnail for the website and podcast artwork…
+            </div>
+          ) : null}
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-muted-foreground">
                 <th className="pb-2 text-left font-medium">Platform</th>
-                {[1, 2, 3, 4].map((t) => (
+                {tiers.map((t) => (
                   <th key={t} className="pb-2 text-center font-medium">
-                    {TIER_LABELS[t].label}
+                    {TIER_INFO[t].label}
                     <div className="text-[10px] font-normal opacity-70">
-                      ({TIER_LABELS[t].whenLabel})
+                      ({TIER_INFO[t].whenLabel})
                     </div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {completedPlatforms.map((p) => (
-                <tr key={p.platform} className="border-t">
-                  <td className="py-2 font-medium capitalize">{p.platform}</td>
-                  {[1, 2, 3, 4].map((tier) => {
+              {rowPlatforms.map((platform) => (
+                <tr key={platform} className="border-t">
+                  <td className="py-2 font-medium capitalize">{PLATFORM_ROW_LABELS[platform] ?? platform}</td>
+                  {tiers.map((tier) => {
                     const tierEntry = tierResults.find((v) => v.tier === tier);
-                    const platRes = tierEntry?.platforms.find(
-                      (pl) => pl.platform === p.platform
-                    );
-                    let cell: React.ReactNode;
-                    if (!tierEntry) {
-                      cell = <span className="text-muted-foreground">—</span>;
-                    } else if (!platRes) {
-                      cell = <span className="text-muted-foreground">—</span>;
-                    } else if (platRes.passed) {
-                      cell = <span className="text-green-600">✓</span>;
-                    } else {
-                      cell = (
-                        <span
-                          className="text-red-600"
-                          title={platRes.issues
-                            .map((i) => `${i.field}: expected "${i.expected}", got "${i.actual}"`)
-                            .join("\n")}
-                        >
-                          ✗
-                        </span>
-                      );
-                    }
+                    const platRes = tierEntry?.platforms.find((pl) => pl.platform === platform);
                     return (
                       <td key={tier} className="py-2 text-center">
-                        {cell}
+                        {cellFor(platRes, !!tierEntry)}
                       </td>
                     );
                   })}
@@ -534,10 +590,50 @@ function VerificationPanel({
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-[11px] text-muted-foreground">
-          ✓ passed · ✗ failed (hover for details) · — not yet run
+
+        {showIssues && (
+          <div className="space-y-2 text-xs">
+            {verdict.critical.length > 0 && (
+              <div>
+                <div className="font-medium text-red-700">Needs attention</div>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-red-700">
+                  {verdict.critical.map((i, idx) => (
+                    <li key={`c-${idx}`}>
+                      <span className="font-medium">{PLATFORM_ROW_LABELS[i.platform] ?? i.platform}:</span>{" "}
+                      {describeIssue(i)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {verdict.warnings.length > 0 && (
+              <div>
+                <div className="font-medium text-amber-700">Warnings</div>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-amber-700">
+                  {verdict.warnings.map((i, idx) => (
+                    <li key={`w-${idx}`}>
+                      <span className="font-medium">{PLATFORM_ROW_LABELS[i.platform] ?? i.platform}:</span>{" "}
+                      {describeIssue(i)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="text-[11px] text-muted-foreground">
+          ✓ passed · ⚠ warning (cosmetic) · ✗ failed (hover for details) · — not yet run.
+          {verdict.status === "pending" ? " Earlier checks are informational; only the final check can send an alert." : ""}
         </p>
       </CardContent>
     </Card>
   );
 }
+
+const PLATFORM_ROW_LABELS: Record<string, string> = {
+  youtube: "YouTube",
+  transistor: "Transistor",
+  transistor_network: "Transistor (network)",
+  website: "Website",
+};

@@ -47,10 +47,16 @@ export async function GET(
   // green/red checks live without a full page reload.
   const meta = (job.metadata as Record<string, unknown>) ?? {};
   const verifications = meta.verifications ?? null;
+  const schedule = meta.verificationSchedule as { version?: number } | undefined;
 
   return NextResponse.json({
     status: job.status,
     verifications,
+    // Non-fatal problems recorded during distribution (network cross-post,
+    // playlist adds, thumbnail uploads/backfill).
+    distributionIssues: meta.distributionIssues ?? [],
+    verificationScheduleVersion: schedule?.version ?? null,
+    thumbnailBackfill: meta.thumbnailBackfill ?? null,
     platforms: job.platforms.map((p) => ({
       id: p.id,
       platform: p.platform,

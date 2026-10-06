@@ -73,6 +73,8 @@ export interface TransistorUploadParams {
 
 export interface TransistorUploadResult {
   episodeId: string;
+  /** Set when a thumbnail was supplied but the episode artwork could not be prepared. */
+  imageError?: string;
   episodeUrl: string;
 }
 
@@ -202,6 +204,7 @@ export async function uploadToTransistor(
   // Episode artwork — crop to square (Transistor requires 1:1 aspect ratio,
   // 1400×1400 min) and upload the processed version to GCS with a 4-hour
   // signed URL so Transistor has time to fetch it asynchronously.
+  let imageError: string | undefined;
   if (thumbnailGcsPath) {
     try {
       const squareUrl = await prepareTransistorImageUrl(thumbnailGcsPath);
@@ -209,6 +212,7 @@ export async function uploadToTransistor(
       console.log("[transistor] Setting square episode artwork from GCS:", thumbnailGcsPath);
     } catch (e) {
       console.warn("[transistor] Could not prepare thumbnail:", e);
+      imageError = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -293,5 +297,9 @@ export async function uploadToTransistor(
 
   console.log(`[transistor] Episode ${statusLabel}: ${shareUrl}`);
 
-  return { episodeId: String(episodeId), episodeUrl: shareUrl };
+  return {
+    episodeId: String(episodeId),
+    episodeUrl: shareUrl,
+    ...(imageError ? { imageError } : {}),
+  };
 }

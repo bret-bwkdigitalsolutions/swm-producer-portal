@@ -22,7 +22,11 @@ vi.mock("resend", () => ({
 // Import module under test
 // ---------------------------------------------------------------------------
 
-import { sendStakeholderNotification } from "@/lib/notifications";
+import {
+  sendStakeholderNotification,
+  sendVerificationFailureNotification,
+  verificationAlertRecipients,
+} from "@/lib/notifications";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -126,5 +130,61 @@ describe("sendStakeholderNotification", () => {
     const callArgs = mockSend.mock.calls[0][0] as { html: string };
     expect(callArgs.html).toContain('href="https://example.com/posts/42"');
     expect(callArgs.html).toContain("View Post");
+  });
+});
+
+describe("sendVerificationFailureNotification", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = { ...originalEnv, RESEND_API_KEY: "re_test_123" };
+    delete process.env.VERIFICATION_ALERT_TO;
+    mockSend.mockResolvedValue({ id: "email-1" });
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  const params = {
+    jobTitle: "Episode 12 <The Lake>",
+    showName: "Your Dark Companion",
+    issues: [
+      { platform: "transistor_network", message: "Episode was NOT cross-posted", severity: "critical" as const },
+      { platform: "website", field: "status", expected: "publish", actual: "trash", severity: "critical" as const },
+    ],
+    warnings: [
+      { platform: "website", field: "thumbnail", expected: "featured image", actual: "none", severity: "warning" as const },
+    ],
+    jobUrl: "https://portal.example.com/dashboard/distribute/job-1",
+  };
+
+  it("uses a clear ❌ FAILED subject and lists critical issues before warnings", async () => {
+    await sendVerificationFailureNotification(params);
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    const email = mockSend.mock.calls[0][0];
+    expect(email.subject).toBe(
+      "❌ FAILED: Episode 12 <The Lake> (Your Dark Companion) — distribution verification"
+    );
+    expect(email.to).toEqual(["bret@stolenwatermedia.com"]);
+    const html: string = email.html;
+    expect(html).toContain("Episode 12 &lt;The Lake&gt;");
+    expect(html.indexOf("Needs action")).toBeLessThan(html.indexOf("Warnings"));
+    expect(html).toContain("Episode was NOT cross-posted");
+    expect(html).toContain("expected publish, got trash");
+  });
+
+  it("sends to VERIFICATION_ALERT_TO when set", async () => {
+    process.env.VERIFICATION_ALERT_TO = "ops@example.com, bret@example.com";
+    expect(verificationAlertRecipients()).toEqual(["ops@example.com", "bret@example.com"]);
+    await sendVerificationFailureNotification(params);
+    expect(mockSend.mock.calls[0][0].to).toEqual(["ops@example.com", "bret@example.com"]);
+  });
+
+  it("omits the warnings section when there are none", async () => {
+    await sendVerificationFailureNotification({ ...params, warnings: [] });
+    expect(mockSend.mock.calls[0][0].html).not.toContain("Warnings (cosmetic");
   });
 });

@@ -172,17 +172,68 @@ export async function sendDistributionErrorNotification({
   }
 }
 
+interface VerificationEmailIssue {
+  platform: string;
+  /** Verification check field (absent for distribution-time issues). */
+  field?: string;
+  expected?: string;
+  actual?: string;
+  /** Distribution-time issue description (e.g. network cross-post failed). */
+  message?: string;
+  severity?: "critical" | "warning";
+}
+
 interface VerificationFailureParams {
   jobTitle: string;
   showName: string;
-  issues: { platform: string; field: string; expected: string; actual: string }[];
+  /** Issues that need action — these are why the email is being sent. */
+  issues: VerificationEmailIssue[];
+  /** Cosmetic issues, listed for context only. */
+  warnings?: VerificationEmailIssue[];
   jobUrl: string;
 }
 
+/** Comma-separated VERIFICATION_ALERT_TO, defaulting to Bret. */
+export function verificationAlertRecipients(): string[] {
+  const raw = process.env.VERIFICATION_ALERT_TO;
+  const list = (raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return list.length > 0 ? list : ["bret@stolenwatermedia.com"];
+}
+
+function issueRow(i: VerificationEmailIssue, color: string): string {
+  const what = i.message ?? i.field ?? "";
+  const detail = i.message ? "" : `expected ${i.expected ?? "?"}, got ${i.actual ?? "?"}`;
+  return `<tr>
+          <td style="padding: 8px; color: #111; border-bottom: 1px solid #eee;">${escHtml(i.platform)}</td>
+          <td style="padding: 8px; color: #111; border-bottom: 1px solid #eee;">${escHtml(what)}</td>
+          <td style="padding: 8px; color: ${color}; border-bottom: 1px solid #eee; font-size: 13px;">${escHtml(detail)}</td>
+        </tr>`;
+}
+
+function issueTable(rows: string): string {
+  return `<table style="width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px;">
+        <tr>
+          <th style="padding: 8px; text-align: left; color: #666; border-bottom: 2px solid #eee;">Platform</th>
+          <th style="padding: 8px; text-align: left; color: #666; border-bottom: 2px solid #eee;">Check</th>
+          <th style="padding: 8px; text-align: left; color: #666; border-bottom: 2px solid #eee;">Detail</th>
+        </tr>
+        ${rows}
+      </table>`;
+}
+
+/**
+ * Sent once per job, only when a CRITICAL issue is still present at the final
+ * (60-minute) verification re-check. Warnings alone never email — they are
+ * shown in the portal instead.
+ */
 export async function sendVerificationFailureNotification({
   jobTitle,
   showName,
   issues,
+  warnings = [],
   jobUrl,
 }: VerificationFailureParams): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
@@ -196,25 +247,16 @@ export async function sendVerificationFailureNotification({
   const { Resend } = await import("resend");
   const resend = new Resend(apiKey);
 
-  const issueRows = issues
-    .map(
-      (i) =>
-        `<tr>
-          <td style="padding: 8px; color: #111; border-bottom: 1px solid #eee;">${escHtml(i.platform)}</td>
-          <td style="padding: 8px; color: #111; border-bottom: 1px solid #eee;">${escHtml(i.field)}</td>
-          <td style="padding: 8px; color: #666; border-bottom: 1px solid #eee; font-size: 13px;">${escHtml(i.expected)}</td>
-          <td style="padding: 8px; color: #dc2626; border-bottom: 1px solid #eee; font-size: 13px;">${escHtml(i.actual)}</td>
-        </tr>`
-    )
-    .join("");
+  const criticalRows = issues.map((i) => issueRow(i, "#dc2626")).join("");
+  const warningRows = warnings.map((i) => issueRow(i, "#b45309")).join("");
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-      <h2 style="margin: 0 0 8px; font-size: 20px; color: #b45309;">
-        ⚠️ Distribution Verification Failed
+      <h2 style="margin: 0 0 8px; font-size: 20px; color: #dc2626;">
+        ❌ Distribution verification FAILED
       </h2>
       <p style="margin: 0 0 16px; color: #666; font-size: 14px;">
-        The episode was distributed but some data didn't make it to the platforms correctly.
+        An hour after publishing, the final re-check still found problems that need attention.
       </p>
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
         <tr>
@@ -226,16 +268,14 @@ export async function sendVerificationFailureNotification({
           <td style="padding: 8px 0; color: #111;">${escHtml(showName)}</td>
         </tr>
       </table>
-      <h3 style="margin: 16px 0 8px; font-size: 14px; color: #111;">Issues Found</h3>
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 14px;">
-        <tr>
-          <th style="padding: 8px; text-align: left; color: #666; border-bottom: 2px solid #eee;">Platform</th>
-          <th style="padding: 8px; text-align: left; color: #666; border-bottom: 2px solid #eee;">Field</th>
-          <th style="padding: 8px; text-align: left; color: #666; border-bottom: 2px solid #eee;">Expected</th>
-          <th style="padding: 8px; text-align: left; color: #666; border-bottom: 2px solid #eee;">Actual</th>
-        </tr>
-        ${issueRows}
-      </table>
+      <h3 style="margin: 16px 0 8px; font-size: 14px; color: #dc2626;">Needs action</h3>
+      ${issueTable(criticalRows)}
+      ${
+        warnings.length > 0
+          ? `<h3 style="margin: 16px 0 8px; font-size: 14px; color: #b45309;">Warnings (cosmetic, no action required)</h3>
+      ${issueTable(warningRows)}`
+          : ""
+      }
       <a href="${escHtml(jobUrl)}" style="display: inline-block; background: #111; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">
         View Job Details
       </a>
@@ -245,8 +285,8 @@ export async function sendVerificationFailureNotification({
   try {
     await resend.emails.send({
       from: "SWM Producer Portal <info@stolenwatermedia.com>",
-      to: ["bret@stolenwatermedia.com"],
-      subject: `⚠️ Verification issue — ${jobTitle} (${showName})`,
+      to: verificationAlertRecipients(),
+      subject: `❌ FAILED: ${jobTitle} (${showName}) — distribution verification`,
       html,
     });
   } catch (error) {
