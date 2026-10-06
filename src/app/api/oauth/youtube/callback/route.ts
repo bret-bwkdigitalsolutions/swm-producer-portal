@@ -6,6 +6,12 @@ import {
   getYouTubeChannelInfo,
   getGoogleAccountEmail,
 } from "@/lib/youtube-oauth";
+import {
+  oauthStateCookieOptions,
+  parseOAuthStateShowId,
+  verifyOAuthState,
+  YOUTUBE_OAUTH_STATE_COOKIE,
+} from "@/lib/oauth-state";
 
 function baseUrl(): string {
   return process.env.NEXTAUTH_URL ?? "http://localhost:3000";
@@ -20,30 +26,33 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get("code");
-  const state = searchParams.get("state"); // wpShowId
+  const state = searchParams.get("state"); // "<wpShowId>.<nonce>"
   const error = searchParams.get("error");
+  const expectedState = request.cookies.get(YOUTUBE_OAUTH_STATE_COOKIE)?.value;
+
+  // Single-use: always clear the state cookie on the way out.
+  const redirect = (path: string) => {
+    const response = NextResponse.redirect(new URL(path, baseUrl()));
+    response.cookies.set(YOUTUBE_OAUTH_STATE_COOKIE, "", { ...oauthStateCookieOptions(), maxAge: 0 });
+    return response;
+  };
+
+  // CSRF check: the state must match the one we set when the flow started.
+  if (!verifyOAuthState(state, expectedState)) {
+    console.warn("YouTube OAuth callback: state mismatch or expired — rejecting");
+    return redirect(
+      `/admin/credentials?error=${encodeURIComponent("YouTube connection expired or was not started from this browser. Please click Connect again.")}`
+    );
+  }
+
+  const wpShowId = parseOAuthStateShowId(state)!;
 
   if (error) {
-    const wpShowId = state ?? "0";
-    return NextResponse.redirect(
-      new URL(
-        `/admin/credentials/${wpShowId}?error=${encodeURIComponent(error)}`,
-        baseUrl()
-      )
-    );
+    return redirect(`/admin/credentials/${wpShowId}?error=${encodeURIComponent(error)}`);
   }
 
-  if (!code || !state) {
-    return NextResponse.redirect(
-      new URL("/admin/credentials?error=missing_params", baseUrl())
-    );
-  }
-
-  const wpShowId = parseInt(state, 10);
-  if (isNaN(wpShowId) || wpShowId < 0) {
-    return NextResponse.redirect(
-      new URL("/admin/credentials?error=invalid_show", baseUrl())
-    );
+  if (!code) {
+    return redirect("/admin/credentials?error=missing_params");
   }
 
   try {
@@ -64,12 +73,7 @@ export async function GET(request: NextRequest) {
         channelErr.message.includes("No YouTube channel")
           ? "The Google account you picked has no YouTube channel. Re-connect and choose a brand account that owns a channel (e.g. Sunset Lounge)."
           : "Could not verify the YouTube channel for this account. Re-connect and try again.";
-      return NextResponse.redirect(
-        new URL(
-          `/admin/credentials/${wpShowId}?error=${encodeURIComponent(reason)}`,
-          baseUrl()
-        )
-      );
+      return redirect(`/admin/credentials/${wpShowId}?error=${encodeURIComponent(reason)}`);
     }
 
     // Capture which Google account granted this OAuth. Non-fatal if it fails
@@ -106,22 +110,12 @@ export async function GET(request: NextRequest) {
     const successMsg = encodeURIComponent(
       `YouTube connected: ${channelInfo.title} (${channelInfo.channelId})${emailSuffix}`
     );
-    return NextResponse.redirect(
-      new URL(
-        `/admin/credentials/${wpShowId}?success=${successMsg}`,
-        baseUrl()
-      )
-    );
+    return redirect(`/admin/credentials/${wpShowId}?success=${successMsg}`);
   } catch (err) {
     console.error("YouTube OAuth callback error:", err);
     const errorMsg = encodeURIComponent(
       err instanceof Error ? err.message : "Failed to connect YouTube"
     );
-    return NextResponse.redirect(
-      new URL(
-        `/admin/credentials/${wpShowId}?error=${errorMsg}`,
-        baseUrl()
-      )
-    );
+    return redirect(`/admin/credentials/${wpShowId}?error=${errorMsg}`);
   }
 }

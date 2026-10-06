@@ -30,9 +30,10 @@ function getRedirectUri(): string {
 
 /**
  * Generate the Google OAuth URL for YouTube channel authorization.
- * The `state` parameter encodes which show (wpShowId) this is for.
+ * `state` is `<wpShowId>.<nonce>` (see src/lib/oauth-state.ts) — it tells the
+ * callback which show this is for and protects the flow against CSRF.
  */
-export function getYouTubeAuthUrl(wpShowId: number): string {
+export function getYouTubeAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: getClientId(),
     redirect_uri: getRedirectUri(),
@@ -45,7 +46,7 @@ export function getYouTubeAuthUrl(wpShowId: number): string {
     //   account has multiple YouTube channels attached.
     // consent: required to receive a refresh token on every connection.
     prompt: "select_account consent",
-    state: String(wpShowId),
+    state,
   });
 
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
