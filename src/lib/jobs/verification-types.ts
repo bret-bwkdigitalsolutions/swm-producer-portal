@@ -86,11 +86,14 @@ export function issueSeverity(issue: { severity?: Severity; field?: string }): S
  *   has run; tier 4 already contained every check.
  * - Before the final tier runs, status is "pending" and the issues reflect the
  *   latest interim results so the UI can still show them.
+ * - While a transient re-check is still outstanding, status stays "pending"
+ *   even if tier 5 has already been recorded.
  */
 export function computeVerdict(
   verifications: TierResult[] | null | undefined,
   distributionIssues: DistributionIssue[] | null | undefined,
-  scheduleVersion?: number
+  scheduleVersion?: number,
+  options?: { awaitingTransientRecheck?: boolean }
 ): VerificationVerdict {
   const results = Array.isArray(verifications) ? verifications : [];
   const issues = Array.isArray(distributionIssues) ? distributionIssues : [];
@@ -100,7 +103,11 @@ export function computeVerdict(
   for (const r of results) byTier.set(r.tier, r);
 
   let basis: TierResult | undefined = byTier.get(finalTier);
-  const isFinal = !!basis || (finalTier === 4 && byTier.has(5));
+  // A tier-5 result that only hit timeouts/5xx is not the verdict yet — one
+  // more re-check is still outstanding. Treat the job as in progress so the
+  // UI keeps polling instead of freezing on a false "failed".
+  const awaitingRecheck = options?.awaitingTransientRecheck === true;
+  const isFinal = !awaitingRecheck && (!!basis || (finalTier === 4 && byTier.has(5)));
   if (!basis && finalTier === 4) basis = byTier.get(5);
 
   let verificationIssues: VerificationIssue[];

@@ -785,6 +785,41 @@ describe("processJob", () => {
     expect(mockRecordDistributionIssue).not.toHaveBeenCalled();
   });
 
+  it("records a warning and schedules artwork backfill when the network episode image fails", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+        thumbnailGcsPath: "uploads/thumb.jpg",
+      },
+      platforms: [{ id: "plat-tr", platform: "transistor" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockShowPlatformLinkFindUnique.mockResolvedValue({ url: "network-show" });
+    mockUploadToTransistor
+      .mockResolvedValueOnce({ episodeId: "ep-1", episodeUrl: "https://share.transistor.fm/ep-1" })
+      .mockResolvedValueOnce({
+        episodeId: "net-9",
+        episodeUrl: "https://share.transistor.fm/net-9",
+        imageError: "square crop failed",
+      });
+
+    await processJob("job-1");
+
+    expect(mockRecordDistributionIssue).toHaveBeenCalledWith(
+      "job-1",
+      expect.objectContaining({
+        source: "network_transistor_image",
+        platform: "transistor_network",
+        severity: "warning",
+        message: expect.stringContaining("square crop failed"),
+      })
+    );
+    expect(mockScheduleThumbnailBackfill).toHaveBeenCalledWith("job-1");
+  });
+
   it("records a warning when the website post was published without its featured image", async () => {
     const job = makeJob({
       metadata: { description: "A test episode", thumbnailGcsPath: "uploads/thumb.jpg" },

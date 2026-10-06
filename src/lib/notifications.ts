@@ -224,10 +224,16 @@ function issueTable(rows: string): string {
       </table>`;
 }
 
+export type VerificationEmailResult = "sent" | "skipped" | "failed";
+
 /**
  * Sent once per job, only when a CRITICAL issue is still present at the final
  * (60-minute) verification re-check. Warnings alone never email — they are
  * shown in the portal instead.
+ *
+ * Returns "failed" when Resend rejects the send (the SDK resolves
+ * `{ error }` instead of throwing) so the caller can retry. "skipped" means
+ * there is no API key — retrying would not help.
  */
 export async function sendVerificationFailureNotification({
   jobTitle,
@@ -235,13 +241,13 @@ export async function sendVerificationFailureNotification({
   issues,
   warnings = [],
   jobUrl,
-}: VerificationFailureParams): Promise<void> {
+}: VerificationFailureParams): Promise<VerificationEmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.warn(
       "[notifications] RESEND_API_KEY is not set — skipping verification notification."
     );
-    return;
+    return "skipped";
   }
 
   const { Resend } = await import("resend");
@@ -283,16 +289,25 @@ export async function sendVerificationFailureNotification({
   `;
 
   try {
-    await resend.emails.send({
+    const result = await resend.emails.send({
       from: "SWM Producer Portal <info@stolenwatermedia.com>",
       to: verificationAlertRecipients(),
       subject: `❌ FAILED: ${jobTitle} (${showName}) — distribution verification`,
       html,
     });
+    if (result.error) {
+      console.error(
+        "[notifications] Failed to send verification failure email:",
+        result.error
+      );
+      return "failed";
+    }
+    return "sent";
   } catch (error) {
     console.error(
       "[notifications] Failed to send verification failure email:",
       error
     );
+    return "failed";
   }
 }

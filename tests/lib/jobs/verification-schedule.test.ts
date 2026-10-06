@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockJobFindUnique = vi.fn();
+const mockJobFindMany = vi.fn();
 const mockJobUpdate = vi.fn();
 const mockQueryRaw = vi.fn();
 vi.mock("@/lib/db", () => {
   const dbMock: Record<string, unknown> = {
     distributionJob: {
       findUnique: (...a: unknown[]) => mockJobFindUnique(...a),
+      findMany: (...a: unknown[]) => mockJobFindMany(...a),
       update: (...a: unknown[]) => mockJobUpdate(...a),
     },
     $queryRaw: (...a: unknown[]) => mockQueryRaw(...a),
@@ -31,6 +33,7 @@ vi.mock("@/lib/wordpress/client", () => ({
 
 import {
   finalizeVerification,
+  resumeVerificationSchedules,
   runScheduledTier,
   scheduleVerificationTiers,
   type VerificationSchedule,
@@ -60,6 +63,7 @@ let persisted: Record<string, unknown>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSendVerificationFailure.mockResolvedValue("sent");
   persisted = {};
   mockQueryRaw.mockImplementation(async () => [{ metadata: persisted }]);
   mockJobUpdate.mockImplementation(async ({ data }: { data: { metadata: Record<string, unknown> } }) => {
@@ -92,6 +96,7 @@ describe("finalizeVerification", () => {
     );
     expect(persisted.verificationVerdict).toMatchObject({ status: "failed", criticalCount: 1, warningCount: 1 });
     expect((persisted.verificationSchedule as VerificationSchedule).done).toBe(true);
+    expect((persisted.verificationVerdict as { notifiedAt?: string }).notifiedAt).toBeTruthy();
 
     // Never twice for the same job.
     await finalizeVerification("job-1", schedule);
@@ -119,6 +124,26 @@ describe("finalizeVerification", () => {
     await finalizeVerification("job-1", schedule);
     expect(mockSendVerificationFailure).toHaveBeenCalledTimes(1);
   });
+
+  it("leaves the schedule open when the alert email fails so a restart can retry", async () => {
+    mockSendVerificationFailure.mockResolvedValue("failed");
+    const critical: VerificationIssue = {
+      platform: "website", field: "status", expected: "publish", actual: "trash", severity: "critical",
+    };
+    persisted = { verifications: [tier5([critical])] };
+
+    await finalizeVerification("job-1", schedule);
+    expect(mockSendVerificationFailure).toHaveBeenCalledTimes(1);
+    expect((persisted.verificationSchedule as VerificationSchedule).done).toBe(false);
+    expect((persisted.verificationVerdict as { notifiedAt?: string }).notifiedAt).toBeUndefined();
+    expect(persisted.verificationVerdict).toMatchObject({ status: "failed", notifyError: "alert email failed" });
+
+    mockSendVerificationFailure.mockResolvedValue("sent");
+    await finalizeVerification("job-1", schedule);
+    expect(mockSendVerificationFailure).toHaveBeenCalledTimes(2);
+    expect((persisted.verificationSchedule as VerificationSchedule).done).toBe(true);
+    expect((persisted.verificationVerdict as { notifiedAt?: string }).notifiedAt).toBeTruthy();
+  });
 });
 
 describe("runScheduledTier", () => {
@@ -136,6 +161,7 @@ describe("runScheduledTier", () => {
     await runScheduledTier("job-1", schedule, 5);
     expect(mockSendVerificationFailure).not.toHaveBeenCalled();
     expect(persisted.verificationVerdict).toBeUndefined();
+    expect((persisted.verificationSchedule as VerificationSchedule).pendingTransientRecheck).toBe(true);
 
     // Recheck still failing → alert.
     await vi.advanceTimersByTimeAsync(10 * 60_000);
@@ -152,6 +178,41 @@ describe("runScheduledTier", () => {
     await runScheduledTier("job-1", schedule, 2);
     expect(mockSendVerificationFailure).not.toHaveBeenCalled();
     expect(persisted.verificationVerdict).toBeUndefined();
+  });
+});
+
+describe("resumeVerificationSchedules", () => {
+  it("resumes a pending transient re-check instead of emailing the first result", async () => {
+    vi.useFakeTimers();
+    const transient: VerificationIssue = {
+      platform: "website", field: "api_check", expected: "accessible", actual: "API 503", severity: "critical", transient: true,
+    };
+    const ranAt = new Date().toISOString();
+    persisted = {
+      verifications: [
+        ...([1, 2, 3, 4] as const).map((tier) => ({ tier, ranAt, platforms: [] })),
+        tier5([transient]),
+      ],
+      verificationSchedule: { ...schedule, pendingTransientRecheck: true, done: false },
+    };
+    mockJobFindMany.mockImplementation(async () => [{ id: "job-1", metadata: persisted }]);
+    mockRunTier.mockImplementation(async () => {
+      const clean = tier5([]);
+      persisted = { ...persisted, verifications: [clean] };
+      return clean;
+    });
+
+    await resumeVerificationSchedules();
+    expect(mockSendVerificationFailure).not.toHaveBeenCalled();
+    expect(mockRunTier).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(mockRunTier).toHaveBeenCalledTimes(1);
+    expect(mockRunTier).toHaveBeenCalledWith(5, "job-1", 42, "Episode 1", expect.any(Object));
+    expect(mockSendVerificationFailure).not.toHaveBeenCalled();
+    expect(persisted.verificationVerdict).toMatchObject({ status: "passed" });
+    expect((persisted.verificationSchedule as VerificationSchedule).done).toBe(true);
+    expect((persisted.verificationSchedule as VerificationSchedule).pendingTransientRecheck).toBeUndefined();
   });
 });
 

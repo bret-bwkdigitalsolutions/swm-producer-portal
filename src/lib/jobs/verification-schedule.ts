@@ -41,6 +41,13 @@ export type VerificationSchedule = {
   isDraft?: boolean;
   /** 2 = non-cumulative tiers + final tier 5. Absent on legacy schedules. */
   version?: number;
+  /**
+   * Tier 5 already ran, but every critical issue looked transient, so a
+   * second pass is still outstanding. Persisted because the timer itself
+   * does not survive a restart — without this, resume would email the
+   * transient result immediately.
+   */
+  pendingTransientRecheck?: boolean;
   done: boolean;
 };
 
@@ -103,11 +110,24 @@ export async function runScheduledTier(
     console.log(
       `[verify] job ${jobId}: final check hit only transient errors — re-checking in ${Math.round(verificationScheduleConfig.transientRecheckDelayMs / 60_000)} min before alerting`
     );
+    schedule.pendingTransientRecheck = true;
+    await mergeJobMetadata(jobId, {
+      verificationSchedule: { ...schedule, pendingTransientRecheck: true, done: false },
+    }).catch((err) =>
+      console.error(`[verify] could not persist transient re-check for job ${jobId}:`, err)
+    );
     scheduleVerificationTier(jobId, schedule, 5, verificationScheduleConfig.transientRecheckDelayMs, true);
     return;
   }
 
   await finalizeVerification(jobId, schedule);
+}
+
+/** Schedule written at the end of verification. Drops the in-progress re-check flag. */
+function finishedSchedule(schedule: VerificationSchedule, done: boolean): VerificationSchedule {
+  const next: VerificationSchedule = { ...schedule, done };
+  delete next.pendingTransientRecheck;
+  return next;
 }
 
 /**
@@ -125,6 +145,7 @@ export async function finalizeVerification(jobId: string, schedule: Verification
   const previous = meta.verificationVerdict as { notifiedAt?: string } | undefined;
 
   let notifiedAt = previous?.notifiedAt;
+  let emailFailed = false;
   if (verdict.status === "failed" && !notifiedAt) {
     let showName = `Show #${schedule.wpShowId}`;
     try {
@@ -135,20 +156,30 @@ export async function finalizeVerification(jobId: string, schedule: Verification
       // fall back to the ID
     }
     const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-    await sendVerificationFailureNotification({
+    const outcome = await sendVerificationFailureNotification({
       jobTitle: schedule.title,
       showName,
       issues: verdict.critical as Array<VerificationIssue | DistributionIssue>,
       warnings: verdict.warnings as Array<VerificationIssue | DistributionIssue>,
       jobUrl: `${baseUrl}/dashboard/distribute/${jobId}`,
     });
-    notifiedAt = new Date().toISOString();
+    if (outcome === "sent") notifiedAt = new Date().toISOString();
+    else if (outcome === "failed") emailFailed = true;
+    // "skipped" (no API key): finish the schedule so startup doesn't retry forever.
   }
 
+  const alertNote = emailFailed
+    ? " — alert email failed, will retry"
+    : notifiedAt && !previous?.notifiedAt
+      ? " — alert sent"
+      : "";
   console.log(
-    `[verify] job ${jobId} verdict: ${verdict.status.toUpperCase()} (${verdict.critical.length} critical, ${verdict.warnings.length} warnings)${verdict.status === "failed" ? " — alert sent" : ""}`
+    `[verify] job ${jobId} verdict: ${verdict.status.toUpperCase()} (${verdict.critical.length} critical, ${verdict.warnings.length} warnings)${alertNote}`
   );
 
+  // Leave the schedule open when the email itself failed. Resume on the next
+  // startup calls finalize again; notifiedAt is what prevents a second email
+  // after a successful send.
   await mergeJobMetadata(jobId, {
     verificationVerdict: {
       status: verdict.status,
@@ -156,8 +187,9 @@ export async function finalizeVerification(jobId: string, schedule: Verification
       warningCount: verdict.warnings.length,
       at: new Date().toISOString(),
       ...(notifiedAt ? { notifiedAt } : {}),
+      ...(emailFailed ? { notifyError: "alert email failed" } : {}),
     },
-    verificationSchedule: { ...schedule, done: true },
+    verificationSchedule: finishedSchedule(schedule, !emailFailed),
   });
 }
 
@@ -191,6 +223,19 @@ export async function resumeVerificationSchedules(): Promise<void> {
     );
     const remaining = ALL_TIERS.filter((t) => !ranTiers.has(t));
     if (remaining.length === 0) {
+      if (stored.pendingTransientRecheck) {
+        const tier5 = ((meta.verifications as Array<{ tier: number; ranAt?: string }> | undefined) ?? [])
+          .find((v) => v.tier === 5);
+        const since = tier5?.ranAt ? Date.now() - Date.parse(tier5.ranAt) : Number.NaN;
+        const delay = Number.isNaN(since)
+          ? 15_000
+          : Math.max(verificationScheduleConfig.transientRecheckDelayMs - since, 15_000);
+        console.log(
+          `[verify] Resuming transient re-check for job ${job.id} in ${Math.round(delay / 1000)}s`
+        );
+        scheduleVerificationTier(job.id, { ...schedule, pendingTransientRecheck: true }, 5, delay, true);
+        continue;
+      }
       await finalizeVerification(job.id, schedule).catch((err) =>
         console.error(`[verify] could not finalize job ${job.id}:`, err)
       );

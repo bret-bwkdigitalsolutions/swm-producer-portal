@@ -277,15 +277,23 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const [liveIssues, setLiveIssues] = useState<DistributionIssue[]>(
     (job.metadata.distributionIssues as DistributionIssue[] | undefined) ?? []
   );
+  const initialSchedule = job.metadata.verificationSchedule as
+    | { version?: number; pendingTransientRecheck?: boolean }
+    | undefined;
   const [scheduleVersion, setScheduleVersion] = useState<number | null>(
-    ((job.metadata.verificationSchedule as { version?: number } | undefined)?.version) ?? null
+    initialSchedule?.version ?? null
+  );
+  const [awaitingRecheck, setAwaitingRecheck] = useState(
+    initialSchedule?.pendingTransientRecheck === true
   );
   const [backfill, setBackfill] = useState<{ status: string } | null>(
     (job.metadata.thumbnailBackfill as { status: string } | undefined) ?? null
   );
 
   const isTerminal = TERMINAL_STATUSES.includes(liveStatus);
-  const verdict = computeVerdict(liveVerifications, liveIssues, scheduleVersion ?? undefined);
+  const verdict = computeVerdict(liveVerifications, liveIssues, scheduleVersion ?? undefined, {
+    awaitingTransientRecheck: awaitingRecheck,
+  });
   // Verification runs up to ~60 min after distribution completes. Once the
   // job itself is terminal, poll slowly until the final verdict is in.
   const verificationsComplete = verdict.status !== "pending";
@@ -300,6 +308,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
       if (data.verifications !== undefined) setLiveVerifications(data.verifications);
       if (Array.isArray(data.distributionIssues)) setLiveIssues(data.distributionIssues);
       if (data.verificationScheduleVersion !== undefined) setScheduleVersion(data.verificationScheduleVersion);
+      if (typeof data.verificationPendingTransientRecheck === "boolean") {
+        setAwaitingRecheck(data.verificationPendingTransientRecheck);
+      }
       if (data.thumbnailBackfill !== undefined) setBackfill(data.thumbnailBackfill);
     } catch {
       // Silently ignore — next poll will retry
@@ -468,6 +479,7 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         verdict={verdict}
         scheduleVersion={scheduleVersion}
         backfillStatus={backfill?.status ?? null}
+        awaitingRecheck={awaitingRecheck}
       />
 
       {/* AI suggestions (description, chapters, blog) are reviewed during
@@ -517,12 +529,14 @@ function VerificationPanel({
   verdict,
   scheduleVersion,
   backfillStatus,
+  awaitingRecheck,
 }: {
   verifications: TierResult[] | null;
   platforms: Array<{ platform: string; status: string }>;
   verdict: VerificationVerdict;
   scheduleVersion: number | null;
   backfillStatus: string | null;
+  awaitingRecheck: boolean;
 }) {
   const tierResults = verifications ?? [];
   const completedPlatforms = platforms.filter((p) => p.status === "completed");
@@ -553,6 +567,11 @@ function VerificationPanel({
           {backfillStatus === "pending" || backfillStatus === "running" ? (
             <div className="mt-1 text-xs opacity-80">
               Fetching the YouTube thumbnail for the website and podcast artwork…
+            </div>
+          ) : null}
+          {awaitingRecheck ? (
+            <div className="mt-1 text-xs opacity-80">
+              The final check hit a temporary error and will run once more before any alert is sent.
             </div>
           ) : null}
         </div>

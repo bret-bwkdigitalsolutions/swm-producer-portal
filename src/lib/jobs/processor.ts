@@ -783,6 +783,15 @@ async function processJobInner(
                   : undefined,
               });
               console.log("[processor] Network Transistor cross-post succeeded");
+              if (networkResult.imageError) {
+                artworkMissing = true;
+                await recordDistributionIssue(job.id, {
+                  source: "network_transistor_image",
+                  platform: "transistor_network",
+                  severity: "warning",
+                  message: `Network episode published without its artwork: ${networkResult.imageError}`,
+                });
+              }
               // Recorded so verification checks the network episode too and
               // the thumbnail backfill can set its artwork.
               await mergeJobMetadata(job.id, {

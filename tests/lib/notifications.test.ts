@@ -187,4 +187,24 @@ describe("sendVerificationFailureNotification", () => {
     await sendVerificationFailureNotification({ ...params, warnings: [] });
     expect(mockSend.mock.calls[0][0].html).not.toContain("Warnings (cosmetic");
   });
+
+  it("returns sent when Resend accepts the email", async () => {
+    await expect(sendVerificationFailureNotification(params)).resolves.toBe("sent");
+  });
+
+  it("returns failed when Resend resolves an error instead of throwing", async () => {
+    mockSend.mockResolvedValue({ data: null, error: { message: "Invalid from address" } });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(sendVerificationFailureNotification(params)).resolves.toBe("failed");
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("returns skipped when RESEND_API_KEY is missing", async () => {
+    delete process.env.RESEND_API_KEY;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(sendVerificationFailureNotification(params)).resolves.toBe("skipped");
+    expect(mockSend).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });

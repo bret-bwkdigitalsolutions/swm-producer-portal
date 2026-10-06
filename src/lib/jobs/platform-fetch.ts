@@ -45,6 +45,9 @@ export async function fetchWithRetry(
         signal: AbortSignal.timeout(platformFetchConfig.timeoutMs),
       });
       if (!isTransientStatus(res.status) || attempt === delays.length) return res;
+      // Release the unread body before retrying so the connection returns to
+      // the pool. Leaving it open turns a 503 into a later timeout.
+      await res.body?.cancel().catch(() => {});
       console.warn(`[verify] ${label}: HTTP ${res.status} (attempt ${attempt + 1}) — retrying`);
     } catch (err) {
       lastError = err;
@@ -68,15 +71,17 @@ export async function checkUrlReachable(
   try {
     let res = await fetchWithRetry(url, { method: "HEAD", redirect: "follow" }, `HEAD ${url}`);
     if (res.status === 403 || res.status === 405 || res.status === 501) {
+      await res.body?.cancel().catch(() => {});
       res = await fetchWithRetry(
         url,
         { method: "GET", redirect: "follow", headers: { Range: "bytes=0-0" } },
         `GET ${url}`
       );
-      // Release the body — we only care about the status.
-      await res.body?.cancel().catch(() => {});
     }
-    return { ok: res.ok, status: res.status, transient: isTransientStatus(res.status) };
+    const outcome = { ok: res.ok, status: res.status, transient: isTransientStatus(res.status) };
+    // We only need the status. Cancel so the socket is released.
+    await res.body?.cancel().catch(() => {});
+    return outcome;
   } catch {
     return { ok: false, status: null, transient: true };
   }

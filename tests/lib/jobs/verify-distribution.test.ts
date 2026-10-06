@@ -373,6 +373,14 @@ describe("computeVerdict", () => {
     expect(v.critical).toHaveLength(1);
   });
 
+  it("stays pending while a transient re-check is still outstanding", () => {
+    const transient = tier(5, [
+      { platform: "website", field: "api_check", expected: "accessible", actual: "API 503", severity: "critical", transient: true },
+    ]);
+    expect(computeVerdict([transient], [], 2, { awaitingTransientRecheck: true }).status).toBe("pending");
+    expect(computeVerdict([transient], [], 2).status).toBe("failed");
+  });
+
   it("infers severity for legacy results: thumbnail = warning, everything else = critical", () => {
     expect(issueSeverity({ field: "thumbnail" })).toBe("warning");
     expect(issueSeverity({ field: "title" })).toBe("critical");
