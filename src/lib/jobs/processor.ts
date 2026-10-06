@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import type { DistributionJobPlatform } from "@prisma/client";
 import { generateAiSuggestions } from "./ai-processor";
-import { extractAudio } from "./audio-extractor";
+import { derivedGcsAudioPath, extractAudio } from "./audio-extractor";
 import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay, formatTranscriptAsVtt } from "@/lib/transcription";
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { uploadToTransistor } from "@/lib/platforms/transistor";
@@ -10,15 +10,17 @@ import { sendDistributionErrorNotification, sendVerificationFailureNotification 
 import { runVerificationTier, type TierResult } from "./verify-distribution";
 import { mergeJobMetadata } from "./job-metadata";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
-import { generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
+import { gcsObjectExists, generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { downloadVideoToGcs, downloadFullVideoToGcs } from "./video-downloader";
+import { downloadGcsObjectToFile } from "./gcs-download";
 import { createWriteStream } from "node:fs";
-import { unlink, mkdtemp } from "node:fs/promises";
+import { unlink, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
+import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 
 export interface ProcessingResult {
   jobId: string;
@@ -173,14 +175,124 @@ async function processJobInner(
   });
   const showHosts = showMeta?.hosts ?? undefined;
 
-  // Extract audio if needed (for Transistor — skip if already completed)
-  let gcsAudioPath: string | null = youtubeAudioPath; // Already set if downloaded from YouTube
+  // Extract audio if needed (for Transistor — skip if already completed).
+  // URL sources already point gcsPath at an mp3. The AI analyze step stores
+  // the extracted mp3 on metadata.gcsAudioPath; reuse it instead of reading
+  // the video again. A retry does the same after we record the path below.
+  let gcsAudioPath: string | null = youtubeAudioPath;
   const transistorNeedsWork = job.platforms.some(
     (p) => p.platform === "transistor" && p.status !== "completed"
   );
-  if (transistorNeedsWork && effectiveGcsPath && !gcsAudioPath) {
+  const storedAudioPath =
+    typeof metadata.gcsAudioPath === "string" ? metadata.gcsAudioPath : "";
+  if (
+    transistorNeedsWork &&
+    !gcsAudioPath &&
+    !sourceUrl &&
+    effectiveGcsPath &&
+    storedAudioPath
+  ) {
+    const derivedAudio = derivedGcsAudioPath(effectiveGcsPath);
+    if (storedAudioPath !== derivedAudio) {
+      console.warn(
+        `[processor] Ignoring stored audio ${storedAudioPath}; it does not match ${derivedAudio}`
+      );
+    } else {
+      try {
+        if (await gcsObjectExists(storedAudioPath)) {
+          gcsAudioPath = storedAudioPath;
+          console.log(
+            `[processor] Reusing extracted audio already in GCS: ${storedAudioPath}`
+          );
+        } else {
+          console.log(
+            `[processor] Stored audio missing in GCS, extracting again: ${storedAudioPath}`
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "[processor] Could not confirm stored audio; extracting again:",
+          error
+        );
+      }
+    }
+  }
+  const youtubeNeedsWork = job.platforms.some(
+    (p) => p.platform === "youtube" && p.status !== "completed"
+  );
+  // Local copy of a producer-uploaded video. Owned here and removed in the
+  // finally below (success, platform failure, and unexpected throw).
+  let tempVideoPath: string | null = null;
+  let tempVideoDir: string | null = null;
+  let sharedDownloadError: Error | null = null;
+
+  const releaseTempVideo = async () => {
+    const dir = tempVideoDir;
+    tempVideoPath = null;
+    tempVideoDir = null;
+    if (dir) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  };
+
+  const needsExtractedAudio =
+    transistorNeedsWork && !!effectiveGcsPath && !gcsAudioPath;
+  // Normal uploads only. URL-sourced jobs have no producer video in GCS
+  // (a Vimeo source downloads its own file further down).
+  const needsUploadedVideo =
+    youtubeNeedsWork && !!effectiveGcsPath && !sourceUrl;
+
+  // Reassigned after transcription. Declared out here so phases after the
+  // temp-file finally (thumbnail fallback, Transistor, WordPress) can see it.
+  let updatedMetadata: Record<string, unknown> = metadata;
+  let transcript: string | null = null;
+  let youtubeUrl: string | null = existingYoutubeUrl ?? null;
+  let youtubeVideoId: string | null = youtubeUrl
+    ? extractYoutubeVideoId(youtubeUrl)
+    : null;
+
+  // The video file must outlive audio extraction so the YouTube upload can
+  // reuse it. Cleanup is the finally at the end of this try.
+  try {
+  // One GCS read when both audio extraction and the YouTube upload need the
+  // producer upload. Railway paid plans cap ephemeral disk at 100 GB, and a
+  // single episode can be ~90 GB, so a second local copy would not fit.
+  // Peak disk stays one video plus the much smaller mp3 — the same peak as
+  // the previous sequential downloads.
+  if (needsExtractedAudio && needsUploadedVideo && effectiveGcsPath) {
     try {
-      gcsAudioPath = await extractAudio(effectiveGcsPath);
+      tempVideoDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
+      tempVideoPath = join(tempVideoDir, "video.mp4");
+      console.log(
+        `[processor] Downloading video once for audio extraction and YouTube: ${effectiveGcsPath}`
+      );
+      await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+    } catch (error) {
+      console.error("[processor] Video download failed:", error);
+      sharedDownloadError =
+        error instanceof Error ? error : new Error("Failed to download video");
+      await releaseTempVideo();
+    }
+  }
+
+  if (needsExtractedAudio && effectiveGcsPath) {
+    try {
+      if (tempVideoPath) {
+        gcsAudioPath = await extractAudio(effectiveGcsPath, {
+          localVideoPath: tempVideoPath,
+        });
+      } else if (sharedDownloadError) {
+        // The shared GET already failed. Don't read the object again here;
+        // YouTube still gets its own attempt below, matching the old
+        // independent download.
+        throw sharedDownloadError;
+      } else {
+        gcsAudioPath = await extractAudio(effectiveGcsPath);
+      }
+      // Record the mp3 so a retry can upload it without reading the video again.
+      await mergeJobMetadata(job.id, { gcsAudioPath }).catch((error) => {
+        console.error("[processor] Could not record extracted audio path:", error);
+      });
     } catch (error) {
       console.error("[processor] Audio extraction failed:", error);
       // Mark Transistor as failed but continue with other platforms
@@ -205,7 +317,6 @@ async function processJobInner(
 
   // --- Transcription + AI Processing ---
   // Skip if the AI analysis endpoint already transcribed (AI path).
-  let transcript: string | null = null;
   const existingTranscript = (metadata.transcript as string) ?? null;
 
   if (existingTranscript) {
@@ -256,61 +367,48 @@ async function processJobInner(
     where: { id: job.id },
     select: { metadata: true },
   });
-  const updatedMetadata = (updatedJob?.metadata as Record<string, unknown>) ?? metadata;
+  updatedMetadata = (updatedJob?.metadata as Record<string, unknown>) ?? metadata;
 
-  // Download video to temp file (for YouTube upload — skip if already completed).
-  // Three paths:
-  //   1. Normal upload (gcsPath is a video file) — download from GCS
-  //   2. YouTube live recording (existingYoutubeUrl set) — skip, already on YouTube
-  //   3. Vimeo source URL — download full video via yt-dlp, then treat like path 1
-  let tempVideoPath: string | null = null;
-  const youtubeNeedsWork = job.platforms.some(
-    (p) => p.platform === "youtube" && p.status !== "completed"
-  );
+  // Local video for the YouTube upload. A normal upload reuses the file
+  // downloaded above when audio extraction also ran; otherwise download now.
+  //   1. Normal upload — producer video already in GCS
+  //   2. YouTube live recording — skip, already on YouTube
+  //   3. Vimeo source — yt-dlp the full video into GCS, then one GCS read
   if (youtubeNeedsWork && existingVimeoUrl) {
-    // Path 3: Vimeo source — download the full video (not audio-only)
     try {
       console.log(`[processor] Downloading full Vimeo video for YouTube upload...`);
       const vimeoVideoGcsPath = await downloadFullVideoToGcs(
         existingVimeoUrl, job.id, job.wpShowId
       );
-      const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
-      tempVideoPath = join(tempDir, "video.mp4");
-      const downloadUrl = await generateSignedDownloadUrl(vimeoVideoGcsPath);
-      const response = await fetch(downloadUrl);
-      if (!response.ok || !response.body) {
-        throw new Error(`Failed to download Vimeo video from GCS: ${response.status}`);
-      }
-      const fileStream = createWriteStream(tempVideoPath);
-      await pipeline(Readable.fromWeb(response.body as any), fileStream);
+      tempVideoDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
+      tempVideoPath = join(tempVideoDir, "video.mp4");
+      await downloadGcsObjectToFile(vimeoVideoGcsPath, tempVideoPath, {
+        errorPrefix: "Failed to download Vimeo video from GCS",
+      });
       console.log(`[processor] Vimeo video ready for YouTube upload`);
     } catch (error) {
       console.error("[processor] Vimeo video download for YouTube failed:", error);
-      tempVideoPath = null;
+      await releaseTempVideo();
     }
-  } else if (youtubeNeedsWork && effectiveGcsPath && !sourceUrl) {
-    // Path 1: Normal upload — video file already in GCS
-    try {
-      const tempDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
-      tempVideoPath = join(tempDir, "video.mp4");
-      const downloadUrl = await generateSignedDownloadUrl(effectiveGcsPath);
-      const response = await fetch(downloadUrl);
-      if (!response.ok || !response.body) {
-        throw new Error(`Failed to download video: ${response.status}`);
+  } else if (needsUploadedVideo && effectiveGcsPath) {
+    if (tempVideoPath) {
+      console.log("[processor] Reusing downloaded video for YouTube upload");
+    } else {
+      try {
+        tempVideoDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
+        tempVideoPath = join(tempVideoDir, "video.mp4");
+        console.log(
+          `[processor] Downloading video for YouTube: ${effectiveGcsPath}`
+        );
+        await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+      } catch (error) {
+        console.error("[processor] Video download failed:", error);
+        await releaseTempVideo();
       }
-      const fileStream = createWriteStream(tempVideoPath);
-      await pipeline(Readable.fromWeb(response.body as any), fileStream);
-    } catch (error) {
-      console.error("[processor] Video download failed:", error);
-      tempVideoPath = null;
     }
   }
 
   // --- Phase 1: YouTube (must complete first for WordPress) ---
-  let youtubeUrl: string | null = existingYoutubeUrl ?? null;
-  let youtubeVideoId: string | null = youtubeUrl
-    ? extractYoutubeVideoId(youtubeUrl)
-    : null;
   const youtubePlatform = job.platforms.find((p) => p.platform === "youtube");
 
   if (youtubePlatform && youtubePlatform.status === "completed") {
@@ -400,7 +498,8 @@ async function processJobInner(
           const thumbResponse = await fetch(thumbUrl);
           if (thumbResponse.ok && thumbResponse.body) {
             const thumbStream = createWriteStream(thumbPath);
-            await pipeline(Readable.fromWeb(thumbResponse.body as any), thumbStream);
+            const thumbBody = thumbResponse.body as unknown as NodeWebReadableStream<Uint8Array>;
+            await pipeline(Readable.fromWeb(thumbBody), thumbStream);
             await setThumbnail(job.wpShowId, youtubeVideoId, thumbPath, thumbContentType);
             await unlink(thumbPath).catch(() => {});
             console.log(`[processor] YouTube thumbnail set from ${thumbnailGcsPath}`);
@@ -467,9 +566,10 @@ async function processJobInner(
     }
   }
 
-  // Clean up temp video file
-  if (tempVideoPath) {
-    await unlink(tempVideoPath).catch(() => {});
+  } finally {
+    // Drop the local video as soon as YouTube no longer needs it, including
+    // when a later statement in this try throws (retry starts clean).
+    await releaseTempVideo();
   }
 
   // Fallback: if no thumbnail was uploaded but we have a YouTube video ID,

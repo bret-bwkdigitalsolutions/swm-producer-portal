@@ -132,6 +132,18 @@ export async function uploadBuffer(
 }
 
 /**
+ * Whether an object is already stored at `gcsPath`.
+ *
+ * This is a metadata check, not a media download, so it does not add egress.
+ */
+export async function gcsObjectExists(gcsPath: string): Promise<boolean> {
+  const storage = getStorage();
+  const bucketName = getBucketName();
+  const [exists] = await storage.bucket(bucketName).file(gcsPath).exists();
+  return exists;
+}
+
+/**
  * Delete a file from GCS.
  *
  * @param gcsPath - The path of the file in GCS
