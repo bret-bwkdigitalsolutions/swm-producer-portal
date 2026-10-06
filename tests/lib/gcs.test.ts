@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Mock @google-cloud/storage before importing the module under test
 const mockGetSignedUrl = vi.fn();
 const mockDelete = vi.fn();
+const mockExists = vi.fn();
 const mockFile = vi.fn().mockReturnValue({
   getSignedUrl: mockGetSignedUrl,
   delete: mockDelete,
+  exists: mockExists,
 });
 const mockBucket = vi.fn().mockReturnValue({ file: mockFile });
 
@@ -33,6 +35,7 @@ describe("GCS Client", () => {
     delete process.env.GCS_CREDENTIALS_JSON;
     mockGetSignedUrl.mockReset();
     mockDelete.mockReset();
+    mockExists.mockReset();
     mockFile.mockClear();
     mockBucket.mockClear();
   });
@@ -93,6 +96,19 @@ describe("GCS Client", () => {
           action: "read",
         })
       );
+    });
+  });
+
+  describe("gcsObjectExists", () => {
+    it("checks metadata only and does not sign a download", async () => {
+      mockExists.mockResolvedValue([true]);
+
+      const { gcsObjectExists } = await import("@/lib/gcs");
+      await expect(gcsObjectExists("uploads/2026/03/video.mp3")).resolves.toBe(true);
+
+      expect(mockFile).toHaveBeenCalledWith("uploads/2026/03/video.mp3");
+      expect(mockExists).toHaveBeenCalledTimes(1);
+      expect(mockGetSignedUrl).not.toHaveBeenCalled();
     });
   });
 
