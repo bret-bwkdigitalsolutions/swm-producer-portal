@@ -22,6 +22,8 @@ export interface LiveRecordingMarksProps {
   transcriptAttempts: number;
   transcriptNextAttemptAt: Date | null;
   transcriptScannedAt: Date | null;
+  /** Transcript error text is shown to admins only. */
+  showError?: boolean;
 }
 
 export function LiveRecordingMarks({
@@ -33,6 +35,7 @@ export function LiveRecordingMarks({
   transcriptAttempts,
   transcriptNextAttemptAt,
   transcriptScannedAt,
+  showError = false,
 }: LiveRecordingMarksProps) {
   const marks = readStoredMarks(transcriptMarks);
   const response = readStoredMarksResponse(transcriptMarksResponse);
@@ -58,16 +61,19 @@ export function LiveRecordingMarks({
         )}
         {(transcriptStatus === "failed" ||
           transcriptStatus === "config_error" ||
+          transcriptStatus === "contract_error" ||
           transcriptStatus === "website_not_ready") && (
           <Field
             label="Next attempt"
             value={
               transcriptStatus === "config_error"
                 ? "Not retrying. Fix the WordPress app user, then Re-scan."
-                : transcriptStatus === "failed" &&
-                    (gaveUp || !transcriptNextAttemptAt)
-                  ? "Retry budget used. Re-scan to try again."
-                  : transcriptNextAttemptAt?.toLocaleString() ?? "Waiting"
+                : transcriptStatus === "contract_error"
+                  ? "Not retrying. The website rejected the marks payload."
+                  : transcriptStatus === "failed" &&
+                      (gaveUp || !transcriptNextAttemptAt)
+                    ? "Not retrying. An admin can Re-scan."
+                    : transcriptNextAttemptAt?.toLocaleString() ?? "Waiting"
             }
           />
         )}
@@ -85,7 +91,7 @@ export function LiveRecordingMarks({
             }`}
           />
         )}
-        {transcriptError && (
+        {showError && transcriptError && (
           <p className="whitespace-pre-wrap break-words text-muted-foreground">
             {transcriptError}
           </p>

@@ -1,37 +1,35 @@
 import { describe, expect, it } from "vitest";
+import phrases from "../../fixtures/mark-that-phrases.json";
 import { detectMarks, utteranceCue } from "@/lib/live-marks/matcher";
 
+const expectedCue: Record<string, string> = {
+  "Mark that.": "Mark that",
+  "mark that one": "mark that one",
+  "Mark it!": "Mark it",
+  "mark this right there": "mark this right there",
+  "mark that real quick": "mark that real quick",
+};
+
 describe("utteranceCue", () => {
-  it.each([
-    ["Mark that.", "Mark that"],
-    ["Okay, mark it!", "mark it"],
-    ["mark this", "mark this"],
-    ["mark that one", "mark that one"],
-  ])("matches %j", (text, cue) => {
-    expect(utteranceCue(text)).toBe(cue);
+  it.each(phrases.match)("matches %j", (text) => {
+    expect(utteranceCue(text)).toBe(expectedCue[text]);
   });
 
-  it.each([
-    "Mark it down.",
-    "they mark this with a bar graph",
-    "Marky Mark that he went",
-    "Mark said that",
-    "Mark that guy",
-    "Mark that was his name",
-    "Mark this Friday on your calendar",
-    "question mark that is",
-    "Mark it zero!",
-  ])("rejects %j", (text) => {
+  it.each(phrases.noMatch)("rejects %j", (text) => {
     expect(utteranceCue(text)).toBeNull();
   });
 
   it.each([
-    ["mark that right there", "mark that right there"],
-    ["Mark that real quick.", "Mark that real quick"],
+    ["Okay, mark it!", "mark it"],
+    ["mark this", "mark this"],
     ["mark it please", "mark it please"],
     ["Mark this now!", "Mark this now"],
   ])("allows the short tail in %j", (text, cue) => {
     expect(utteranceCue(text)).toBe(cue);
+  });
+
+  it("rejects a name that is not a cue", () => {
+    expect(utteranceCue("Mark said that")).toBeNull();
   });
 
   it("matches a cue sentence that is followed by another sentence", () => {
@@ -59,6 +57,7 @@ describe("detectMarks", () => {
     const marks = detectMarks([{ start: 5, end: 6, text: "mark this" }]);
     expect(marks[0].seconds).toBe(0);
     expect(marks[0].quote).toBe("");
+    expect(marks[0].cue).toBe("mark this");
   });
 
   it("keeps the quote at or under 280 characters, from the end", () => {
@@ -82,5 +81,18 @@ describe("detectMarks", () => {
     ]);
     expect(marks.map((mark) => mark.cue)).toEqual(["Mark that", "mark this"]);
     expect(marks.map((mark) => mark.seconds)).toEqual([90, 141]);
+  });
+
+  it("keeps the earliest 50 marks after the 30-second dedupe", () => {
+    const utterances = Array.from({ length: 60 }, (_, index) => ({
+      start: index * 40,
+      end: index * 40 + 2,
+      text: "Mark that.",
+    }));
+    const marks = detectMarks(utterances);
+    expect(marks).toHaveLength(50);
+    expect(marks[0].seconds).toBe(0);
+    expect(marks[49].seconds).toBe(49 * 40 - 10);
+    expect(marks.some((mark) => mark.seconds === 50 * 40 - 10)).toBe(false);
   });
 });

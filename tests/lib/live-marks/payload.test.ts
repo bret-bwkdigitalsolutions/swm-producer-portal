@@ -42,16 +42,32 @@ describe("buildLiveMarksPayload", () => {
       ],
     });
 
-    expect(payload.marks[0]).toEqual({
+    expect(payload.marks[0]).toEqual({ seconds: 0, quote: "Start.", cue: "" });
+    expect(payload.marks[1]).toEqual({
       seconds: 32,
       quote: "Nobody looked there.",
       cue: "mark that",
     });
-    expect(payload.marks[1].seconds).toBe(86400);
-    expect(payload.marks[1].quote.length).toBeLessThanOrEqual(280);
-    expect(payload.marks[1].cue?.length).toBeLessThanOrEqual(40);
-    expect(payload.marks[2]).toEqual({ seconds: 0, quote: "Start." });
-    expect(payload.marks[2].cue).toBeUndefined();
+    expect(payload.marks[2].seconds).toBe(86400);
+    expect(payload.marks[2].quote.length).toBeLessThanOrEqual(280);
+    expect(payload.marks[2].cue.length).toBeLessThanOrEqual(40);
+  });
+
+  it("sends at most the earliest 50 marks", () => {
+    const marks = Array.from({ length: 60 }, (_, index) => ({
+      seconds: 1000 - index,
+      quote: `q${index}`,
+      cue: "mark that",
+    }));
+    const payload = buildLiveMarksPayload({
+      wpShowId: 21,
+      youtubeVideoId: "abcdefghijk",
+      marks,
+    });
+    expect(payload.marks).toHaveLength(50);
+    expect(payload.marks[0].seconds).toBe(941);
+    expect(payload.marks[49].seconds).toBe(990);
+    expect(payload.marks.every((mark) => typeof mark.cue === "string")).toBe(true);
   });
 
   it("keeps an empty marks array in the same shape", () => {

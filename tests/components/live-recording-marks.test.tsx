@@ -56,6 +56,7 @@ describe("LiveRecordingMarks", () => {
         transcriptNextAttemptAt={new Date("2026-10-07T20:15:00.000Z")}
         transcriptScannedAt={null}
         transcriptError="Website route is not ready (HTTP 404). Will retry."
+        showError
         transcriptMarksResponse={null}
         transcriptMarks={[
           { seconds: 32, quote: "A porch.", cue: "Mark that" },
@@ -70,5 +71,23 @@ describe("LiveRecordingMarks", () => {
       "href",
       "https://www.youtube.com/watch?v=abcdefghijk&t=32s"
     );
+  });
+
+  it("hides the transcript error from producers", () => {
+    render(
+      <LiveRecordingMarks
+        youtubeVideoId="abcdefghijk"
+        transcriptStatus="failed"
+        transcriptAttempts={3}
+        transcriptNextAttemptAt={new Date("2026-10-07T20:15:00.000Z")}
+        transcriptScannedAt={null}
+        transcriptError="yt-dlp exited 1"
+        transcriptMarksResponse={null}
+        transcriptMarks={[]}
+      />
+    );
+
+    expect(screen.queryByText(/yt-dlp/)).not.toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 });

@@ -178,6 +178,7 @@ export default async function LiveRecordingDetailPage({ params }: PageProps) {
           transcriptAttempts={recording.transcriptAttempts}
           transcriptNextAttemptAt={recording.transcriptNextAttemptAt}
           transcriptScannedAt={recording.transcriptScannedAt}
+          showError={isAdmin}
         />
       )}
 

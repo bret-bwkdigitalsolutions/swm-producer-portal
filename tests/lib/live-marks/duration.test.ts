@@ -22,10 +22,15 @@ describe("evaluateBroadcastDuration", () => {
 });
 
 describe("isLiveTranscriptionEnabled", () => {
-  it("defaults to on", () => {
-    expect(isLiveTranscriptionEnabled(undefined)).toBe(true);
-    expect(isLiveTranscriptionEnabled("")).toBe(true);
+  it("stays off when unset or blank", () => {
+    expect(isLiveTranscriptionEnabled(undefined)).toBe(false);
+    expect(isLiveTranscriptionEnabled("")).toBe(false);
+  });
+
+  it("turns on only for an explicit true value", () => {
     expect(isLiveTranscriptionEnabled("true")).toBe(true);
+    expect(isLiveTranscriptionEnabled("1")).toBe(true);
+    expect(isLiveTranscriptionEnabled("on")).toBe(true);
   });
 
   it("turns off for the documented false values", () => {

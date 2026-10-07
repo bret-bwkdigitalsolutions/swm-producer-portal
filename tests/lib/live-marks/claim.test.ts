@@ -1,0 +1,223 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_TRANSCRIPT_ATTEMPTS } from "@/lib/live-marks/constants";
+
+const updateMany = vi.hoisted(() => vi.fn());
+const findFirst = vi.hoisted(() => vi.fn());
+const findUnique = vi.hoisted(() => vi.fn());
+const findMany = vi.hoisted(() => vi.fn());
+const count = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/db", () => ({
+  db: {
+    liveRecording: {
+      updateMany,
+      findFirst,
+      findUnique,
+      findMany,
+      count,
+      update: vi.fn(),
+    },
+  },
+}));
+
+vi.mock("@/lib/jobs/job-queue", () => ({ enqueueJob: vi.fn() }));
+vi.mock("@/lib/live-marks/worker", () => ({
+  runLiveTranscription: vi.fn(),
+}));
+
+import { claimLiveTranscription, queueDueLiveTranscriptions } from "@/lib/live-marks/queue";
+import { writeOwnedScan } from "@/lib/live-marks/lease";
+
+const now = new Date("2026-10-07T18:00:00.000Z");
+
+beforeEach(() => {
+  updateMany.mockReset();
+  findFirst.mockReset();
+  findUnique.mockReset();
+  findMany.mockReset();
+  count.mockReset();
+  findFirst.mockResolvedValue(null);
+  findUnique.mockResolvedValue({
+    transcriptVtt: null,
+    transcriptStatus: "pending",
+  });
+  count.mockResolvedValue(0);
+  updateMany.mockResolvedValue({ count: 1 });
+  process.env.LIVE_TRANSCRIPTION_ENABLED = "true";
+  delete process.env.LIVE_TRANSCRIPTION_DAILY_CAP;
+});
+
+describe("claimLiveTranscription", () => {
+  it("stores a claim token and increments attempts in the same update", async () => {
+    const result = await claimLiveTranscription("rec-1", now);
+
+    expect(result.claimed).toBe(true);
+    expect(result.token).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    const write = updateMany.mock.calls[0][0];
+    expect(write.data.transcriptAttempts).toEqual({ increment: 1 });
+    expect(write.data.transcriptClaimToken).toBe(result.token);
+    expect(write.data.transcriptStatus).toBe("processing");
+    expect(write.where.transcriptAttempts).toEqual({
+      lt: MAX_TRANSCRIPT_ATTEMPTS,
+    });
+    expect(write.where.AND).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({ transcriptStatus: "processing" }),
+          ]),
+        }),
+        expect.objectContaining({
+          OR: expect.arrayContaining([
+            { transcriptNextAttemptAt: null },
+            { transcriptNextAttemptAt: { lte: now } },
+          ]),
+        }),
+      ])
+    );
+  });
+
+  it("increments again on an expired lease and stops when the cap matches nothing", async () => {
+    findUnique.mockResolvedValue({
+      transcriptVtt: null,
+      transcriptStatus: "processing",
+    });
+    updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+    const first = await claimLiveTranscription("rec-1", now);
+    expect(first.claimed).toBe(true);
+    expect(updateMany.mock.calls[0][0].data.transcriptAttempts).toEqual({
+      increment: 1,
+    });
+
+    const later = new Date(now.getTime() + 91 * 60 * 1000);
+    const second = await claimLiveTranscription("rec-1", later);
+    expect(second).toEqual({
+      claimed: false,
+      token: null,
+      reason: "not_eligible",
+    });
+    const retry = updateMany.mock.calls[1][0];
+    expect(retry.data.transcriptAttempts).toEqual({ increment: 1 });
+    expect(retry.where.transcriptAttempts).toEqual({
+      lt: MAX_TRANSCRIPT_ATTEMPTS,
+    });
+    expect(retry.where.AND).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          OR: expect.arrayContaining([
+            { transcriptNextAttemptAt: { lte: later } },
+          ]),
+        }),
+      ])
+    );
+  });
+
+  it("does not claim while any row holds an unexpired lease", async () => {
+    findFirst.mockResolvedValue({ id: "other-scan" });
+
+    const result = await claimLiveTranscription("rec-1", now);
+
+    expect(result).toEqual({
+      claimed: false,
+      token: null,
+      reason: "in_flight",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        transcriptStatus: "processing",
+        transcriptNextAttemptAt: { gt: now },
+      },
+      select: { id: true },
+    });
+  });
+
+  it("skips a new paid scan once the daily cap is full", async () => {
+    count.mockResolvedValue(10);
+
+    const result = await claimLiveTranscription("rec-1", now);
+
+    expect(result.reason).toBe("daily_cap");
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("writeOwnedScan", () => {
+  it("rejects a stale claim token", async () => {
+    updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const wrote = await writeOwnedScan("rec-1", "stale-token", {
+      transcriptStatus: "completed",
+    });
+
+    expect(wrote).toBe(false);
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "rec-1",
+        transcriptClaimToken: "stale-token",
+        transcriptStatus: "processing",
+      },
+      data: { transcriptStatus: "completed" },
+    });
+  });
+
+  it("writes when the token still owns the lease", async () => {
+    updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const wrote = await writeOwnedScan("rec-1", "live-token", {
+      transcriptError: null,
+    });
+
+    expect(wrote).toBe(true);
+  });
+});
+
+describe("queueDueLiveTranscriptions", () => {
+  it("selects only due rows, nulls first", async () => {
+    findMany.mockResolvedValue([]);
+
+    await queueDueLiveTranscriptions(now);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          state: "archived",
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                { transcriptNextAttemptAt: null },
+                { transcriptNextAttemptAt: { lte: now } },
+              ]),
+            }),
+          ]),
+        }),
+        orderBy: [
+          { transcriptNextAttemptAt: { sort: "asc", nulls: "first" } },
+          { archivedAt: "asc" },
+        ],
+      })
+    );
+  });
+
+  it("does not claim when the flag is off", async () => {
+    delete process.env.LIVE_TRANSCRIPTION_ENABLED;
+    findMany.mockResolvedValue([
+      {
+        id: "rec-1",
+        transcriptStatus: "pending",
+        transcriptAttempts: 0,
+        transcriptNextAttemptAt: null,
+      },
+    ]);
+
+    const result = await queueDueLiveTranscriptions(now);
+
+    expect(result).toEqual({ queued: [], disabled: true });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+});

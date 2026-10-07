@@ -3,13 +3,14 @@ import {
   MARK_CUE_MAX_CHARS,
   MARK_QUOTE_MAX_CHARS,
   MARK_SECONDS_MAX,
+  MAX_MARKS_PER_POST,
 } from "./constants";
 
 export interface LiveMark {
   seconds: number;
   quote: string;
-  /** Short spoken cue, e.g. "mark that". Omitted when empty. */
-  cue?: string;
+  /** Short spoken cue, e.g. "mark that". Always sent; "" is allowed. */
+  cue: string;
 }
 
 export interface LiveMarksPayload {
@@ -57,24 +58,26 @@ export function sanitizeLiveMark(mark: {
   quote: string;
   cue?: string | null;
 }): LiveMark {
-  const cue = plainCue(mark.cue);
-  const sanitized: LiveMark = {
+  return {
     seconds: clampMarkSeconds(mark.seconds),
     quote: plainQuote(mark.quote),
+    cue: plainCue(mark.cue),
   };
-  if (cue) sanitized.cue = cue;
-  return sanitized;
 }
 
 export function buildLiveMarksPayload(input: {
   wpShowId: number;
   youtubeVideoId: string;
-  marks: LiveMark[];
+  marks: Array<{ seconds: number; quote: string; cue?: string | null }>;
 }): LiveMarksPayload {
+  const marks = input.marks
+    .map((mark) => sanitizeLiveMark(mark))
+    .sort((a, b) => a.seconds - b.seconds)
+    .slice(0, MAX_MARKS_PER_POST);
   return {
     show_id: input.wpShowId,
     live_youtube_id: input.youtubeVideoId,
-    marks: input.marks.map((mark) => sanitizeLiveMark(mark)),
+    marks,
     source: LIVE_MARKS_SOURCE,
   };
 }
@@ -103,13 +106,11 @@ export function readStoredMarks(value: unknown): LiveMark[] {
     const row = item as Record<string, unknown>;
     if (typeof row.seconds !== "number" || !Number.isFinite(row.seconds)) continue;
     if (typeof row.quote !== "string") continue;
-    const cue = typeof row.cue === "string" ? plainCue(row.cue) : "";
-    const mark: LiveMark = {
+    marks.push({
       seconds: clampMarkSeconds(row.seconds),
       quote: plainQuote(row.quote),
-    };
-    if (cue) mark.cue = cue;
-    marks.push(mark);
+      cue: typeof row.cue === "string" ? plainCue(row.cue) : "",
+    });
   }
   return marks;
 }
@@ -148,6 +149,8 @@ export function transcriptStatusLabel(status: string | null | undefined): string
       return "Website not ready";
     case "config_error":
       return "Configuration error";
+    case "contract_error":
+      return "Contract error";
     case "failed":
       return "Failed";
     default:

@@ -2,6 +2,7 @@ import {
   MARK_DEDUPE_SECONDS,
   MARK_LEAD_SECONDS,
   MARK_QUOTE_UTTERANCES,
+  MAX_MARKS_PER_POST,
 } from "./constants";
 import { sanitizeLiveMark, type LiveMark } from "./payload";
 
@@ -53,7 +54,7 @@ function quoteBefore(utterances: MarkUtterance[], index: number): string {
  * Find mark cues. `seconds` is an integer, the cue start minus 10, clamped
  * to 0–86400. `quote` is the previous one or two utterances, plain text,
  * at most 280 characters. A cue within 30 seconds of an already-kept cue
- * is dropped.
+ * is dropped. At most 50 marks are kept, the earliest after that dedupe.
  */
 export function detectMarks(utterances: MarkUtterance[]): LiveMark[] {
   const ordered = [...utterances].sort(
@@ -68,7 +69,7 @@ export function detectMarks(utterances: MarkUtterance[]): LiveMark[] {
     if (previous && start - previous.start <= MARK_DEDUPE_SECONDS) continue;
     hits.push({ index, cue, start });
   }
-  return hits.map((hit) =>
+  return hits.slice(0, MAX_MARKS_PER_POST).map((hit) =>
     sanitizeLiveMark({
       seconds: hit.start - MARK_LEAD_SECONDS,
       quote: quoteBefore(ordered, hit.index),

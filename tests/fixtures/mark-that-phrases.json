@@ -1,0 +1,19 @@
+{
+  "match": [
+    "Mark that.",
+    "mark that one",
+    "Mark it!",
+    "mark this right there",
+    "mark that real quick"
+  ],
+  "noMatch": [
+    "Mark that guy",
+    "Mark that was his name",
+    "Mark this Friday on your calendar",
+    "question mark that is",
+    "Mark it zero!",
+    "Mark it down.",
+    "Marky Mark that he went",
+    "they mark this with a bar graph"
+  ]
+}

@@ -15,7 +15,9 @@ const REQUEST_TIMEOUT_MS = 20_000;
 export type PostLiveMarksResult =
   | { ok: true; response: LiveMarksApiResponse }
   | { ok: false; kind: "website_not_ready" }
+  | { ok: false; kind: "overlap"; message: string }
   | { ok: false; kind: "config"; message: string }
+  | { ok: false; kind: "contract"; message: string }
   | { ok: false; kind: "retryable"; message: string };
 
 /**
@@ -35,9 +37,10 @@ export function liveMarksEndpointUrl(wpApiUrl: string): string {
  * writes (`createPost` / `_swm_supersedes` in the WordPress client).
  * The website accepts that user when it can `edit_others_posts`.
  *
- * A 404 is `website_not_ready` (the portal may ship before the route
- * exists). A 401 or 403 is a config error, the same class as
- * {@link WpConfigError}: the caller must not retry it.
+ * A 404 is `website_not_ready` (retry until 14 days). A 409 is a short
+ * overlap lock and is retried in a couple of minutes. A 400 or 422 is a
+ * permanent contract error. A 401 or 403 is a config error, the same class
+ * as {@link WpConfigError}. 5xx and network failures stay retryable.
  */
 export async function postLiveMarks(input: {
   wpShowId: number;
@@ -101,6 +104,26 @@ export async function postLiveMarksPayload(
 
   if (response.status === 404) {
     return { ok: false, kind: "website_not_ready" };
+  }
+
+  if (response.status === 409) {
+    return {
+      ok: false,
+      kind: "overlap",
+      message:
+        "Website already has a marks write in progress for this live video (HTTP 409). Will retry.",
+    };
+  }
+
+  if (response.status === 400 || response.status === 422) {
+    const body = await response.text().catch(() => "");
+    return {
+      ok: false,
+      kind: "contract",
+      message: `Website rejected the marks payload (HTTP ${response.status}). Not retrying.${
+        body ? ` ${body.slice(0, 300)}` : ""
+      }`,
+    };
   }
 
   if (response.status === 401 || response.status === 403) {

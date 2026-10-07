@@ -2,16 +2,26 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { deleteFile } from "@/lib/gcs";
 import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import {
   formatTranscriptAsVtt,
   transcribeAudio,
 } from "@/lib/transcription";
-import { MARK_CUE_KEYTERMS, TRANSCRIPT_STALE_MS } from "./constants";
+import {
+  LIVE_DEEPGRAM_TIMEOUT_MS,
+  LIVE_DOWNLOAD_DEADLINE_MS,
+  LIVE_DOWNLOAD_TIMEOUT_MS,
+  MARK_CUE_KEYTERMS,
+  TRANSCRIPT_STALE_MS,
+} from "./constants";
 import { evaluateBroadcastDuration } from "./duration";
+import { writeOwnedScan } from "./lease";
 import { detectMarks, type MarkUtterance } from "./matcher";
 import {
   planConfigError,
+  planContractError,
+  planOverlapRetry,
   planTranscriptFailure,
   planWebsiteNotReady,
 } from "./retry";
@@ -34,31 +44,74 @@ function readUtterances(value: unknown): MarkUtterance[] {
   return utterances;
 }
 
-async function stillProcessing(id: string): Promise<boolean> {
-  const row = await db.liveRecording.findUnique({
-    where: { id },
-    select: { transcriptStatus: true },
+async function withTimeout<T>(
+  work: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new Error(`${label} timed out after ${Math.round(ms / 1000)} seconds`)
+      );
+    }, ms);
   });
-  return row?.transcriptStatus === "processing";
+  void work.catch(() => {});
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
-async function extendLease(id: string): Promise<void> {
-  await db.liveRecording.updateMany({
-    where: { id, transcriptStatus: "processing" },
-    data: {
-      transcriptNextAttemptAt: new Date(Date.now() + TRANSCRIPT_STALE_MS),
-    },
+async function extendLease(id: string, token: string): Promise<boolean> {
+  return writeOwnedScan(id, token, {
+    transcriptNextAttemptAt: new Date(Date.now() + TRANSCRIPT_STALE_MS),
   });
 }
 
 /**
+ * Delete the stored mp3 after a transcript exists. A later 404 retry uses
+ * the saved transcript and does not need the object. A delete failure
+ * leaves the path in place so a later pass can try again.
+ */
+async function discardAudio(
+  id: string,
+  token: string,
+  path: string | null
+): Promise<"cleared" | "kept" | "lost"> {
+  if (!path) return "cleared";
+  try {
+    await deleteFile(path);
+  } catch (error) {
+    console.error(
+      `[live-transcription] ${id}: could not delete audio ${path}`,
+      error
+    );
+    return "kept";
+  }
+  const cleared = await writeOwnedScan(id, token, { transcriptAudioPath: null });
+  return cleared ? "cleared" : "lost";
+}
+
+function lostLease(message = "Lost the scan lease."): {
+  ok: boolean;
+  message: string;
+} {
+  return { ok: true, message };
+}
+
+/**
  * Download the YouTube VOD (when needed), transcribe it, detect mark cues,
- * and POST them. The caller must have claimed the row (`transcriptStatus`
- * is `processing`). A stored transcript is reused, so a website 404 retry
- * does not call Deepgram again.
+ * and POST them. `token` is the claim token from the queue. Every write
+ * requires that token; a stale worker's writes match nothing.
+ * A stored transcript is reused, so a website 404 retry does not call
+ * Deepgram again. The mp3 is deleted once the transcript is saved.
  */
 export async function runLiveTranscription(
-  liveRecordingId: string
+  liveRecordingId: string,
+  token: string
 ): Promise<{ ok: boolean; message: string }> {
   const row = await db.liveRecording.findUnique({
     where: { id: liveRecordingId },
@@ -67,7 +120,7 @@ export async function runLiveTranscription(
   if (row.state !== "archived") {
     return { ok: false, message: `Refusing to transcribe state '${row.state}'.` };
   }
-  if (row.transcriptStatus !== "processing") {
+  if (row.transcriptStatus !== "processing" || row.transcriptClaimToken !== token) {
     return { ok: true, message: "Not the claimed scan." };
   }
 
@@ -78,22 +131,21 @@ export async function runLiveTranscription(
         row.actualEndedAt
       );
       if (!duration.ok) {
-        await db.liveRecording.updateMany({
-          where: { id: row.id, transcriptStatus: "processing" },
-          data: {
-            transcriptStatus: "skipped",
-            transcriptError: duration.reason,
-            transcriptDurationSec: duration.seconds,
-            transcriptNextAttemptAt: null,
-          },
+        const wrote = await writeOwnedScan(row.id, token, {
+          transcriptStatus: "skipped",
+          transcriptError: duration.reason,
+          transcriptDurationSec: duration.seconds,
+          transcriptNextAttemptAt: null,
+          transcriptClaimToken: null,
         });
+        if (!wrote) return lostLease();
         return { ok: true, message: duration.reason ?? "Skipped." };
       }
 
-      await db.liveRecording.updateMany({
-        where: { id: row.id, transcriptStatus: "processing" },
-        data: { transcriptDurationSec: duration.seconds },
+      const durationSaved = await writeOwnedScan(row.id, token, {
+        transcriptDurationSec: duration.seconds,
       });
+      if (!durationSaved) return lostLease();
 
       let audioPath = row.transcriptAudioPath;
       if (!audioPath) {
@@ -101,19 +153,19 @@ export async function runLiveTranscription(
         console.log(
           `[live-transcription] ${row.id}: downloading YouTube VOD ${row.youtubeVideoId}`
         );
-        audioPath = await downloadVideoToGcs(youtubeUrl, row.id, row.wpShowId);
-        const saved = await db.liveRecording.updateMany({
-          where: { id: row.id, transcriptStatus: "processing" },
-          data: { transcriptAudioPath: audioPath },
+        audioPath = await withTimeout(
+          downloadVideoToGcs(youtubeUrl, row.id, row.wpShowId, {
+            timeoutMs: LIVE_DOWNLOAD_TIMEOUT_MS,
+          }),
+          LIVE_DOWNLOAD_DEADLINE_MS,
+          "YouTube download"
+        );
+        const saved = await writeOwnedScan(row.id, token, {
+          transcriptAudioPath: audioPath,
         });
-        if (saved.count !== 1) {
-          return { ok: true, message: "Lost the scan lease during download." };
-        }
-        await extendLease(row.id);
-      }
-
-      if (!(await stillProcessing(row.id))) {
-        return { ok: true, message: "Lost the scan lease before transcription." };
+        if (!saved) return lostLease("Lost the scan lease during download.");
+        const extended = await extendLease(row.id, token);
+        if (!extended) return lostLease();
       }
 
       const showMeta = await db.showMetadata.findUnique({
@@ -130,6 +182,7 @@ export async function runLiveTranscription(
         wpShowId: row.wpShowId,
         hosts: showMeta?.hosts,
         extraKeyterms: [...MARK_CUE_KEYTERMS],
+        timeoutMs: LIVE_DEEPGRAM_TIMEOUT_MS,
       });
       const utterances: MarkUtterance[] = transcription.segments
         .filter((segment) => segment.text?.trim())
@@ -138,41 +191,51 @@ export async function runLiveTranscription(
           end: segment.end,
           text: segment.text.trim(),
         }));
-      const saved = await db.liveRecording.updateMany({
-        where: { id: row.id, transcriptStatus: "processing" },
-        data: {
-          transcriptVtt: formatTranscriptAsVtt(transcription.segments),
-          transcriptUtterances: asJson(utterances),
-          transcriptNextAttemptAt: new Date(Date.now() + TRANSCRIPT_STALE_MS),
-        },
+      const saved = await writeOwnedScan(row.id, token, {
+        transcriptVtt: formatTranscriptAsVtt(transcription.segments),
+        transcriptUtterances: asJson(utterances),
+        transcriptNextAttemptAt: new Date(Date.now() + TRANSCRIPT_STALE_MS),
       });
-      if (saved.count !== 1) {
-        return { ok: true, message: "Lost the scan lease during transcription." };
-      }
+      if (!saved) return lostLease("Lost the scan lease during transcription.");
+      const discarded = await discardAudio(row.id, token, audioPath);
+      if (discarded === "lost") return lostLease();
     }
 
     const fresh = await db.liveRecording.findUnique({ where: { id: row.id } });
-    if (!fresh || fresh.transcriptStatus !== "processing") {
-      return { ok: true, message: "Lost the scan lease before sending marks." };
+    if (
+      !fresh ||
+      fresh.transcriptStatus !== "processing" ||
+      fresh.transcriptClaimToken !== token
+    ) {
+      return lostLease("Lost the scan lease before sending marks.");
+    }
+
+    if (fresh.transcriptVtt != null && fresh.transcriptAudioPath) {
+      const discarded = await discardAudio(
+        fresh.id,
+        token,
+        fresh.transcriptAudioPath
+      );
+      if (discarded === "lost") return lostLease();
     }
 
     const marks = detectMarks(readUtterances(fresh.transcriptUtterances));
-    await db.liveRecording.updateMany({
-      where: { id: fresh.id, transcriptStatus: "processing" },
-      data: { transcriptMarks: asJson(marks) },
+    const marksSaved = await writeOwnedScan(fresh.id, token, {
+      transcriptMarks: asJson(marks),
     });
+    if (!marksSaved) return lostLease();
 
     if (marks.length === 0) {
-      await db.liveRecording.updateMany({
-        where: { id: fresh.id, transcriptStatus: "processing" },
-        data: {
-          transcriptStatus: "completed",
-          transcriptError: null,
-          transcriptNextAttemptAt: null,
-          transcriptScannedAt: new Date(),
-          transcriptMarksResponse: Prisma.DbNull,
-        },
+      const wrote = await writeOwnedScan(fresh.id, token, {
+        transcriptStatus: "completed",
+        transcriptError: null,
+        transcriptNextAttemptAt: null,
+        transcriptScannedAt: new Date(),
+        transcriptMarksResponse: Prisma.DbNull,
+        transcriptClaimToken: null,
+        transcriptNotReadySince: null,
       });
+      if (!wrote) return lostLease();
       console.log(`[live-transcription] ${fresh.id}: scanned, no marks`);
       return { ok: true, message: "Scanned. No marks to send." };
     }
@@ -182,26 +245,43 @@ export async function runLiveTranscription(
       youtubeVideoId: fresh.youtubeVideoId,
       marks,
     });
-    if (!(await stillProcessing(fresh.id))) {
-      return { ok: true, message: "Lost the scan lease after the website call." };
-    }
 
     if (!posted.ok && posted.kind === "website_not_ready") {
-      const plan = planWebsiteNotReady(new Date(), fresh.transcriptAttempts);
-      await db.liveRecording.updateMany({
-        where: { id: fresh.id, transcriptStatus: "processing" },
-        data: plan,
-      });
+      const plan = planWebsiteNotReady(
+        new Date(),
+        fresh.transcriptAttempts,
+        fresh.transcriptNotReadySince
+      );
+      const wrote = await writeOwnedScan(fresh.id, token, plan);
+      if (!wrote) return lostLease();
       console.log(`[live-transcription] ${fresh.id}: website route not ready`);
       return { ok: true, message: plan.transcriptError ?? "Website not ready." };
     }
 
+    if (!posted.ok && posted.kind === "overlap") {
+      const plan = planOverlapRetry(
+        new Date(),
+        fresh.transcriptAttempts,
+        posted.message
+      );
+      const wrote = await writeOwnedScan(fresh.id, token, plan);
+      if (!wrote) return lostLease();
+      console.log(`[live-transcription] ${fresh.id}: ${posted.message}`);
+      return { ok: true, message: plan.transcriptError ?? posted.message };
+    }
+
     if (!posted.ok && posted.kind === "config") {
       const plan = planConfigError(fresh.transcriptAttempts, posted.message);
-      await db.liveRecording.updateMany({
-        where: { id: fresh.id, transcriptStatus: "processing" },
-        data: plan,
-      });
+      const wrote = await writeOwnedScan(fresh.id, token, plan);
+      if (!wrote) return lostLease();
+      console.error(`[live-transcription] ${fresh.id}: ${posted.message}`);
+      return { ok: false, message: plan.transcriptError ?? posted.message };
+    }
+
+    if (!posted.ok && posted.kind === "contract") {
+      const plan = planContractError(fresh.transcriptAttempts, posted.message);
+      const wrote = await writeOwnedScan(fresh.id, token, plan);
+      if (!wrote) return lostLease();
       console.error(`[live-transcription] ${fresh.id}: ${posted.message}`);
       return { ok: false, message: plan.transcriptError ?? posted.message };
     }
@@ -210,16 +290,16 @@ export async function runLiveTranscription(
       throw new Error(posted.message);
     }
 
-    await db.liveRecording.updateMany({
-      where: { id: fresh.id, transcriptStatus: "processing" },
-      data: {
-        transcriptStatus: "completed",
-        transcriptError: null,
-        transcriptNextAttemptAt: null,
-        transcriptScannedAt: new Date(),
-        transcriptMarksResponse: asJson(posted.response),
-      },
+    const wrote = await writeOwnedScan(fresh.id, token, {
+      transcriptStatus: "completed",
+      transcriptError: null,
+      transcriptNextAttemptAt: null,
+      transcriptScannedAt: new Date(),
+      transcriptMarksResponse: asJson(posted.response),
+      transcriptClaimToken: null,
+      transcriptNotReadySince: null,
     });
+    if (!wrote) return lostLease("Lost the scan lease after the website call.");
     console.log(
       `[live-transcription] ${fresh.id}: sent ${marks.length} mark(s), stored ${posted.response.stored}`
     );
@@ -234,20 +314,25 @@ export async function runLiveTranscription(
     console.error(`[live-transcription] ${row.id} failed:`, error);
     const current = await db.liveRecording.findUnique({
       where: { id: row.id },
-      select: { transcriptStatus: true, transcriptAttempts: true },
+      select: {
+        transcriptStatus: true,
+        transcriptAttempts: true,
+        transcriptClaimToken: true,
+      },
     });
-    if (!current || current.transcriptStatus !== "processing") {
+    if (
+      !current ||
+      current.transcriptStatus !== "processing" ||
+      current.transcriptClaimToken !== token
+    ) {
       return { ok: false, message };
     }
     const plan = planTranscriptFailure(
       new Date(),
-      current.transcriptAttempts + 1,
+      current.transcriptAttempts,
       message
     );
-    await db.liveRecording.updateMany({
-      where: { id: row.id, transcriptStatus: "processing" },
-      data: plan,
-    });
+    await writeOwnedScan(row.id, token, plan);
     return { ok: false, message: plan.transcriptError ?? message };
   }
 }

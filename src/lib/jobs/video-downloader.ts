@@ -57,12 +57,16 @@ function deriveSourceLabel(videoUrl: string): string | null {
  * @param jobId - Used only for log context
  * @param wpShowId - Show that owns this download. When supplied, drives the
  *   per-identity cookie lookup; omit for contexts where no show is known.
+ * @param options.timeoutMs - Kill yt-dlp after this many milliseconds.
+ *   Defaults to the runtime media ceiling. The live mark scan passes a
+ *   shorter deadline so a hung download cannot outlive its lease.
  * @returns GCS path of the downloaded audio
  */
 export async function downloadVideoToGcs(
   videoUrl: string,
   jobId: string,
-  wpShowId?: number
+  wpShowId?: number,
+  options?: { timeoutMs?: number }
 ): Promise<string> {
   const sourceLabel = deriveSourceLabel(videoUrl);
   if (!sourceLabel) {
@@ -119,7 +123,7 @@ export async function downloadVideoToGcs(
     args.push(videoUrl);
 
     const { stderr } = await execFileAsync("yt-dlp", args, {
-      timeout: mediaToolTimeoutMs(),  // 30 minutes on Railway; hours on the Cloud Run worker
+      timeout: options?.timeoutMs ?? mediaToolTimeoutMs(),  // 30 minutes on Railway; hours on the Cloud Run worker
       killSignal: "SIGKILL",          // Force-kill hung yt-dlp processes on timeout
       maxBuffer: 200 * 1024 * 1024,   // 200 MB — yt-dlp's combined stdout+stderr on long episodes can exceed the 1 MB default
     });
