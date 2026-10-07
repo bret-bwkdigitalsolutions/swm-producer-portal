@@ -11,6 +11,8 @@ export interface DownloadGcsObjectOptions {
    * the same (`Failed to download video: 500`).
    */
   errorPrefix?: string;
+  /** Bucket that holds the object. Omit to use the default read bucket. */
+  bucket?: string;
 }
 
 /**
@@ -27,7 +29,9 @@ export async function downloadGcsObjectToFile(
   destPath: string,
   options?: DownloadGcsObjectOptions
 ): Promise<void> {
-  const downloadUrl = await generateSignedDownloadUrl(gcsPath);
+  const downloadUrl = options?.bucket
+    ? await generateSignedDownloadUrl(gcsPath, 60 * 60 * 1000, options.bucket)
+    : await generateSignedDownloadUrl(gcsPath);
   const response = await fetch(downloadUrl);
   if (!response.ok || !response.body) {
     const prefix = options?.errorPrefix ?? "Failed to download video";

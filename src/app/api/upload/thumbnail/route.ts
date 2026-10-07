@@ -115,9 +115,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const gcsPath = await uploadBuffer(filename!, buffer!, contentType!);
+    const meta = (job.metadata as Record<string, unknown>) ?? {};
+    const pinned =
+      typeof meta.gcsBucket === "string" && meta.gcsBucket.trim()
+        ? meta.gcsBucket.trim()
+        : undefined;
+    const gcsPath = pinned
+      ? await uploadBuffer(filename!, buffer!, contentType!, pinned)
+      : await uploadBuffer(filename!, buffer!, contentType!);
 
-    // Store thumbnail path in job metadata (race-safe merge)
+    // Store the thumbnail path only. gcsBucket stays the video's bucket.
     await mergeJobMetadata(jobId, { thumbnailGcsPath: gcsPath });
 
     console.log(`[thumbnail] Uploaded to GCS: ${gcsPath}`);

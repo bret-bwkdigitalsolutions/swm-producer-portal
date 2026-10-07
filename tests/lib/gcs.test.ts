@@ -33,6 +33,9 @@ describe("GCS Client", () => {
       GOOGLE_APPLICATION_CREDENTIALS: "/path/to/credentials.json",
     };
     delete process.env.GCS_CREDENTIALS_JSON;
+    delete process.env.GCS_UPLOAD_BUCKET_NAME;
+    delete process.env.GCS_FUSE_MOUNTS;
+    delete process.env.VIDEO_WORKER;
     mockGetSignedUrl.mockReset();
     mockDelete.mockReset();
     mockExists.mockReset();
@@ -63,6 +66,17 @@ describe("GCS Client", () => {
           contentType: "video/mp4",
         })
       );
+    });
+
+    it("writes new uploads to GCS_UPLOAD_BUCKET_NAME when that is set", async () => {
+      process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+      mockGetSignedUrl.mockResolvedValue(["https://storage.googleapis.com/signed-url"]);
+
+      const { generateSignedUploadUrl } = await import("@/lib/gcs");
+      const result = await generateSignedUploadUrl("my-video.mp4", "video/mp4");
+
+      expect(result.bucketName).toBe("regional-bucket");
+      expect(mockBucket).toHaveBeenCalledWith("regional-bucket");
     });
 
     it("sanitizes filenames with special characters", async () => {
@@ -96,6 +110,7 @@ describe("GCS Client", () => {
           action: "read",
         })
       );
+      expect(mockExists).not.toHaveBeenCalled();
     });
   });
 
@@ -123,6 +138,17 @@ describe("GCS Client", () => {
       expect(mockFile).toHaveBeenCalledWith("uploads/2026/03/123-video.mp4");
       expect(mockDelete).toHaveBeenCalledWith({ ignoreNotFound: true });
     });
+
+    it("deletes the key from both buckets when no hint is passed", async () => {
+      process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+      mockDelete.mockResolvedValue([{}]);
+
+      const { deleteFile } = await import("@/lib/gcs");
+      await deleteFile("uploads/2026/03/123-video.mp4");
+
+      expect(mockBucket).toHaveBeenCalledWith("test-bucket");
+      expect(mockBucket).toHaveBeenCalledWith("regional-bucket");
+    });
   });
 
   describe("missing credentials", () => {
@@ -134,6 +160,18 @@ describe("GCS Client", () => {
       await expect(
         generateSignedUploadUrl("test.mp4", "video/mp4")
       ).rejects.toThrow("Google Cloud credentials not configured");
+    });
+
+    it("uses Application Default Credentials when the Cloud Run worker has no key", async () => {
+      delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+      process.env.VIDEO_WORKER = "1";
+      mockGetSignedUrl.mockResolvedValue(["https://storage.googleapis.com/signed-url"]);
+
+      const { generateSignedUploadUrl } = await import("@/lib/gcs");
+      const result = await generateSignedUploadUrl("test.mp4", "video/mp4");
+
+      expect(result.uploadUrl).toBe("https://storage.googleapis.com/signed-url");
+      expect(mockBucket).toHaveBeenCalledWith("test-bucket");
     });
 
     it("throws descriptive error when GCS_BUCKET_NAME is not set", async () => {
