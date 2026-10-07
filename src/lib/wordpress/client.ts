@@ -26,11 +26,18 @@ function decodeHtmlEntities(html: string): string {
 }
 
 const WP_API_URL = () => process.env.WP_API_URL!;
-const WP_AUTH = () =>
-  "Basic " +
-  Buffer.from(
-    `${process.env.WP_APP_USER}:${process.env.WP_APP_PASSWORD}`
-  ).toString("base64");
+
+/** Basic auth for the WordPress application password. Shared with swm/v1 calls. */
+export function wpAuthorizationHeader(): string {
+  return (
+    "Basic " +
+    Buffer.from(
+      `${process.env.WP_APP_USER}:${process.env.WP_APP_PASSWORD}`
+    ).toString("base64")
+  );
+}
+
+const WP_AUTH = wpAuthorizationHeader;
 
 // Map portal content types to WP REST API post types
 // These must match the rest_base registered in WordPress
@@ -189,6 +196,103 @@ interface WpEpisodeSearchResult {
   link: string;
   date: string;
   meta?: { parent_show_id?: number };
+}
+
+export interface CreatedEpisodeHit {
+  id: number;
+  title: { rendered: string };
+  link: string;
+  slug?: string;
+  meta?: { parent_show_id?: number | string | Array<number | string> };
+}
+
+/**
+ * After a create that may have landed before WordPress rejected supersede
+ * meta, find that episode by slug and title for the show. The live-stream
+ * post being replaced is excluded so it is not treated as the new episode.
+ */
+export async function findEpisodeCreatedForShow(
+  wpShowId: number,
+  title: string,
+  options?: { excludeIds?: number[] }
+): Promise<{ id: number; link: string } | null> {
+  const slug = toWpSlug(title);
+  const fields = "_fields=id,title,link,slug,meta";
+  const showFilter = `meta_key=parent_show_id&meta_value=${wpShowId}`;
+  const [bySlug, byTitle] = await Promise.all([
+    slug
+      ? wpFetch<CreatedEpisodeHit[]>(
+          `/swm_episode?slug=${encodeURIComponent(slug)}&status=publish&per_page=10&${showFilter}&${fields}`
+        ).catch(() => [] as CreatedEpisodeHit[])
+      : Promise.resolve([] as CreatedEpisodeHit[]),
+    wpFetch<CreatedEpisodeHit[]>(
+      `/swm_episode?search=${encodeURIComponent(title.slice(0, 50))}&status=publish&per_page=20&${showFilter}&${fields}`
+    ).catch(() => [] as CreatedEpisodeHit[]),
+  ]);
+
+  return selectCreatedEpisode(
+    [...bySlug, ...byTitle],
+    wpShowId,
+    title,
+    options?.excludeIds ?? []
+  );
+}
+
+export function selectCreatedEpisode(
+  posts: CreatedEpisodeHit[],
+  wpShowId: number,
+  title: string,
+  excludeIds: readonly number[] = []
+): { id: number; link: string } | null {
+  const wantedTitle = title.trim();
+  const wantedSlug = toWpSlug(title);
+  const excluded = new Set(excludeIds);
+  const seen = new Set<number>();
+  const matches: CreatedEpisodeHit[] = [];
+
+  for (const post of posts) {
+    if (!post || !Number.isInteger(post.id) || seen.has(post.id)) continue;
+    seen.add(post.id);
+    if (excluded.has(post.id)) continue;
+    if (showIdOf(post.meta) !== wpShowId) continue;
+    const rendered = decodeHtmlEntities(post.title?.rendered ?? "").trim();
+    const slug = post.slug ?? "";
+    const titleMatch = wantedTitle.length > 0 && rendered === wantedTitle;
+    const slugMatch = wantedSlug.length > 0 && slug === wantedSlug;
+    if (titleMatch || slugMatch) matches.push(post);
+  }
+
+  if (matches.length === 0) return null;
+  const titleMatches = matches.filter(
+    (post) =>
+      decodeHtmlEntities(post.title?.rendered ?? "").trim() === wantedTitle
+  );
+  const pool = titleMatches.length > 0 ? titleMatches : matches;
+  const best = pool.reduce((current, post) =>
+    post.id > current.id ? post : current
+  );
+  return { id: best.id, link: best.link };
+}
+
+function showIdOf(
+  meta: CreatedEpisodeHit["meta"]
+): number {
+  const raw = meta?.parent_show_id;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const id = Number(value);
+  return Number.isFinite(id) ? id : NaN;
+}
+
+/** Approximate WordPress sanitize_title for the slug lookup. */
+function toWpSlug(title: string): string {
+  return title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 200);
 }
 
 /**

@@ -1,4 +1,5 @@
 import "server-only";
+import { wpAuthorizationHeader } from "@/lib/wordpress/client";
 
 /**
  * Look up a live-stream `swm_episode` that a newly published episode should
@@ -26,12 +27,21 @@ export interface LiveStreamCandidate {
  * Datetimes are converted to the Central calendar day. Missing or unparseable
  * input uses `now`.
  */
-export function toAirDate(input?: string | null, now: Date = new Date()): string {
+/**
+ * Calendar day in America/Chicago, or null when `input` is missing or not a date.
+ * Does not substitute today — callers that need a fallback use `toAirDate`.
+ */
+export function parseAirDate(input?: string | null): string | null {
   const trimmed = input?.trim() ?? "";
+  if (!trimmed) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const parsed = trimmed ? new Date(trimmed) : now;
-  const date = Number.isNaN(parsed.getTime()) ? now : parsed;
-  return formatAirDate(date);
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return formatAirDate(parsed);
+}
+
+export function toAirDate(input?: string | null, now: Date = new Date()): string {
+  return parseAirDate(input) ?? formatAirDate(now);
 }
 
 function formatAirDate(date: Date): string {
@@ -47,15 +57,6 @@ function formatAirDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function wpAuthorizationHeader(): string {
-  return (
-    "Basic " +
-    Buffer.from(
-      `${process.env.WP_APP_USER ?? ""}:${process.env.WP_APP_PASSWORD ?? ""}`
-    ).toString("base64")
-  );
-}
-
 /** WP_API_URL is the wp/v2 base; this endpoint lives on the swm/v1 namespace. */
 function swmApiBase(): string | null {
   const apiUrl = process.env.WP_API_URL?.trim();
@@ -63,21 +64,39 @@ function swmApiBase(): string | null {
   return apiUrl.replace(/\/wp\/v2\/?$/, "");
 }
 
-function parseCandidate(value: unknown): LiveStreamCandidate | null {
+function parseCandidateId(value: unknown): number | null {
+  const raw =
+    typeof value === "number" && Number.isFinite(value)
+      ? String(value)
+      : typeof value === "string"
+        ? value.trim()
+        : "";
+  if (!/^\d+$/.test(raw)) return null;
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return id;
+}
+
+function parseCandidate(
+  value: unknown,
+  requestedDate: string
+): LiveStreamCandidate | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
-  const id =
-    typeof raw.id === "number"
-      ? raw.id
-      : typeof raw.id === "string"
-        ? Number(raw.id)
-        : NaN;
-  if (!Number.isInteger(id) || id <= 0) return null;
+  const id = parseCandidateId(raw.id);
+  if (id == null) return null;
+
+  const requestedDay = parseAirDate(requestedDate);
+  const candidateDay =
+    typeof raw.date === "string" ? parseAirDate(raw.date) : null;
+  if (!requestedDay || !candidateDay || candidateDay !== requestedDay) return null;
+
+  const youtubeId = typeof raw.youtube_id === "string" ? raw.youtube_id.trim() : "";
   return {
     id,
     title: typeof raw.title === "string" ? raw.title : "",
-    youtube_id: typeof raw.youtube_id === "string" ? raw.youtube_id : "",
-    date: typeof raw.date === "string" ? raw.date : "",
+    youtube_id: youtubeId,
+    date: candidateDay,
   };
 }
 
@@ -122,7 +141,7 @@ export async function findLiveStreamCandidate(
     const candidate = (body as { candidate?: unknown }).candidate;
     if (candidate == null) return null;
 
-    const parsed = parseCandidate(candidate);
+    const parsed = parseCandidate(candidate, airDate);
     if (!parsed) {
       console.warn(
         "[wordpress] Live-candidate response had an unusable candidate; publishing without supersede."

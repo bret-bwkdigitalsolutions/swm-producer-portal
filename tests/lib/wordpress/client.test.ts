@@ -18,6 +18,9 @@ import {
   getTaxonomyTerms,
   uploadMedia,
   createPost,
+  findEpisodeCreatedForShow,
+  selectCreatedEpisode,
+  wpAuthorizationHeader,
 } from "@/lib/wordpress/client";
 import { WpApiError } from "@/lib/wordpress/types";
 
@@ -118,6 +121,70 @@ describe("WordPress client", () => {
     expect(callBody.meta._swm_poster_url).toBe(
       "https://example.com/poster.jpg"
     );
+  });
+
+  it("findEpisodeCreatedForShow prefers the new post over the live post it replaces", async () => {
+    const live = {
+      id: 55,
+      title: { rendered: "Friday Night Live" },
+      link: "https://example.com/live",
+      slug: "friday-night-live",
+      meta: { parent_show_id: 22 },
+    };
+    const created = {
+      id: 901,
+      title: { rendered: "Friday Night Live" },
+      link: "https://example.com/episode/friday-night-live-2",
+      slug: "friday-night-live-2",
+      meta: { parent_show_id: "22" },
+    };
+    mockFetch.mockImplementation(async (url: string) => ({
+      ok: true,
+      json: async () => (String(url).includes("slug=") ? [live] : [live, created]),
+    }));
+
+    const found = await findEpisodeCreatedForShow(22, "Friday Night Live", {
+      excludeIds: [55],
+    });
+
+    expect(found).toEqual({
+      id: 901,
+      link: "https://example.com/episode/friday-night-live-2",
+    });
+    const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("slug=friday-night-live"))).toBe(true);
+    expect(urls.some((url) => url.includes("search=Friday%20Night%20Live"))).toBe(true);
+    expect(urls.every((url) => url.includes("meta_value=22"))).toBe(true);
+    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe(
+      wpAuthorizationHeader()
+    );
+  });
+
+  it("selectCreatedEpisode ignores another show and an excluded live post", () => {
+    const posts = [
+      {
+        id: 55,
+        title: { rendered: "Friday Night Live" },
+        link: "https://example.com/live",
+        slug: "friday-night-live",
+        meta: { parent_show_id: 22 },
+      },
+      {
+        id: 70,
+        title: { rendered: "Friday Night Live" },
+        link: "https://example.com/other-show",
+        slug: "friday-night-live",
+        meta: { parent_show_id: 8 },
+      },
+    ];
+
+    expect(
+      selectCreatedEpisode(posts, 22, "Friday Night Live", [55])
+    ).toBeNull();
+    expect(selectCreatedEpisode(posts, 22, "Friday Night Live")).toEqual({
+      id: 55,
+      link: "https://example.com/live",
+    });
   });
 
   it("uploadMedia sends file as FormData", async () => {

@@ -323,6 +323,7 @@ describe("processJob", () => {
       expect.objectContaining({
         wpShowId: 42,
         airDate: "2026-05-21T03:30:00.000Z",
+        liveRecordingYoutubeId: "liveVid1234",
       })
     );
     expect(mockLiveRecordingFindUnique).toHaveBeenCalledWith(
@@ -347,6 +348,132 @@ describe("processJob", () => {
         details: "Replaces live stream post #55",
       }),
     });
+  });
+
+  function archivedLiveJob(metadata: Record<string, unknown> = {}) {
+    return makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        existingYoutubeUrl: "https://www.youtube.com/watch?v=liveVid1234",
+        scheduleMode: "now",
+        scheduledAt: "2026-06-01T19:00:00-05:00",
+        ...metadata,
+      },
+      gcsPath: "uploads/2026/03/audio.mp3",
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "liveVid1234",
+          externalUrl: "https://www.youtube.com/watch?v=liveVid1234",
+        },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+  }
+
+  it("does not pass a show-date guess when no live recording matches", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue(null);
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: null,
+    });
+
+    await processJob("job-1");
+
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "publish",
+        airDate: undefined,
+        liveRecordingYoutubeId: undefined,
+      })
+    );
+    expect(mockActivityLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("ignores a live recording that belongs to a different show", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 99,
+      actualStartedAt: new Date("2026-05-20T19:00:00Z"),
+      scheduledStartAt: new Date("2026-05-20T19:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: null,
+    });
+
+    await processJob("job-1");
+
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        airDate: undefined,
+        liveRecordingYoutubeId: undefined,
+      })
+    );
+  });
+
+  it("still completes WordPress when saving the supersede link fails", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: 55,
+    });
+    mockQueryRaw.mockRejectedValueOnce(new Error("metadata lock failed"));
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      "[processor] Could not record superseded live post:",
+      expect.any(Error)
+    );
+    expect(mockActivityLogCreate).toHaveBeenCalled();
+  });
+
+  it("still completes WordPress when the activity log write fails", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: 55,
+    });
+    mockActivityLogCreate.mockRejectedValueOnce(new Error("activity log down"));
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ supersedesLivePostId: 55 }),
+        }),
+      })
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      "[processor] Could not log live-stream replacement:",
+      expect.any(Error)
+    );
   });
 
   it("sends error notification when any platform fails", async () => {

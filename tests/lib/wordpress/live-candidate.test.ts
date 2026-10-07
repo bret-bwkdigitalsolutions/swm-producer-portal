@@ -8,6 +8,7 @@ process.env.WP_API_URL = "https://example.com/wp-json/wp/v2";
 process.env.WP_APP_USER = "testuser";
 process.env.WP_APP_PASSWORD = "testpass";
 
+import { wpAuthorizationHeader } from "@/lib/wordpress/client";
 import {
   findLiveStreamCandidate,
   toAirDate,
@@ -42,6 +43,13 @@ describe("toAirDate", () => {
     // 03:30 UTC is still the previous evening in Central (CDT, UTC-5).
     expect(toAirDate("2026-05-21T03:30:00Z")).toBe("2026-05-20");
     expect(toAirDate("2026-05-20T19:00:00-05:00")).toBe("2026-05-20");
+  });
+
+  it("uses Central Standard Time in winter", () => {
+    // 05:30 UTC is 11:30pm CST (UTC-6) the previous evening.
+    expect(toAirDate("2026-01-15T05:30:00Z")).toBe("2026-01-14");
+    // 06:00 UTC is midnight CST, the 15th.
+    expect(toAirDate("2026-01-15T06:00:00Z")).toBe("2026-01-15");
   });
 
   it("uses today in America/Chicago when no date is provided", () => {
@@ -86,6 +94,11 @@ describe("findLiveStreamCandidate", () => {
         headers: { Authorization: AUTH },
       })
     );
+    expect((init as RequestInit).headers).toEqual({
+      Authorization: wpAuthorizationHeader(),
+    });
+    expect(AbortSignal.timeout).toBeDefined();
+    expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
   });
 
   it("returns null when the website reports no candidate", async () => {
@@ -147,6 +160,104 @@ describe("findLiveStreamCandidate", () => {
     await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toBeNull();
     expect(mockFetch).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalled();
+  });
+
+  it("fails open when the lookup times out", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    mockFetch.mockRejectedValueOnce(
+      new DOMException("The operation was aborted due to timeout", "TimeoutError")
+    );
+
+    await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toBeNull();
+    expect(timeout).toHaveBeenCalledWith(15_000);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("timeout")
+    );
+  });
+
+  it("rejects id 0, negatives, and ids that are not plain digits", async () => {
+    for (const id of [0, -3, "0", "-5", "12abc", 12.5, "08.5"]) {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidate: {
+            id,
+            title: "Live",
+            youtube_id: "vid",
+            date: "2026-05-20",
+          },
+        }),
+      });
+      await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toBeNull();
+    }
+  });
+
+  it("rejects a candidate whose date is a different America/Chicago day", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidate: {
+          id: 55,
+          title: "Live",
+          youtube_id: "vid",
+          date: "2026-05-21",
+        },
+      }),
+    });
+
+    await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toBeNull();
+  });
+
+  it("accepts a winter timestamp that falls on the requested Chicago day", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidate: {
+          id: 55,
+          title: "Live",
+          youtube_id: "vid",
+          date: "2026-01-15T05:30:00Z",
+        },
+      }),
+    });
+
+    await expect(findLiveStreamCandidate(21, "2026-01-14")).resolves.toMatchObject({
+      id: 55,
+      date: "2026-01-14",
+    });
+  });
+
+  it("returns an empty youtube id when the field is missing", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidate: { id: 55, title: "Live", date: "2026-05-20" },
+      }),
+    });
+
+    await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toMatchObject({
+      id: 55,
+      youtube_id: "",
+    });
+  });
+
+  it("fails open when the body is not JSON", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON at position 0");
+      },
+    });
+
+    await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toBeNull();
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Unexpected token")
+    );
   });
 
   it("fails open when the body is not the expected shape", async () => {

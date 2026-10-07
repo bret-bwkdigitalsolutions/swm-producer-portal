@@ -900,7 +900,7 @@ async function processJobInner(
           : "publish";
 
       const audioDuration = updatedMetadata.audioDuration;
-      const recordingAirDate = await lookupLiveRecordingAirDate(
+      const liveRecording = await lookupLiveRecordingAirDate(
         youtubeUrl,
         job.wpShowId
       );
@@ -917,7 +917,8 @@ async function processJobInner(
         transcriptVtt: (updatedMetadata.transcriptVtt as string) || undefined,
         status: wpStatus,
         scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
-        airDate: recordingAirDate ?? scheduledAt,
+        airDate: liveRecording?.airDate,
+        liveRecordingYoutubeId: liveRecording?.youtubeVideoId,
         portalUserId: job.userId,
         isPremiumOnly: isPremium,
       });
@@ -1057,13 +1058,14 @@ async function processJobInner(
 
 /**
  * Air date for a distribution that reuses an existing YouTube live URL.
- * Prefers the broadcast's actual start, then the scheduled start, so the
- * website dedup lookup matches the live-stream post from that day.
+ * Returns a match only when this show has a live recording for that video.
+ * Prefers the broadcast's actual start, then the scheduled start. Callers
+ * must not invent a show+date guess when this is undefined.
  */
 async function lookupLiveRecordingAirDate(
   youtubeUrl: string,
   wpShowId: number
-): Promise<string | undefined> {
+): Promise<{ airDate: string; youtubeVideoId: string } | undefined> {
   const videoId = extractYoutubeVideoId(youtubeUrl);
   if (!videoId) return undefined;
   try {
@@ -1077,10 +1079,10 @@ async function lookupLiveRecordingAirDate(
     });
     if (!recording || recording.wpShowId !== wpShowId) return undefined;
     const stamp = recording.actualStartedAt ?? recording.scheduledStartAt;
-    return stamp.toISOString();
+    return { airDate: stamp.toISOString(), youtubeVideoId: videoId };
   } catch (error) {
     console.warn(
-      "[processor] Live recording air-date lookup failed; using publish date:",
+      "[processor] Live recording air-date lookup failed; publishing without supersede:",
       error
     );
     return undefined;
