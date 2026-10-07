@@ -59,6 +59,12 @@ export interface WordPressPublishResult {
   postUrl: string;
   /** WordPress post id of the live-stream episode this post replaces. */
   supersedesLivePostId: number | null;
+  /**
+   * True when `_swm_supersedes` was sent and the 201 body did not echo it.
+   * The website drops invalid supersede meta and still returns 201. The post
+   * stands; do not retry.
+   */
+  supersedeDropped: boolean;
 }
 
 /**
@@ -198,10 +204,19 @@ export async function publishToWordPress(
   try {
     const post = await createPost(ContentType.EPISODE, payload);
     console.log(`[wordpress] Episode post created: ${post.link}`);
+    const supersedeDropped = supersede
+      ? !responseKeptSupersede(post.meta, supersede.id)
+      : false;
+    if (supersedeDropped && supersede) {
+      console.warn(
+        `[wordpress] Create response omitted _swm_supersedes for live post #${supersede.id}; not retrying.`
+      );
+    }
     return {
       postId: post.id,
       postUrl: post.link,
       supersedesLivePostId: supersede?.id ?? null,
+      supersedeDropped,
     };
   } catch (error) {
     const recovered = await recoverCreatedEpisode(error, {
@@ -219,8 +234,27 @@ export async function publishToWordPress(
       postId: recovered.id,
       postUrl: recovered.link,
       supersedesLivePostId: supersede?.id ?? null,
+      supersedeDropped: false,
     };
   }
+}
+
+/**
+ * The website accepts the episode (201) and silently drops supersede meta it
+ * does not consider valid. Kept only when the response echoes the id we sent.
+ */
+function responseKeptSupersede(
+  meta: Record<string, unknown> | undefined,
+  sentId: number
+): boolean {
+  if (!meta) return false;
+  let raw: unknown = meta._swm_supersedes;
+  if (Array.isArray(raw)) raw = raw.length === 1 ? raw[0] : undefined;
+  if (typeof raw === "number") return raw === sentId;
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    return Number(raw.trim()) === sentId;
+  }
+  return false;
 }
 
 /**

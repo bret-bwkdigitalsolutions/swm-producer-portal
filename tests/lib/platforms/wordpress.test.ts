@@ -46,6 +46,7 @@ beforeEach(() => {
   mockCreatePost.mockResolvedValue({
     id: 900,
     link: "https://example.com/episode/friday",
+    meta: { _swm_supersedes: 55 },
   });
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -104,6 +105,7 @@ describe("publishToWordPress live-stream dedup", () => {
       postId: 900,
       postUrl: "https://example.com/episode/friday",
       supersedesLivePostId: 55,
+      supersedeDropped: false,
     });
     expect(console.log).toHaveBeenCalledWith(
       "[wordpress] Replaces live stream post #55"
@@ -128,6 +130,7 @@ describe("publishToWordPress live-stream dedup", () => {
     expect(createdMeta()).not.toHaveProperty("_swm_supersedes");
     expect(createdMeta()).not.toHaveProperty("_swm_live_youtube_id");
     expect(result.supersedesLivePostId).toBeNull();
+    expect(result.supersedeDropped).toBe(false);
   });
 
   it("sends nothing when the candidate youtube id is a different video", async () => {
@@ -245,6 +248,7 @@ describe("publishToWordPress live-stream dedup", () => {
         postId: 901,
         postUrl: "https://example.com/episode/friday-night-live",
         supersedesLivePostId: 55,
+        supersedeDropped: false,
       });
     }
 
@@ -270,6 +274,58 @@ describe("publishToWordPress live-stream dedup", () => {
     await expect(
       publishToWordPress({ ...baseParams, ...matchedRecording })
     ).rejects.toBe(failure);
+  });
+
+  it("flags a 201 that omitted _swm_supersedes and does not retry", async () => {
+    mockFindLiveStreamCandidate.mockResolvedValue({
+      id: 55,
+      title: "Friday Live",
+      youtube_id: "liveVid1234",
+      date: "2026-05-20",
+    });
+    mockCreatePost.mockResolvedValue({
+      id: 900,
+      link: "https://example.com/episode/friday",
+      meta: { youtube_video_id: "abc123xyz09" },
+    });
+
+    const result = await publishToWordPress({
+      ...baseParams,
+      ...matchedRecording,
+    });
+
+    expect(mockCreatePost).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: 55,
+      supersedeDropped: true,
+    });
+    expect(console.warn).toHaveBeenCalledWith(
+      "[wordpress] Create response omitted _swm_supersedes for live post #55; not retrying."
+    );
+  });
+
+  it("treats a string echo of _swm_supersedes as kept", async () => {
+    mockFindLiveStreamCandidate.mockResolvedValue({
+      id: 55,
+      title: "Friday Live",
+      youtube_id: "liveVid1234",
+      date: "2026-05-20",
+    });
+    mockCreatePost.mockResolvedValue({
+      id: 900,
+      link: "https://example.com/episode/friday",
+      meta: { _swm_supersedes: "55" },
+    });
+
+    const result = await publishToWordPress({
+      ...baseParams,
+      ...matchedRecording,
+    });
+
+    expect(result.supersedeDropped).toBe(false);
+    expect(mockCreatePost).toHaveBeenCalledTimes(1);
   });
 
   it("does not look up an existing post for unrelated create errors", async () => {

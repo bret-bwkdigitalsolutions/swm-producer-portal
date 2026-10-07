@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { readSupersedesLivePostId } from "@/lib/live-stream-note";
+import {
+  readSupersedeDropped,
+  readSupersedesLivePostId,
+} from "@/lib/live-stream-note";
 
 export async function GET(
   _request: NextRequest,
@@ -51,11 +54,13 @@ export async function GET(
   const supersedesLivePostId = readSupersedesLivePostId(
     meta.supersedesLivePostId
   );
+  const supersedeDropped = readSupersedeDropped(meta.supersedeDropped);
 
   return NextResponse.json({
     status: job.status,
     verifications,
     supersedesLivePostId,
+    supersedeDropped,
     platforms: job.platforms.map((p) => ({
       id: p.id,
       platform: p.platform,

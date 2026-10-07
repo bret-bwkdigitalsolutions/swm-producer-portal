@@ -45,6 +45,25 @@ describe("JobDetailView live-stream replacement", () => {
     expect(screen.getAllByText("Replaces live stream post #55")).toHaveLength(2);
   });
 
+  it("says the replacement was dropped instead of claiming it stuck", () => {
+    render(
+      <JobDetailView
+        job={{
+          ...job,
+          metadata: {
+            description: "Archived cut.",
+            supersedesLivePostId: 55,
+            supersedeDropped: true,
+          },
+        }}
+      />
+    );
+    expect(
+      screen.getAllByText("WordPress did not keep the live-stream replacement.")
+    ).toHaveLength(2);
+    expect(screen.queryByText("Replaces live stream post #55")).not.toBeInTheDocument();
+  });
+
   it("omits the note when no live post was superseded", () => {
     render(
       <JobDetailView

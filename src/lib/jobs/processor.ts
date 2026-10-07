@@ -927,7 +927,21 @@ async function processJobInner(
         await applyTransistorWebsiteLinks(result.postUrl);
       }
 
-      if (result.supersedesLivePostId) {
+      if (result.supersedeDropped) {
+        // The episode exists. WordPress accepted the create and discarded
+        // the supersede meta. Record that and do not retry.
+        await mergeJobMetadata(job.id, {
+          supersedeDropped: true,
+          ...(result.supersedesLivePostId
+            ? { supersedesLivePostId: result.supersedesLivePostId }
+            : {}),
+        }).catch((error) => {
+          console.error(
+            "[processor] Could not record dropped supersede meta:",
+            error
+          );
+        });
+      } else if (result.supersedesLivePostId) {
         const note = liveStreamReplacementNote(result.supersedesLivePostId);
         // The WordPress post already exists. A failure to record the link
         // locally must not mark the platform failed — a retry would create

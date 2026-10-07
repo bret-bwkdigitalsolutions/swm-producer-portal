@@ -476,6 +476,39 @@ describe("processJob", () => {
     );
   });
 
+  it("records a dropped supersede without retrying WordPress", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: 55,
+      supersedeDropped: true,
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(mockPublishToWordPress).toHaveBeenCalledTimes(1);
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            supersedeDropped: true,
+            supersedesLivePostId: 55,
+          }),
+        }),
+      })
+    );
+    expect(mockActivityLogCreate).not.toHaveBeenCalled();
+  });
+
   it("sends error notification when any platform fails", async () => {
     const job = makeJob({
       platforms: [

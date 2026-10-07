@@ -8,6 +8,11 @@ export function liveStreamReplacementNote(postId: number): string {
   return `Replaces live stream post #${postId}`;
 }
 
+/** True when job metadata records that WordPress dropped `_swm_supersedes`. */
+export function readSupersedeDropped(value: unknown): boolean {
+  return value === true;
+}
+
 /** Read `distributionJob.metadata.supersedesLivePostId` (number or numeric string). */
 export function readSupersedesLivePostId(value: unknown): number | null {
   const id =

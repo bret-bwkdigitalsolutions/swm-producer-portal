@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import {
   liveStreamReplacementNote,
+  readSupersedeDropped,
   readSupersedesLivePostId,
 } from "@/lib/live-stream-note";
 import {
@@ -277,6 +278,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const [supersedesLivePostId, setSupersedesLivePostId] = useState<number | null>(
     readSupersedesLivePostId(job.metadata.supersedesLivePostId)
   );
+  const [supersedeDropped, setSupersedeDropped] = useState(
+    readSupersedeDropped(job.metadata.supersedeDropped)
+  );
 
   const isTerminal = TERMINAL_STATUSES.includes(liveStatus);
   // Verification fires up to 30 min after distribution completes, so keep
@@ -297,6 +301,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         setSupersedesLivePostId(
           readSupersedesLivePostId(data.supersedesLivePostId)
         );
+      }
+      if ("supersedeDropped" in data) {
+        setSupersedeDropped(readSupersedeDropped(data.supersedeDropped));
       }
     } catch {
       // Silently ignore — next poll will retry
@@ -440,14 +447,21 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
               </p>
             </div>
           )}
-          {supersedesLivePostId != null && (
+          {supersedeDropped ? (
+            <div>
+              <p className="font-medium text-muted-foreground">Live stream</p>
+              <p className="mt-1">
+                WordPress did not keep the live-stream replacement.
+              </p>
+            </div>
+          ) : supersedesLivePostId != null ? (
             <div>
               <p className="font-medium text-muted-foreground">Live stream</p>
               <p className="mt-1">
                 {liveStreamReplacementNote(supersedesLivePostId)}
               </p>
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
@@ -462,9 +476,12 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
               key={platform.id}
               platform={platform}
               note={
-                platform.platform === "website" && supersedesLivePostId != null
-                  ? liveStreamReplacementNote(supersedesLivePostId)
-                  : null
+                platform.platform === "website" && supersedeDropped
+                  ? "WordPress did not keep the live-stream replacement."
+                  : platform.platform === "website" &&
+                      supersedesLivePostId != null
+                    ? liveStreamReplacementNote(supersedesLivePostId)
+                    : null
               }
             />
           ))}
