@@ -141,6 +141,41 @@ describe("submitDistribution", () => {
     expect(result.errors?.video_file).toBeDefined();
   });
 
+  it("stores a parsed live stream video id and allows a blank URL", async () => {
+    const withLive = makeFormData({
+      ...BASE_FIELDS,
+      video_file_name: "episode.mp4",
+      live_stream_url: "https://www.youtube.com/live/sLB7STNGACI",
+    });
+    const saved = await submitDistribution({}, withLive);
+    expect(saved.success).toBe(true);
+    expect(mockCreate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBe(
+      "sLB7STNGACI"
+    );
+
+    mockCreate.mockClear();
+    const blank = makeFormData({
+      ...BASE_FIELDS,
+      video_file_name: "episode.mp4",
+      live_stream_url: "   ",
+    });
+    const empty = await submitDistribution({}, blank);
+    expect(empty.success).toBe(true);
+    expect(mockCreate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBeUndefined();
+  });
+
+  it("returns a form error for an invalid live stream URL", async () => {
+    const fd = makeFormData({
+      ...BASE_FIELDS,
+      video_file_name: "episode.mp4",
+      live_stream_url: "https://vimeo.com/123456789",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(false);
+    expect(result.errors?.live_stream_url?.[0]).toMatch(/YouTube URL/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("accepts a placeholder title for AI path (description not required)", async () => {
     const fd = makeFormData({
       show_id: "42",
@@ -202,6 +237,23 @@ describe("updateDistribution", () => {
     expect(result.success).toBe(true);
     const updateCall = mockJobUpdate.mock.calls[0][0];
     expect(updateCall.data.metadata.explicit).toBe(true);
+  });
+
+  it("replaces a stored live video id from the review form", async () => {
+    mockJobFindUnique.mockResolvedValue({
+      id: "job-1",
+      userId: "user-1",
+      metadata: { description: "old desc", liveYoutubeVideoId: "oldVideo111" },
+    });
+    const result = await updateDistribution("job-1", {
+      description: "Some description",
+      platforms: ["youtube"],
+      liveStreamUrl: "https://youtu.be/sLB7STNGACI",
+    });
+    expect(result.success).toBe(true);
+    expect(mockJobUpdate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBe(
+      "sLB7STNGACI"
+    );
   });
 
   it("preserves existing metadata fields not being updated", async () => {

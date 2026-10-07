@@ -111,6 +111,7 @@ export function DistributionForm({
   const thumbnailUploadedNameRef = useRef<string | null>(null);
   const [videoSource, setVideoSource] = useState<"upload" | "youtube" | "vimeo">("upload");
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
+  const [liveStreamUrl, setLiveStreamUrl] = useState("");
   const [youtubeThumbUrl, setYoutubeThumbUrl] = useState<string | null>(null);
   const [vimeoUrlInput, setVimeoUrlInput] = useState("");
 
@@ -340,6 +341,9 @@ export function DistributionForm({
       } else {
         fd.set("existing_youtube_url", youtubeUrlInput);
       }
+      if (liveStreamUrl.trim()) {
+        fd.set("live_stream_url", liveStreamUrl.trim());
+      }
 
       const result = await submitDistribution({}, fd);
       if (!result.success || !result.jobId) {
@@ -520,6 +524,7 @@ export function DistributionForm({
     videoFileSize,
     videoContentType,
     youtubeUrlInput,
+    liveStreamUrl,
     vimeoUrlInput,
     publishState.status,
     uploadVideoToGCS,
@@ -613,6 +618,8 @@ export function DistributionForm({
       const explicitChecked = fd.get("explicit") === "true";
 
       // Update job with final description, chapters, platforms
+      const liveStreamUrlRaw = (fd.get("live_stream_url") as string | null) ?? "";
+
       const updateResult = await updateDistribution(aiUploadedJobId, {
         title: title.trim(),
         description: description.trim(),
@@ -627,6 +634,7 @@ export function DistributionForm({
         episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
         explicit: explicitChecked,
         isPremium,
+        liveStreamUrl: liveStreamUrlRaw,
       });
 
       if (!updateResult.success) {
@@ -1138,6 +1146,24 @@ export function DistributionForm({
           {videoSource === "vimeo" && isValidVimeoUrl(vimeoUrlInput) && (
             <input type="hidden" name="existing_vimeo_url" value={vimeoUrlInput} />
           )}
+
+          <div className="space-y-2">
+            <Label htmlFor="live_stream_url">
+              Live stream URL (if this episode was streamed live first)
+            </Label>
+            <Input
+              id="live_stream_url"
+              name="live_stream_url"
+              type="url"
+              placeholder="https://www.youtube.com/live/..."
+              value={liveStreamUrl}
+              onChange={(e) => setLiveStreamUrl(e.target.value)}
+              disabled={isDisabled}
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste the YouTube URL of the live stream when this cut was streamed live first. Leave blank if it was not.
+            </p>
+          </div>
 
           {/* Thumbnail upload + YouTube preview */}
           {videoSourceReady && (

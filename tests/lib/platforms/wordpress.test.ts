@@ -140,6 +140,59 @@ describe("publishToWordPress live-stream dedup", () => {
     expect(result.supersedesLivePostId).toBeNull();
   });
 
+  it("sends supersede meta when an entered live id matches and the published video is different", async () => {
+    mockFindLiveStreamCandidate.mockResolvedValue({
+      id: 4234,
+      title: "Rusty Greer live",
+      youtube_id: "sLB7STNGACI",
+      date: "2026-05-20",
+    });
+
+    mockCreatePost.mockResolvedValue({
+      id: 900,
+      link: "https://example.com/episode/friday",
+      meta: { _swm_supersedes: 4234 },
+    });
+
+    const result = await publishToWordPress({
+      ...baseParams,
+      youtubeUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+      airDate: "2026-10-07",
+      liveRecordingYoutubeId: "sLB7STNGACI",
+    });
+
+    expect(mockFindLiveStreamCandidate).toHaveBeenCalledWith(22, "2026-10-07");
+    expect(createdMeta()).toMatchObject({
+      _swm_supersedes: 4234,
+      _swm_live_youtube_id: "sLB7STNGACI",
+      youtube_video_id: "CrP0kNuyT_Y",
+    });
+    expect(result.supersedesLivePostId).toBe(4234);
+    expect(result.supersedeDropped).toBe(false);
+  });
+
+  it("does not send supersede meta when the entered live id does not match the candidate", async () => {
+    mockFindLiveStreamCandidate.mockResolvedValue({
+      id: 4234,
+      title: "Rusty Greer live",
+      youtube_id: "sLB7STNGACI",
+      date: "2026-05-20",
+    });
+
+    const result = await publishToWordPress({
+      ...baseParams,
+      youtubeUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+      airDate: "2026-10-07",
+      liveRecordingYoutubeId: "otherLive11",
+    });
+
+    expect(createdMeta()).not.toHaveProperty("_swm_supersedes");
+    expect(createdMeta()).not.toHaveProperty("_swm_live_youtube_id");
+    expect(createdMeta().youtube_video_id).toBe("CrP0kNuyT_Y");
+    expect(result.supersedesLivePostId).toBeNull();
+    expect(result.supersedeDropped).toBe(false);
+  });
+
   it("leaves _swm_live_youtube_id off when the candidate youtube id is missing", async () => {
     mockFindLiveStreamCandidate.mockResolvedValue({
       id: 55,

@@ -55,6 +55,7 @@ export async function submitDistribution(
   const videoContentType = formData.get("video_content_type") as string | null;
   const existingYoutubeUrl = formData.get("existing_youtube_url") as string | null;
   const existingVimeoUrl = formData.get("existing_vimeo_url") as string | null;
+  const liveStreamUrl = formData.get("live_stream_url") as string | null;
   const seasonNumber = formData.get("season_number") as string | null;
   const episodeNumber = formData.get("episode_number") as string | null;
   const explicit = formData.get("explicit") === "true";
@@ -108,6 +109,8 @@ export async function submitDistribution(
     }
   }
 
+  const liveYoutubeVideoId = parsedLiveYoutubeVideoId(liveStreamUrl, errors);
+
   if (Object.keys(errors).length > 0) {
     return {
       success: false,
@@ -144,6 +147,7 @@ export async function submitDistribution(
     isPremium,
     ...(existingYoutubeUrl ? { existingYoutubeUrl } : {}),
     ...(existingVimeoUrl ? { existingVimeoUrl } : {}),
+    ...(liveYoutubeVideoId ? { liveYoutubeVideoId } : {}),
   };
 
   // Verify user has access to this show
@@ -227,6 +231,8 @@ export async function updateDistribution(
     episodeNumber?: number;
     explicit?: boolean;
     isPremium?: boolean;
+    /** Current live-stream URL from the form. Omit to leave a stored id alone. */
+    liveStreamUrl?: string;
   }
 ): Promise<FormState> {
   const session = await auth();
@@ -248,6 +254,18 @@ export async function updateDistribution(
   }
 
   const existingMetadata = job.metadata as Record<string, unknown>;
+  const liveErrors: Record<string, string[]> = {};
+  const liveYoutubeVideoId =
+    data.liveStreamUrl !== undefined
+      ? parsedLiveYoutubeVideoId(data.liveStreamUrl, liveErrors)
+      : undefined;
+  if (liveErrors.live_stream_url) {
+    return {
+      success: false,
+      message: "Please fix the errors below.",
+      errors: liveErrors,
+    };
+  }
 
   await db.$transaction(async (tx) => {
     // Update job metadata with final description, chapters, tags, and optional fields
@@ -278,6 +296,11 @@ export async function updateDistribution(
             : {}),
           ...(data.explicit !== undefined ? { explicit: data.explicit } : {}),
           isPremium,
+          ...(data.liveStreamUrl !== undefined
+            ? liveYoutubeVideoId
+              ? { liveYoutubeVideoId }
+              : { liveYoutubeVideoId: null }
+            : {}),
         },
       },
     });
@@ -302,6 +325,27 @@ export async function updateDistribution(
   });
 
   return { success: true, jobId };
+}
+
+/**
+ * Parse an optional live-stream URL into a YouTube video id.
+ * Blank is allowed. A non-empty value that is not a YouTube video URL
+ * records `errors.live_stream_url` and returns undefined.
+ */
+function parsedLiveYoutubeVideoId(
+  raw: string | null | undefined,
+  errors: Record<string, string[]>
+): string | undefined {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) return undefined;
+  const id = extractYoutubeVideoId(trimmed);
+  if (!id) {
+    errors.live_stream_url = [
+      "Enter a valid YouTube URL (for example https://www.youtube.com/live/VIDEO_ID), or leave this blank.",
+    ];
+    return undefined;
+  }
+  return id;
 }
 
 /**

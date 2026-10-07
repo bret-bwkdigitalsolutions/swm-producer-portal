@@ -35,15 +35,18 @@ export interface WordPressPublishParams {
   status: "publish" | "draft" | "future";
   scheduledDate?: string; // ISO date for future posts
   /**
-   * Air time of a portal live recording this upload is archiving.
-   * Ignored unless `liveRecordingYoutubeId` is also set. Never inferred from
-   * the show and the publish date.
+   * Day sent as `date` on the dedup lookup. An ISO timestamp is converted to
+   * the America/Chicago calendar day. When the producer entered a live-stream
+   * URL and the portal has no LiveRecording for that video, this is the
+   * publish day. The website contract requires `date`. A publish-day query
+   * can miss a live post from another day.
    */
   airDate?: string;
   /**
-   * YouTube video id from `lookupLiveRecordingAirDate` when that lookup
-   * matched a live recording for this show. Supersede meta is sent only when
-   * status is "publish" and the website candidate's youtube_id equals this.
+   * YouTube video id that must equal `candidate.youtube_id` before supersede
+   * meta is sent. This is job metadata `liveYoutubeVideoId` when the producer
+   * entered a live-stream URL, otherwise the published video's LiveRecording
+   * id. Status must be "publish".
    */
   liveRecordingYoutubeId?: string;
   portalUserId: string;
@@ -93,8 +96,8 @@ export async function publishToWordPress(
     portalUserId,
   } = params;
 
-  // Supersede meta is only for a published archive of a known live recording.
-  // A show + date guess (scheduled publish, or "today") must not retire a
+  // Supersede meta is only for a published episode whose live video id
+  // matches the website candidate. A show and date alone must not retire a
   // different episode. Drafts and future posts omit the meta entirely.
   const matchedYoutubeId = liveRecordingYoutubeId?.trim() ?? "";
   const lookupDate = airDate ? parseAirDate(airDate) : null;

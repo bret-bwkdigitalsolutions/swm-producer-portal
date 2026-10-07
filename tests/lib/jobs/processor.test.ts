@@ -126,6 +126,7 @@ vi.mock("@/lib/jobs/ai-processor", () => ({
 // ---------------------------------------------------------------------------
 
 import { processJob } from "@/lib/jobs/processor";
+import { toAirDate } from "@/lib/wordpress/live-candidate";
 import { downloadFullVideoToGcs } from "@/lib/jobs/video-downloader";
 
 // ---------------------------------------------------------------------------
@@ -393,6 +394,98 @@ describe("processJob", () => {
       })
     );
     expect(mockActivityLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("uses an entered live video id when the published video is a different cut", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-07T18:00:00Z"));
+    try {
+      const job = archivedLiveJob({
+        existingYoutubeUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+        liveYoutubeVideoId: "sLB7STNGACI",
+      });
+      job.platforms = job.platforms.map((platform) =>
+        platform.platform === "youtube"
+          ? {
+              ...platform,
+              externalId: "CrP0kNuyT_Y",
+              externalUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+            }
+          : platform
+      );
+      mockFindUnique.mockResolvedValue(job);
+      mockLiveRecordingFindUnique.mockImplementation(
+        async (args: { where: { youtubeVideoId: string } }) => {
+          if (args.where.youtubeVideoId === "CrP0kNuyT_Y") {
+            return {
+              wpShowId: 42,
+              actualStartedAt: new Date("2026-01-01T18:00:00Z"),
+              scheduledStartAt: new Date("2026-01-01T18:00:00Z"),
+            };
+          }
+          return null;
+        }
+      );
+      mockPublishToWordPress.mockResolvedValue({
+        postId: 900,
+        postUrl: "https://example.com/episode/friday",
+        supersedesLivePostId: 4234,
+        supersedeDropped: false,
+      });
+
+      await processJob("job-1");
+
+      expect(mockPublishToWordPress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          youtubeUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+          liveRecordingYoutubeId: "sLB7STNGACI",
+          airDate: toAirDate(),
+        })
+      );
+      const lookedUp = mockLiveRecordingFindUnique.mock.calls.map(
+        (call) =>
+          (call[0] as { where: { youtubeVideoId: string } }).where.youtubeVideoId
+      );
+      expect(lookedUp).toEqual(["sLB7STNGACI"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses the entered live recording's air date when that broadcast is in the portal", async () => {
+    const job = archivedLiveJob({
+      existingYoutubeUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+      liveYoutubeVideoId: "sLB7STNGACI",
+    });
+    job.platforms = job.platforms.map((platform) =>
+      platform.platform === "youtube"
+        ? {
+            ...platform,
+            externalId: "CrP0kNuyT_Y",
+            externalUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+          }
+        : platform
+    );
+    mockFindUnique.mockResolvedValue(job);
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: null,
+    });
+
+    await processJob("job-1");
+
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        liveRecordingYoutubeId: "sLB7STNGACI",
+        airDate: "2026-05-21T03:30:00.000Z",
+      })
+    );
   });
 
   it("ignores a live recording that belongs to a different show", async () => {

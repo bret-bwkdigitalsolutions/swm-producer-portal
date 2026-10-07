@@ -13,6 +13,7 @@ import { mergeJobMetadata } from "./job-metadata";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { gcsObjectExists, generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { toAirDate } from "@/lib/wordpress/live-candidate";
 import { downloadVideoToGcs, downloadFullVideoToGcs } from "./video-downloader";
 import { downloadGcsObjectToFile } from "./gcs-download";
 import { bucketHint, locateProducerVideo } from "./gcs-location";
@@ -900,10 +901,22 @@ async function processJobInner(
           : "publish";
 
       const audioDuration = updatedMetadata.audioDuration;
-      const liveRecording = await lookupLiveRecordingAirDate(
-        youtubeUrl,
-        job.wpShowId
-      );
+      const enteredLiveId =
+        typeof updatedMetadata.liveYoutubeVideoId === "string"
+          ? updatedMetadata.liveYoutubeVideoId.trim()
+          : "";
+      // An entered live URL replaces the published-video LiveRecording match.
+      // Its video id is what must equal candidate.youtube_id. The dedup
+      // endpoint still requires a date: the portal row for that live video
+      // when one exists, otherwise the Chicago publish day. That day can
+      // miss a broadcast from another date. Do not guess the latest stream.
+      const liveRecording = enteredLiveId
+        ? undefined
+        : await lookupLiveRecordingAirDate(youtubeUrl, job.wpShowId);
+      const enteredLiveAirDate = enteredLiveId
+        ? (await liveRecordingAirDateForVideo(enteredLiveId, job.wpShowId)) ??
+          toAirDate()
+        : undefined;
       const result = await publishToWordPress({
         wpShowId: job.wpShowId,
         title: job.title,
@@ -917,8 +930,10 @@ async function processJobInner(
         transcriptVtt: (updatedMetadata.transcriptVtt as string) || undefined,
         status: wpStatus,
         scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
-        airDate: liveRecording?.airDate,
-        liveRecordingYoutubeId: liveRecording?.youtubeVideoId,
+        airDate: enteredLiveId ? enteredLiveAirDate : liveRecording?.airDate,
+        liveRecordingYoutubeId: enteredLiveId
+          ? enteredLiveId
+          : liveRecording?.youtubeVideoId,
         portalUserId: job.userId,
         isPremiumOnly: isPremium,
       });
@@ -1069,10 +1084,11 @@ async function processJobInner(
 }
 
 /**
- * Air date for a distribution that reuses an existing YouTube live URL.
- * Returns a match only when this show has a live recording for that video.
- * Prefers the broadcast's actual start, then the scheduled start. Callers
- * must not invent a show+date guess when this is undefined.
+ * Air date for a distribution whose published YouTube video is itself a
+ * portal live recording. Returns a match only when this show has a row for
+ * that video. Prefers the broadcast's actual start, then the scheduled
+ * start. Callers must not invent a show+date guess when this is undefined.
+ * Skipped when the producer entered a separate live-stream URL.
  */
 async function lookupLiveRecordingAirDate(
   youtubeUrl: string,
@@ -1080,6 +1096,16 @@ async function lookupLiveRecordingAirDate(
 ): Promise<{ airDate: string; youtubeVideoId: string } | undefined> {
   const videoId = extractYoutubeVideoId(youtubeUrl);
   if (!videoId) return undefined;
+  const airDate = await liveRecordingAirDateForVideo(videoId, wpShowId);
+  if (!airDate) return undefined;
+  return { airDate, youtubeVideoId: videoId };
+}
+
+/** Air time of this show's LiveRecording for an exact video id, if one exists. */
+async function liveRecordingAirDateForVideo(
+  videoId: string,
+  wpShowId: number
+): Promise<string | undefined> {
   try {
     const recording = await db.liveRecording.findUnique({
       where: { youtubeVideoId: videoId },
@@ -1091,12 +1117,9 @@ async function lookupLiveRecordingAirDate(
     });
     if (!recording || recording.wpShowId !== wpShowId) return undefined;
     const stamp = recording.actualStartedAt ?? recording.scheduledStartAt;
-    return { airDate: stamp.toISOString(), youtubeVideoId: videoId };
+    return stamp.toISOString();
   } catch (error) {
-    console.warn(
-      "[processor] Live recording air-date lookup failed; publishing without supersede:",
-      error
-    );
+    console.warn("[processor] Live recording air-date lookup failed:", error);
     return undefined;
   }
 }

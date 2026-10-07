@@ -108,6 +108,12 @@ export async function findLiveStreamCandidate(
   }
 
   const url = new URL(`${base}/swm/v1/dedup/live-candidate`);
+  // Website PR #30 documents `show_id` and `date` only. Production currently
+  // returns 404 for this route, and that PR is not readable from here, so
+  // `youtube_id` is not sent. publishToWordPress compares
+  // candidate.youtube_id locally. A website-side youtube_id filter is a
+  // follow-up once the endpoint accepts it. `date` stays required by the
+  // documented contract; a missing-date response was not observable.
   url.searchParams.set("show_id", String(wpShowId));
   url.searchParams.set("date", airDate);
 
