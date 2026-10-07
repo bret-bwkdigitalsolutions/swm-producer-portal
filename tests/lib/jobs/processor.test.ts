@@ -189,6 +189,7 @@ describe("processJob", () => {
     mockQueryRaw.mockResolvedValue([{ metadata: {} }]);
     delete process.env.GCS_FUSE_MOUNTS;
     delete process.env.GCS_UPLOAD_BUCKET_NAME;
+    delete process.env.GCS_BUCKET_NAME;
     delete process.env.VIDEO_WORKER;
 
     // Suppress console output during tests
@@ -415,6 +416,175 @@ describe("processJob", () => {
       expect.objectContaining({ gcsAudioPath: "uploads/2026/03/video.mp3" })
     );
     expect(leftoverVideoDirs()).toEqual([]);
+  });
+
+  it("finds a stored mp3 on the regional bucket and does not use the video bucket", async () => {
+    process.env.GCS_BUCKET_NAME = "legacy-bucket";
+    process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+        gcsBucket: "legacy-bucket",
+      },
+      platforms: [
+        { id: "plat-yt", platform: "youtube" },
+        { id: "plat-tr", platform: "transistor" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockGcsObjectExists.mockImplementation(
+      async (_path: string, bucket?: string) => bucket === "regional-bucket"
+    );
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-1",
+      episodeUrl: "https://transistor.fm/ep-1",
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("completed");
+    expect(mockGcsObjectExists).toHaveBeenCalledWith(
+      "uploads/2026/03/video.mp3",
+      "regional-bucket"
+    );
+    expect(mockGcsObjectExists).not.toHaveBeenCalledWith(
+      "uploads/2026/03/video.mp3",
+      "legacy-bucket"
+    );
+    expect(mockExtractAudio).not.toHaveBeenCalled();
+  });
+
+  it("reuses a pre-cutover mp3 that exists only on the legacy bucket", async () => {
+    process.env.GCS_BUCKET_NAME = "legacy-bucket";
+    process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+        gcsBucket: "legacy-bucket",
+      },
+      platforms: [
+        { id: "plat-yt", platform: "youtube" },
+        { id: "plat-tr", platform: "transistor" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockGcsObjectExists.mockImplementation(
+      async (_path: string, bucket?: string) => bucket === "legacy-bucket"
+    );
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-1",
+      episodeUrl: "https://transistor.fm/ep-1",
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("completed");
+    expect(mockGcsObjectExists).toHaveBeenNthCalledWith(
+      1,
+      "uploads/2026/03/video.mp3",
+      "regional-bucket"
+    );
+    expect(mockGcsObjectExists).toHaveBeenNthCalledWith(
+      2,
+      "uploads/2026/03/video.mp3",
+      "legacy-bucket"
+    );
+    expect(mockExtractAudio).not.toHaveBeenCalled();
+  });
+
+  it("trusts metadata.gcsAudioBucket and does not look in the video bucket", async () => {
+    process.env.GCS_BUCKET_NAME = "legacy-bucket";
+    process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+        gcsAudioBucket: "regional-bucket",
+        gcsBucket: "legacy-bucket",
+      },
+      platforms: [
+        { id: "plat-yt", platform: "youtube" },
+        { id: "plat-tr", platform: "transistor" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-1",
+      episodeUrl: "https://transistor.fm/ep-1",
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("completed");
+    expect(mockGcsObjectExists).toHaveBeenCalledTimes(1);
+    expect(mockGcsObjectExists).toHaveBeenCalledWith(
+      "uploads/2026/03/video.mp3",
+      "regional-bucket"
+    );
+    expect(mockExtractAudio).not.toHaveBeenCalled();
+  });
+
+  it("records the regional bucket next to a newly extracted mp3", async () => {
+    process.env.GCS_BUCKET_NAME = "legacy-bucket";
+    process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+    const job = makeJob({
+      metadata: { description: "A test episode", gcsBucket: "legacy-bucket" },
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "yt-abc",
+          externalUrl: "https://youtube.com/watch?v=yt-abc",
+        },
+        { id: "plat-tr", platform: "transistor", status: "failed" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-1",
+      episodeUrl: "https://transistor.fm/ep-1",
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "transistor")?.status).toBe(
+      "completed"
+    );
+    expect(mockExtractAudio).toHaveBeenCalledWith("uploads/2026/03/video.mp4", {
+      bucket: "legacy-bucket",
+    });
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            gcsAudioPath: "uploads/2026/03/video.mp3",
+            gcsAudioBucket: "regional-bucket",
+          }),
+        }),
+      })
+    );
   });
 
   it("does not read the video when a retry only needs Transistor and audio is already extracted", async () => {

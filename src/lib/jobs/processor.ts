@@ -14,7 +14,12 @@ import { gcsObjectExists, generateSignedDownloadUrl, uploadBuffer } from "@/lib/
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { downloadVideoToGcs, downloadFullVideoToGcs } from "./video-downloader";
 import { downloadGcsObjectToFile } from "./gcs-download";
-import { bucketHint, locateProducerVideo } from "./gcs-location";
+import {
+  audioBucketHint,
+  bucketHint,
+  locateProducerVideo,
+  recordedDerivedBucket,
+} from "./gcs-location";
 import { formatDuration, jobTimeoutMs } from "./processing-runtime";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp, rm } from "node:fs/promises";
@@ -32,6 +37,27 @@ export interface ProcessingResult {
     status: "completed" | "failed";
     error?: string;
   }[];
+}
+
+/**
+ * The stored mp3 is not in the video's bucket. A recorded audio bucket wins.
+ * Otherwise, when a regional bucket is configured, look there first and then
+ * on the legacy bucket so an mp3 written before this change is still reused.
+ * With a single bucket, this stays a one-argument exists check.
+ */
+async function extractedAudioExists(
+  objectPath: string,
+  metadata: Record<string, unknown>
+): Promise<boolean> {
+  const hinted = audioBucketHint(metadata);
+  if (hinted) return gcsObjectExists(objectPath, hinted);
+  const upload = process.env.GCS_UPLOAD_BUCKET_NAME?.trim();
+  const legacy = process.env.GCS_BUCKET_NAME?.trim();
+  if (upload && legacy && upload !== legacy) {
+    if (await gcsObjectExists(objectPath, upload)) return true;
+    return gcsObjectExists(objectPath, legacy);
+  }
+  return gcsObjectExists(objectPath);
 }
 
 /**
@@ -218,9 +244,7 @@ async function processJobInner(
       );
     } else {
       try {
-        const audioExists = located.bucket
-          ? await gcsObjectExists(storedAudioPath, located.bucket)
-          : await gcsObjectExists(storedAudioPath);
+        const audioExists = await extractedAudioExists(storedAudioPath, metadata);
         if (audioExists) {
           gcsAudioPath = storedAudioPath;
           console.log(
@@ -326,7 +350,12 @@ async function processJobInner(
         gcsAudioPath = await extractAudio(effectiveGcsPath);
       }
       // Record the mp3 so a retry can upload it without reading the video again.
-      await mergeJobMetadata(job.id, { gcsAudioPath }).catch((error) => {
+      // The audio bucket is the regional upload bucket, not the video's bucket.
+      const recordedAudioBucket = recordedDerivedBucket();
+      await mergeJobMetadata(job.id, {
+        gcsAudioPath,
+        ...(recordedAudioBucket ? { gcsAudioBucket: recordedAudioBucket } : {}),
+      }).catch((error) => {
         console.error("[processor] Could not record extracted audio path:", error);
       });
     } catch (error) {
@@ -639,18 +668,11 @@ async function processJobInner(
 
       if (thumbResponse.ok) {
         const buffer = Buffer.from(await thumbResponse.arrayBuffer());
-        const gcsPath = located.bucket
-          ? await uploadBuffer(
-              `yt-thumb-${youtubeVideoId}.jpg`,
-              buffer,
-              "image/jpeg",
-              located.bucket
-            )
-          : await uploadBuffer(
-              `yt-thumb-${youtubeVideoId}.jpg`,
-              buffer,
-              "image/jpeg"
-            );
+        const gcsPath = await uploadBuffer(
+          `yt-thumb-${youtubeVideoId}.jpg`,
+          buffer,
+          "image/jpeg"
+        );
 
         updatedMetadata.thumbnailGcsPath = gcsPath;
 

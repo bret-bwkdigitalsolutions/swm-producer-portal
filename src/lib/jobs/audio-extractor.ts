@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStorageClient } from "@/lib/gcs";
 import { downloadGcsObjectToFile } from "./gcs-download";
-import { existingFuseFile, resolveObjectBucket } from "./gcs-location";
+import { derivedOutputBucket, existingFuseFile, resolveObjectBucket } from "./gcs-location";
 import { mediaToolTimeoutMs } from "./processing-runtime";
 
 const execFileAsync = promisify(execFile);
@@ -23,7 +23,10 @@ export interface ExtractAudioOptions {
    * fails.
    */
   localVideoPath?: string;
-  /** Bucket that holds the video. The mp3 is written back to the same bucket. */
+  /**
+   * Bucket that holds the source video. The mp3 is not written here: it
+   * goes to the regional upload bucket (see derivedOutputBucket).
+   */
   bucket?: string;
 }
 
@@ -31,8 +34,8 @@ export interface ExtractAudioOptions {
  * Extract audio track from a video stored in GCS.
  *
  * Downloads the video to a temp file (unless `localVideoPath` is provided),
- * runs ffmpeg to extract audio as mp3, uploads the mp3 back to GCS, and
- * cleans up temp files.
+ * runs ffmpeg to extract audio as mp3, uploads the mp3 to the regional
+ * upload bucket, and cleans up temp files.
  *
  * @param gcsVideoPath - GCS path of the source video file
  * @returns GCS path of the extracted audio file
@@ -42,12 +45,13 @@ export async function extractAudio(
   options?: ExtractAudioOptions
 ): Promise<string> {
   const tempDir = await mkdtemp(join(tmpdir(), "swm-audio-"));
-  const bucket =
+  const sourceBucket =
     options?.bucket?.trim() ||
     (await resolveObjectBucket(gcsVideoPath));
+  const outputBucket = derivedOutputBucket();
   let borrowedVideo = options?.localVideoPath;
   if (!borrowedVideo) {
-    const mounted = existingFuseFile(bucket, gcsVideoPath);
+    const mounted = existingFuseFile(sourceBucket, gcsVideoPath);
     if (mounted) {
       borrowedVideo = mounted;
       console.log(`[audio-extractor] Reading video from GCS FUSE mount: ${mounted}`);
@@ -61,7 +65,7 @@ export async function extractAudio(
     if (!borrowedVideo) {
       // Download video from GCS
       console.log(`[audio-extractor] Downloading video from GCS: ${gcsVideoPath}`);
-      await downloadGcsObjectToFile(gcsVideoPath, tempVideoPath, { bucket });
+      await downloadGcsObjectToFile(gcsVideoPath, tempVideoPath, { bucket: sourceBucket });
     } else if (options?.localVideoPath) {
       console.log(
         `[audio-extractor] Extracting audio from local file (no GCS download): ${borrowedVideo}`
@@ -80,11 +84,14 @@ export async function extractAudio(
       tempAudioPath,
     ], { timeout: mediaToolTimeoutMs() });
 
-    // Upload audio to GCS (same bucket as the source video).
-    console.log(`[audio-extractor] Uploading audio to GCS: ${gcsAudioPath} (${bucket})`);
+    // The source video may live on the legacy bucket, which this worker can
+    // only read. Derived bytes always go to the regional upload bucket.
+    console.log(
+      `[audio-extractor] Uploading audio to GCS: ${gcsAudioPath} (${outputBucket})`
+    );
     const storage = createStorageClient();
 
-    await storage.bucket(bucket).upload(tempAudioPath, {
+    await storage.bucket(outputBucket).upload(tempAudioPath, {
       destination: gcsAudioPath,
       metadata: { contentType: "audio/mpeg" },
     });

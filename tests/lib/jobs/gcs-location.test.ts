@@ -74,17 +74,27 @@ describe("locateProducerVideo", () => {
     expect(mockExists).not.toHaveBeenCalled();
   });
 
-  it("checks the legacy bucket before the regional bucket", async () => {
+  it("checks the regional bucket before the legacy bucket", async () => {
     process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
     mockExists.mockImplementation(async (_path: string, bucket: string) => bucket === "legacy-bucket");
     await expect(resolveObjectBucket("uploads/old.mp4")).resolves.toBe("legacy-bucket");
-    expect(mockExists).toHaveBeenCalledWith("uploads/old.mp4", "legacy-bucket");
-    expect(mockExists).not.toHaveBeenCalledWith("uploads/old.mp4", "regional-bucket");
+    expect(mockExists).toHaveBeenNthCalledWith(1, "uploads/old.mp4", "regional-bucket");
+    expect(mockExists).toHaveBeenNthCalledWith(2, "uploads/old.mp4", "legacy-bucket");
   });
 
-  it("uses the regional bucket when the legacy object is gone", async () => {
+  it("uses the regional bucket when the object is there and does not check legacy", async () => {
     process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
     mockExists.mockImplementation(async (_path: string, bucket: string) => bucket === "regional-bucket");
     await expect(resolveObjectBucket("uploads/new.mp4")).resolves.toBe("regional-bucket");
+    expect(mockExists).toHaveBeenCalledWith("uploads/new.mp4", "regional-bucket");
+    expect(mockExists).not.toHaveBeenCalledWith("uploads/new.mp4", "legacy-bucket");
+  });
+
+  it("prefers the regional copy when the object exists in both buckets", async () => {
+    process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+    mockExists.mockResolvedValue(true);
+    await expect(resolveObjectBucket("uploads/both.mp3")).resolves.toBe("regional-bucket");
+    expect(mockExists).toHaveBeenCalledTimes(1);
+    expect(mockExists).toHaveBeenCalledWith("uploads/both.mp3", "regional-bucket");
   });
 });

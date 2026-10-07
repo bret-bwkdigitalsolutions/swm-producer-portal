@@ -232,7 +232,10 @@ export async function deleteJob(jobId: string): Promise<FormState> {
 
     const audioPath = metadata.gcsAudioPath as string | undefined;
     if (audioPath) {
-      await deleteFile(audioPath, bucket).catch((e) =>
+      // Do not pass the video bucket. The mp3 is on the regional bucket
+      // (and an older copy may still be on the legacy bucket). With no
+      // hint, deleteFile removes the key from both.
+      await deleteFile(audioPath).catch((e) =>
         console.error("[deleteJob] Failed to delete audio from GCS:", e)
       );
     }

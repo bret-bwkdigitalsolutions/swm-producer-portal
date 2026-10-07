@@ -93,10 +93,12 @@ export async function POST(request: NextRequest) {
       typeof meta.gcsBucket === "string" && meta.gcsBucket.trim()
         ? meta.gcsBucket.trim()
         : undefined;
+    // Thumbnails are derived files. They go to the regional upload bucket
+    // even when the source video is pinned to the legacy bucket.
     const { uploadUrl, gcsPath, bucketName } = await generateSignedUploadUrl(
       filename,
       contentType,
-      { resumable: !isThumbnail, bucket: pinned }
+      isThumbnail ? { resumable: false } : { resumable: true, bucket: pinned }
     );
 
     if (isThumbnail) {
