@@ -38,8 +38,9 @@ export interface WordPressPublishParams {
    * Day sent as `date` on the dedup lookup. An ISO timestamp is converted to
    * the America/Chicago calendar day. When the producer entered a live-stream
    * URL and the portal has no LiveRecording for that video, this is the
-   * publish day. The website contract requires `date`. A publish-day query
-   * can miss a live post from another day.
+   * publish day. Older website code ignores `youtube_id` and filters by this
+   * day, so a publish-day query often misses a live from another day. The
+   * website follow-up ignores `date` when `youtube_id` is present.
    */
   airDate?: string;
   /**
@@ -104,7 +105,7 @@ export async function publishToWordPress(
   const canSupersede =
     status === "publish" && matchedYoutubeId.length > 0 && lookupDate != null;
   const liveCandidatePromise = canSupersede
-    ? findLiveStreamCandidate(wpShowId, lookupDate).catch((error) => {
+    ? findLiveStreamCandidate(wpShowId, lookupDate, matchedYoutubeId).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.warn(
           `[wordpress] Live-candidate lookup failed (${message}); publishing without supersede.`

@@ -101,6 +101,47 @@ describe("findLiveStreamCandidate", () => {
     expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("sends youtube_id with show id and date when the live video is known", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidate: {
+          id: 4234,
+          title: "Rusty Greer live",
+          youtube_id: "sLB7STNGACI",
+          date: "2026-05-20",
+        },
+      }),
+    });
+
+    const candidate = await findLiveStreamCandidate(
+      22,
+      "2026-10-07",
+      "sLB7STNGACI"
+    );
+
+    expect(candidate).toMatchObject({ id: 4234, youtube_id: "sLB7STNGACI" });
+    const calledUrl = mockFetch.mock.calls[0][0] as URL;
+    expect(calledUrl.href).toBe(
+      "https://example.com/wp-json/swm/v1/dedup/live-candidate?show_id=22&date=2026-10-07&youtube_id=sLB7STNGACI"
+    );
+  });
+
+  it("omits a blank youtube_id so the request stays show id and date", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ candidate: null }),
+    });
+
+    await findLiveStreamCandidate(22, "2026-10-07", "  ");
+
+    const calledUrl = mockFetch.mock.calls[0][0] as URL;
+    expect(calledUrl.searchParams.has("youtube_id")).toBe(false);
+    expect(calledUrl.searchParams.get("date")).toBe("2026-10-07");
+  });
+
   it("returns null when the website reports no candidate", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

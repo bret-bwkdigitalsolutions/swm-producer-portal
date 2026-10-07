@@ -4,11 +4,16 @@ import { wpAuthorizationHeader } from "@/lib/wordpress/client";
 /**
  * Look up a live-stream `swm_episode` that a newly published episode should
  * replace. Contract from the website dedup endpoint:
- *   GET {WP}/wp-json/swm/v1/dedup/live-candidate?show_id=&date=
+ *   GET {WP}/wp-json/swm/v1/dedup/live-candidate?show_id=&date=&youtube_id=
  *   → { candidate: { id, title, youtube_id, date } | null }
  *
- * Fail open: a 404 (endpoint not deployed yet) or any other error is logged
- * and treated as "no candidate" so publishing continues.
+ * `youtube_id` is optional. When it is set, the website follow-up to PR #30
+ * returns the same-show live candidate with that video id and ignores
+ * `date`. Older website code ignores unknown params and still filters by
+ * `date`, so callers keep sending a date. The route is live on production
+ * and returns 401 without auth. Any error fails open so publishing
+ * continues. Callers still require `candidate.youtube_id` to equal the id
+ * they asked for.
  */
 
 const AIR_TIME_ZONE = "America/Chicago";
@@ -97,7 +102,8 @@ function parseCandidate(value: unknown): LiveStreamCandidate | null {
 
 export async function findLiveStreamCandidate(
   wpShowId: number,
-  airDate: string
+  airDate: string,
+  youtubeId?: string
 ): Promise<LiveStreamCandidate | null> {
   const base = swmApiBase();
   if (!base) {
@@ -108,14 +114,14 @@ export async function findLiveStreamCandidate(
   }
 
   const url = new URL(`${base}/swm/v1/dedup/live-candidate`);
-  // Website PR #30 documents `show_id` and `date` only. Production currently
-  // returns 404 for this route, and that PR is not readable from here, so
-  // `youtube_id` is not sent. publishToWordPress compares
-  // candidate.youtube_id locally. A website-side youtube_id filter is a
-  // follow-up once the endpoint accepts it. `date` stays required by the
-  // documented contract; a missing-date response was not observable.
+  // Always send date. Older website code ignores youtube_id and filters by
+  // this day. The follow-up ignores date when youtube_id is present.
   url.searchParams.set("show_id", String(wpShowId));
   url.searchParams.set("date", airDate);
+  const liveVideoId = youtubeId?.trim() ?? "";
+  if (liveVideoId) {
+    url.searchParams.set("youtube_id", liveVideoId);
+  }
 
   try {
     const response = await fetch(url, {

@@ -76,7 +76,11 @@ describe("publishToWordPress live-stream dedup", () => {
       ...matchedRecording,
     });
 
-    expect(mockFindLiveStreamCandidate).toHaveBeenCalledWith(22, "2026-05-20");
+    expect(mockFindLiveStreamCandidate).toHaveBeenCalledWith(
+      22,
+      "2026-05-20",
+      "liveVid1234"
+    );
     expect(mockCreatePost).toHaveBeenCalledWith(
       ContentType.EPISODE,
       expect.objectContaining({
@@ -161,7 +165,11 @@ describe("publishToWordPress live-stream dedup", () => {
       liveRecordingYoutubeId: "sLB7STNGACI",
     });
 
-    expect(mockFindLiveStreamCandidate).toHaveBeenCalledWith(22, "2026-10-07");
+    expect(mockFindLiveStreamCandidate).toHaveBeenCalledWith(
+      22,
+      "2026-10-07",
+      "sLB7STNGACI"
+    );
     expect(createdMeta()).toMatchObject({
       _swm_supersedes: 4234,
       _swm_live_youtube_id: "sLB7STNGACI",
@@ -186,6 +194,11 @@ describe("publishToWordPress live-stream dedup", () => {
       liveRecordingYoutubeId: "otherLive11",
     });
 
+    expect(mockFindLiveStreamCandidate).toHaveBeenCalledWith(
+      22,
+      "2026-10-07",
+      "otherLive11"
+    );
     expect(createdMeta()).not.toHaveProperty("_swm_supersedes");
     expect(createdMeta()).not.toHaveProperty("_swm_live_youtube_id");
     expect(createdMeta().youtube_video_id).toBe("CrP0kNuyT_Y");

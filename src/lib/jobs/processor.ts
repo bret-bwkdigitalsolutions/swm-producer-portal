@@ -906,10 +906,11 @@ async function processJobInner(
           ? updatedMetadata.liveYoutubeVideoId.trim()
           : "";
       // An entered live URL replaces the published-video LiveRecording match.
-      // Its video id is what must equal candidate.youtube_id. The dedup
-      // endpoint still requires a date: the portal row for that live video
-      // when one exists, otherwise the Chicago publish day. That day can
-      // miss a broadcast from another date. Do not guess the latest stream.
+      // That id is sent as youtube_id and must still equal candidate.youtube_id.
+      // Date is the portal row for that live video when one exists, otherwise
+      // the Chicago publish day. Older website code ignores youtube_id and
+      // filters by date, so the publish day often misses a live from another
+      // day. Do not guess the latest stream.
       const liveRecording = enteredLiveId
         ? undefined
         : await lookupLiveRecordingAirDate(youtubeUrl, job.wpShowId);
