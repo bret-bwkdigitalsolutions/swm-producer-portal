@@ -4,10 +4,13 @@ import { join } from "node:path";
 /**
  * Which bucket an object lives in, and whether Cloud Run has it mounted.
  *
- * New uploads go to GCS_UPLOAD_BUCKET_NAME when that is set (the regional
- * bucket). Objects written before the cutover stay in GCS_BUCKET_NAME.
- * gcsPath does not include the bucket, so callers pass metadata.gcsBucket
- * when they have it and otherwise check the legacy bucket first.
+ * New uploads and derived files (mp3s, generated images) go to
+ * GCS_UPLOAD_BUCKET_NAME when that is set (the regional bucket). Source
+ * videos written before the cutover stay in GCS_BUCKET_NAME. gcsPath does
+ * not include the bucket, so callers pass metadata.gcsBucket for a video
+ * when they have it. With no hint, the regional bucket is checked first
+ * and the legacy bucket second, so a new derived file wins over an older
+ * copy and an object that exists only on the legacy bucket is still found.
  *
  * GCS_FUSE_MOUNTS is `bucket=/mount,bucket2=/mount2`. When the object is
  * already on a mount, ffmpeg and the YouTube upload read that path. Cloud
@@ -30,8 +33,36 @@ export function uploadBucketName(): string {
   return process.env.GCS_UPLOAD_BUCKET_NAME?.trim() || legacyBucketName();
 }
 
+/**
+ * Bucket for files the worker creates from a source video (extracted mp3,
+ * YouTube thumbnail fallback, square artwork). Always the regional upload
+ * bucket when one is configured, even when the source video is on the
+ * legacy bucket. The processor account can read the legacy bucket and
+ * cannot write it.
+ */
+export function derivedOutputBucket(): string {
+  return uploadBucketName();
+}
+
+/**
+ * Bucket to store on metadata.gcsAudioBucket. Undefined when neither
+ * GCS_UPLOAD_BUCKET_NAME nor GCS_BUCKET_NAME is set (unit tests).
+ */
+export function recordedDerivedBucket(): string | undefined {
+  const upload = process.env.GCS_UPLOAD_BUCKET_NAME?.trim();
+  if (upload) return upload;
+  const legacy = process.env.GCS_BUCKET_NAME?.trim();
+  return legacy || undefined;
+}
+
 export function bucketHint(metadata: Record<string, unknown> | null | undefined): string | null {
   const hint = metadata?.gcsBucket;
+  return typeof hint === "string" && hint.trim() ? hint.trim() : null;
+}
+
+/** Bucket recorded next to metadata.gcsAudioPath. Independent of the video hint. */
+export function audioBucketHint(metadata: Record<string, unknown> | null | undefined): string | null {
+  const hint = metadata?.gcsAudioBucket;
   return typeof hint === "string" && hint.trim() ? hint.trim() : null;
 }
 
@@ -72,8 +103,9 @@ async function objectExists(objectPath: string, bucket: string): Promise<boolean
 
 /**
  * Resolve the bucket that holds `objectPath`.
- * A stored hint wins. With no second bucket configured, this is the legacy
- * bucket and does not call the API.
+ * A stored hint wins and does not call the API. With no second bucket
+ * configured, this is the legacy bucket and does not call the API.
+ * Otherwise the regional upload bucket is checked first.
  */
 export async function resolveObjectBucket(
   objectPath: string,
@@ -83,8 +115,8 @@ export async function resolveObjectBucket(
   const legacy = legacyBucketName();
   const upload = process.env.GCS_UPLOAD_BUCKET_NAME?.trim();
   if (!upload || upload === legacy) return legacy;
-  if (await objectExists(objectPath, legacy)) return legacy;
   if (await objectExists(objectPath, upload)) return upload;
+  if (await objectExists(objectPath, legacy)) return legacy;
   return legacy;
 }
 
