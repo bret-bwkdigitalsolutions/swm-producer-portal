@@ -75,111 +75,150 @@ async function dailyCapReached(tx: ClaimTx, now: Date): Promise<boolean> {
   return used >= cap;
 }
 
-async function claimUnlocked(
+async function takeAdvisoryLock(tx: ClaimTx): Promise<void> {
+  await tx.$executeRawUnsafe(
+    "SELECT pg_advisory_xact_lock($1::int, $2::int)",
+    LIVE_SCAN_LOCK_CLASS,
+    LIVE_SCAN_LOCK_KEY
+  );
+}
+
+/**
+ * Reset one archived row only when no scan holds an unexpired lease.
+ * The NOT EXISTS check and the write are one statement, so a lease that
+ * appears after a separate read cannot slip through.
+ */
+async function resetForRescan(tx: ClaimTx, id: string, now: Date): Promise<number> {
+  return tx.$executeRawUnsafe(
+    `UPDATE live_recordings
+     SET "transcriptStatus" = 'pending',
+         "transcriptAttempts" = 0,
+         "transcriptNextAttemptAt" = NULL,
+         "transcriptError" = NULL,
+         "transcriptScannedAt" = NULL,
+         "transcriptClaimToken" = NULL,
+         "transcriptNotReadySince" = NULL,
+         "updatedAt" = NOW()
+     WHERE id = $1
+       AND state = 'archived'
+       AND NOT EXISTS (
+         SELECT 1 FROM live_recordings AS busy
+         WHERE busy."transcriptStatus" = 'processing'
+           AND busy."transcriptNextAttemptAt" > $2
+       )`,
+    id,
+    now
+  );
+}
+
+async function claimOn(
+  tx: ClaimTx,
   id: string,
   now: Date,
   options?: { ignoreDailyCap?: boolean }
 ): Promise<ClaimResult> {
-  return db.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      "SELECT pg_advisory_xact_lock($1::int, $2::int)",
-      LIVE_SCAN_LOCK_CLASS,
-      LIVE_SCAN_LOCK_KEY
-    );
+  await takeAdvisoryLock(tx);
 
-    if (await hasUnexpiredLease(tx, now)) {
-      return { claimed: false, token: null, reason: "in_flight" as const };
-    }
+  if (await hasUnexpiredLease(tx, now)) {
+    return { claimed: false, token: null, reason: "in_flight" as const };
+  }
 
-    const existing = await tx.liveRecording.findUnique({
-      where: { id },
-      select: { transcriptVtt: true, transcriptStatus: true },
-    });
-    if (!existing) {
-      return { claimed: false, token: null, reason: "not_eligible" as const };
-    }
+  const existing = await tx.liveRecording.findUnique({
+    where: { id },
+    select: { transcriptVtt: true, transcriptStatus: true },
+  });
+  if (!existing) {
+    return { claimed: false, token: null, reason: "not_eligible" as const };
+  }
 
-    const token = randomUUID();
-    const leased = leaseUntil(now);
+  const token = randomUUID();
+  const leased = leaseUntil(now);
 
-    if (existing.transcriptStatus === "website_not_ready") {
-      const cutoff = new Date(now.getTime() - WEBSITE_NOT_READY_MAX_MS);
-      const result = await tx.liveRecording.updateMany({
-        where: {
-          id,
-          state: "archived",
-          transcriptStatus: "website_not_ready",
-          AND: [
-            dueWindow(now),
-            {
-              OR: [
-                { transcriptNotReadySince: null },
-                { transcriptNotReadySince: { gt: cutoff } },
-              ],
-            },
-          ],
-        },
-        data: {
-          transcriptStatus: "processing",
-          transcriptClaimToken: token,
-          transcriptNextAttemptAt: leased,
-          transcriptError: null,
-        },
-      });
-      if (result.count === 1) {
-        return { claimed: true, token, reason: "claimed" as const };
-      }
-      return { claimed: false, token: null, reason: "not_eligible" as const };
-    }
-
-    const expensive = existing.transcriptVtt == null;
-    if (
-      expensive &&
-      !options?.ignoreDailyCap &&
-      (await dailyCapReached(tx, now))
-    ) {
-      return { claimed: false, token: null, reason: "daily_cap" as const };
-    }
-
+  if (existing.transcriptStatus === "website_not_ready") {
+    const cutoff = new Date(now.getTime() - WEBSITE_NOT_READY_MAX_MS);
     const result = await tx.liveRecording.updateMany({
       where: {
         id,
         state: "archived",
-        transcriptAttempts: { lt: MAX_TRANSCRIPT_ATTEMPTS },
+        transcriptStatus: "website_not_ready",
         AND: [
+          dueWindow(now),
           {
             OR: [
-              { transcriptStatus: "pending" },
-              {
-                transcriptStatus: "failed",
-                transcriptNextAttemptAt: { lte: now },
-              },
-              { transcriptStatus: "processing" },
+              { transcriptNotReadySince: null },
+              { transcriptNotReadySince: { gt: cutoff } },
             ],
           },
-          dueWindow(now),
-          expensive ? { transcriptVtt: null } : { NOT: { transcriptVtt: null } },
         ],
       },
       data: {
         transcriptStatus: "processing",
         transcriptClaimToken: token,
-        transcriptAttempts: { increment: 1 },
         transcriptNextAttemptAt: leased,
         transcriptError: null,
-        ...(expensive ? { transcriptLastClaimedAt: now } : {}),
       },
     });
-    if (result.count !== 1) {
-      return { claimed: false, token: null, reason: "not_eligible" as const };
+    if (result.count === 1) {
+      return { claimed: true, token, reason: "claimed" as const };
     }
-    if (expensive) {
-      await tx.liveScanPaidClaim.create({
-        data: { liveRecordingId: id, claimedAt: now },
-      });
-    }
-    return { claimed: true, token, reason: "claimed" as const };
+    return { claimed: false, token: null, reason: "not_eligible" as const };
+  }
+
+  const expensive = existing.transcriptVtt == null;
+  if (
+    expensive &&
+    !options?.ignoreDailyCap &&
+    (await dailyCapReached(tx, now))
+  ) {
+    return { claimed: false, token: null, reason: "daily_cap" as const };
+  }
+
+  const result = await tx.liveRecording.updateMany({
+    where: {
+      id,
+      state: "archived",
+      transcriptAttempts: { lt: MAX_TRANSCRIPT_ATTEMPTS },
+      AND: [
+        {
+          OR: [
+            { transcriptStatus: "pending" },
+            {
+              transcriptStatus: "failed",
+              transcriptNextAttemptAt: { lte: now },
+            },
+            { transcriptStatus: "processing" },
+          ],
+        },
+        dueWindow(now),
+        expensive ? { transcriptVtt: null } : { NOT: { transcriptVtt: null } },
+      ],
+    },
+    data: {
+      transcriptStatus: "processing",
+      transcriptClaimToken: token,
+      transcriptAttempts: { increment: 1 },
+      transcriptNextAttemptAt: leased,
+      transcriptError: null,
+      ...(expensive ? { transcriptLastClaimedAt: now } : {}),
+    },
   });
+  if (result.count !== 1) {
+    return { claimed: false, token: null, reason: "not_eligible" as const };
+  }
+  if (expensive) {
+    await tx.liveScanPaidClaim.create({
+      data: { liveRecordingId: id, claimedAt: now },
+    });
+  }
+  return { claimed: true, token, reason: "claimed" as const };
+}
+
+async function claimUnlocked(
+  id: string,
+  now: Date,
+  options?: { ignoreDailyCap?: boolean }
+): Promise<ClaimResult> {
+  return db.$transaction((tx) => claimOn(tx, id, now, options));
 }
 
 /**
@@ -199,8 +238,14 @@ export function claimLiveTranscription(
   return withClaimLock(() => claimUnlocked(id, now, options));
 }
 
-function enqueue(id: string, token: string): void {
-  enqueueJob(`live-transcript:${id}`, () => runLiveTranscription(id, token));
+function enqueue(
+  id: string,
+  token: string,
+  options?: { adminRescan?: boolean }
+): void {
+  enqueueJob(`live-transcript:${id}`, () =>
+    runLiveTranscription(id, token, options)
+  );
 }
 
 async function expireWebsiteNotReady(now: Date): Promise<void> {
@@ -312,42 +357,29 @@ export async function requestLiveRescan(
       };
     }
     const now = new Date();
-    if (
-      row.transcriptStatus === "processing" &&
-      row.transcriptNextAttemptAt &&
-      row.transcriptNextAttemptAt.getTime() > now.getTime()
-    ) {
-      return { ok: false, message: "A scan is already running." };
-    }
-    if (await hasUnexpiredLease(db, now)) {
-      return { ok: false, message: "A scan is already running." };
-    }
+    return db.$transaction(async (tx) => {
+      await takeAdvisoryLock(tx);
+      const reset = await resetForRescan(tx, id, now);
+      if (reset !== 1) {
+        if (await hasUnexpiredLease(tx, now)) {
+          return { ok: false, message: "A scan is already running." };
+        }
+        return { ok: false, message: "Could not queue a re-scan." };
+      }
 
-    await db.liveRecording.update({
-      where: { id },
-      data: {
-        transcriptStatus: "pending",
-        transcriptAttempts: 0,
-        transcriptNextAttemptAt: null,
-        transcriptError: null,
-        transcriptScannedAt: null,
-        transcriptClaimToken: null,
-        transcriptNotReadySince: null,
-      },
+      const claim = await claimOn(tx, id, now, { ignoreDailyCap: true });
+      if (claim.claimed && claim.token) {
+        enqueue(id, claim.token, { adminRescan: true });
+        return {
+          ok: true,
+          message:
+            "Re-scan queued. The saved transcript is reused when one exists.",
+        };
+      }
+      if (claim.reason === "in_flight") {
+        return { ok: false, message: "A scan is already running." };
+      }
+      return { ok: false, message: "Could not queue a re-scan." };
     });
-
-    const claim = await claimUnlocked(id, now, { ignoreDailyCap: true });
-    if (claim.claimed && claim.token) {
-      enqueue(id, claim.token);
-      return {
-        ok: true,
-        message:
-          "Re-scan queued. The saved transcript is reused when one exists.",
-      };
-    }
-    if (claim.reason === "in_flight") {
-      return { ok: false, message: "A scan is already running." };
-    }
-    return { ok: false, message: "Could not queue a re-scan." };
   });
 }

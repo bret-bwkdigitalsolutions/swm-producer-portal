@@ -35,7 +35,6 @@ function runDetachedYtDlp(
     const pid = child.pid;
     let stderr = "";
     let settled = false;
-    let timer: ReturnType<typeof setTimeout>;
 
     const killGroup = () => {
       if (pid == null) {
@@ -67,7 +66,7 @@ function runDetachedYtDlp(
       finish(new Error("yt-dlp aborted"));
     };
 
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       killGroup();
       finish(
         new Error(

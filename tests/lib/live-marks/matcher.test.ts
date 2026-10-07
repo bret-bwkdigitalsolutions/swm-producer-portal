@@ -36,6 +36,10 @@ describe("utteranceCue", () => {
     expect(utteranceCue("Mark said that")).toBeNull();
   });
 
+  it("rejects Marky before an otherwise valid cue", () => {
+    expect(utteranceCue("Marky Mark that.")).toBeNull();
+  });
+
   it("matches a cue sentence that is followed by another sentence", () => {
     expect(utteranceCue("Okay. Mark that. We'll come back.")).toBe("Mark that");
   });

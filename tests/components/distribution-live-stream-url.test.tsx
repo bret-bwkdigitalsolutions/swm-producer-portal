@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { configure, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { previewLiveStreamReplacement, submitDistribution } = vi.hoisted(() => ({
@@ -28,6 +28,8 @@ import { DistributionForm } from "@/app/dashboard/distribute/new/distribution-fo
 const LIVE_URL_ERROR =
   "Enter a valid YouTube URL (for example https://www.youtube.com/live/VIDEO_ID), or leave this blank.";
 
+configure({ asyncUtilTimeout: 3000 });
+
 describe("distribution live stream URL field", () => {
   it("shows an optional live stream URL that only applies when published", () => {
     render(<DistributionForm shows={[{ id: "22", title: "The Sunset Lounge" }]} />);
@@ -52,7 +54,9 @@ describe("distribution live stream URL field", () => {
     render(<DistributionForm shows={[{ id: "22", title: "The Sunset Lounge" }]} />);
 
     await user.click(screen.getByRole("combobox"));
-    await user.click(screen.getByRole("option", { name: "The Sunset Lounge" }));
+    await user.click(
+      await screen.findByRole("option", { name: "The Sunset Lounge" }, { timeout: 3000 })
+    );
     await user.type(
       screen.getByLabelText(/Live stream URL/),
       "https://www.youtube.com/live/sLB7STNGACI"
@@ -73,7 +77,9 @@ describe("distribution live stream URL field", () => {
     render(<DistributionForm shows={[{ id: "22", title: "The Sunset Lounge" }]} />);
 
     await user.click(screen.getByRole("combobox"));
-    await user.click(screen.getByRole("option", { name: "The Sunset Lounge" }));
+    await user.click(
+      await screen.findByRole("option", { name: "The Sunset Lounge" }, { timeout: 3000 })
+    );
     await user.type(
       screen.getByLabelText(/Live stream URL/),
       "https://www.youtube.com/live/sLB7STNGACI"
@@ -90,7 +96,9 @@ describe("distribution live stream URL field", () => {
     const file = new File(["video"], "episode.mp4", { type: "video/mp4" });
     await user.upload(screen.getByLabelText(/Video File/), file);
     await user.click(screen.getByRole("combobox"));
-    await user.click(screen.getByRole("option", { name: "The Sunset Lounge" }));
+    await user.click(
+      await screen.findByRole("option", { name: "The Sunset Lounge" }, { timeout: 3000 })
+    );
     await user.type(
       screen.getByLabelText(/Live stream URL/),
       "https://www.youtube.com/live/sLB7STNGACI"

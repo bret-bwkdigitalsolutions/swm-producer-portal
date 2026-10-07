@@ -46,8 +46,14 @@ vi.mock("@/lib/live-marks/worker", () => ({
   runLiveTranscription: vi.fn(),
 }));
 
-import { claimLiveTranscription, queueDueLiveTranscriptions } from "@/lib/live-marks/queue";
+import { enqueueJob } from "@/lib/jobs/job-queue";
+import {
+  claimLiveTranscription,
+  queueDueLiveTranscriptions,
+  requestLiveRescan,
+} from "@/lib/live-marks/queue";
 import { writeOwnedScan } from "@/lib/live-marks/lease";
+import { runLiveTranscription } from "@/lib/live-marks/worker";
 
 const now = new Date("2026-10-07T18:00:00.000Z");
 
@@ -254,6 +260,59 @@ describe("queueDueLiveTranscriptions", () => {
         ],
       })
     );
+  });
+
+  it("resets inside the advisory lock only when no lease is held", async () => {
+    executeRawUnsafe.mockImplementation(async (sql: string) =>
+      String(sql).includes("UPDATE live_recordings") ? 1 : 0
+    );
+    findUnique.mockResolvedValue({
+      id: "rec-1",
+      state: "archived",
+      transcriptVtt: "WEBVTT",
+      transcriptStatus: "completed",
+    });
+
+    const result = await requestLiveRescan("rec-1");
+
+    expect(result.ok).toBe(true);
+    const sqls = executeRawUnsafe.mock.calls.map((call) => String(call[0]));
+    expect(sqls[0]).toContain("pg_advisory_xact_lock");
+    expect(sqls[1]).toContain("UPDATE live_recordings");
+    expect(sqls[1]).toContain("NOT EXISTS");
+    expect(sqls[1]).toContain(`busy."transcriptNextAttemptAt" > $2`);
+    expect(updateMany).toHaveBeenCalled();
+    const queued = enqueueJob as unknown as ReturnType<typeof vi.fn>;
+    const task = queued.mock.calls[0][1] as () => Promise<unknown>;
+    await task();
+    expect(runLiveTranscription).toHaveBeenCalledWith(
+      "rec-1",
+      expect.any(String),
+      { adminRescan: true }
+    );
+  });
+
+  it("does not reset a re-scan while a lease is held", async () => {
+    executeRawUnsafe.mockResolvedValue(0);
+    findFirst.mockResolvedValue({ id: "other-scan" });
+    findUnique.mockResolvedValue({
+      id: "rec-1",
+      state: "archived",
+      transcriptVtt: "WEBVTT",
+      transcriptStatus: "completed",
+    });
+
+    const result = await requestLiveRescan("rec-1");
+
+    expect(result).toEqual({
+      ok: false,
+      message: "A scan is already running.",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+    const updateCall = executeRawUnsafe.mock.calls.find((call) =>
+      String(call[0]).includes("UPDATE live_recordings")
+    );
+    expect(updateCall?.[0]).toContain("NOT EXISTS");
   });
 
   it("does not claim when the flag is off", async () => {

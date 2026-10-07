@@ -19,13 +19,13 @@ export interface MarkUtterance {
  * After that, only `.` `!` `?`, a dash, the end of the text, or a comma
  * that ends the text. A comma or colon with more clause after it rejects
  * the cue, as does a word outside the tail list ("guy", "down", "was").
- * "question mark" and "check mark" are not cues.
+ * "question mark", "check mark", and "Marky Mark" are not cues.
  *
  * Longer tails are listed first so "time stamp" and "right there" are not
  * cut down to a shorter alternative.
  */
 const CUE_RE =
-  /(?<!question )(?<!check )\bmark\s+(?:that(?:'s a clip)?|it|this)(?:\s+(?:time stamp|right there|real quick|timestamp|moment|clip|please|now|one))?\b(?=\s*(?:[.!?]|[—–]|--+|-(?:\s|$)|$)|,\s*$)/i;
+  /(?<!question )(?<!check )(?<!marky )\bmark\s+(?:that(?:'s a clip)?|it|this)(?:\s+(?:time stamp|right there|real quick|timestamp|moment|clip|please|now|one))?\b(?=\s*(?:[.!?]|[—–]|--+|-(?:\s|$)|$)|,\s*$)/i;
 
 function normalize(text: string): string {
   return text

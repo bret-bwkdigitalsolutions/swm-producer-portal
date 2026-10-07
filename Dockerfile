@@ -41,7 +41,7 @@ RUN adduser --system --uid 1001 nextjs
 # "Sign in to confirm you're not a bot". See docs/youtube-cookie-refresh.md.
 ENV YT_DLP_VERSION=2026.05.24.234402
 ENV DENO_VERSION=v2.7.12
-RUN apk add --no-cache ffmpeg python3 curl unzip && \
+RUN apk add --no-cache ffmpeg python3 tini curl unzip && \
     wget -q "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/${YT_DLP_VERSION}/yt-dlp" -O /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp && \
     curl -fsSL "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" -o /tmp/deno.zip && \
@@ -69,5 +69,8 @@ USER nextjs
 ENV PORT=${PORT:-3000}
 ENV HOSTNAME="0.0.0.0"
 
-# Run pending migrations then start the server
-CMD node scripts/migrate.mjs && node server.js
+# tini is PID 1 so a killed ffmpeg (orphaned by yt-dlp) is reaped instead of
+# staying a zombie. Railway runs this image as-is; Docker's init flag is not
+# available there.
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["sh", "-c", "node scripts/migrate.mjs && node server.js"]
