@@ -175,6 +175,7 @@ export async function gcsObjectExists(
 /**
  * Bucket to read when the caller did not pass one.
  * With only GCS_BUCKET_NAME set, this does not call the API.
+ * With both buckets, the regional upload bucket is checked first.
  */
 async function defaultReadBucket(gcsPath: string): Promise<string> {
   if (!process.env.GCS_UPLOAD_BUCKET_NAME?.trim()) return getBucketName();

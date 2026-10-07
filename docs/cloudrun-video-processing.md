@@ -24,10 +24,12 @@ Status is the same Postgres rows the portal already polls. The worker writes `me
 
 Auth is two service accounts:
 
-- `swm-video-invoker` can run this one job with container overrides, and nothing else. Railway holds its JSON key in `CLOUD_RUN_INVOKER_CREDENTIALS_JSON`. The run request contains the distribution job id and the mode. Tokens and the database URL stay in Secret Manager on the job.
-- `swm-video-processor` is the job's runtime identity. It has `objectAdmin` on the new bucket and `secretAccessor` on the `swm-video-*` secrets. The worker uses Application Default Credentials. Do not set `GCS_CREDENTIALS_JSON` on the job, or the Storage client and the FUSE mount will be different identities.
+- `swm-video-invoker` can run the staging job and the production job with container overrides, and nothing else. Railway holds its JSON key in `CLOUD_RUN_INVOKER_CREDENTIALS_JSON`. The run request contains the distribution job id and the mode. Tokens and the database URL stay in Secret Manager on the job.
+- `swm-video-processor` is the runtime identity for both jobs. It has `objectAdmin` on the new bucket, `secretAccessor` on the secrets for the job it is running, and `roles/iam.serviceAccountTokenCreator` on itself. Transcription signs a V4 URL for the mp3. With no JSON key, that calls IAM `signBlob`, which needs the token-creator role. The worker uses Application Default Credentials. Do not set `GCS_CREDENTIALS_JSON` on the job, or the Storage client and the FUSE mount will be different identities. Do not grant this account write access on `gs://swm-producer-uploads`.
 
-New browser uploads still use the existing resumable signed-URL protocol (16 MB chunks). When `GCS_UPLOAD_BUCKET_NAME` is set, the signed URL targets that bucket and the job stores `metadata.gcsBucket`. Objects written before that hint are resolved by checking the legacy bucket, then the regional bucket. `delete` without a hint deletes the key from both. Derived mp3s are written to the same bucket as the source video.
+New browser uploads still use the existing resumable signed-URL protocol (16 MB chunks). When `GCS_UPLOAD_BUCKET_NAME` is set, the signed URL targets that bucket and the job stores `metadata.gcsBucket`. A stored video hint wins and does not call the API. With no hint, readers check the regional bucket first, then the legacy bucket. `delete` without a hint deletes the key from both.
+
+Derived files (the extracted mp3, a YouTube thumbnail saved by the worker, a square image, a browser thumbnail) are always written to `GCS_UPLOAD_BUCKET_NAME` (`swm-producer-uploads-central1`), including when the source video is still in `gs://swm-producer-uploads`. The job stores `metadata.gcsAudioBucket` next to `metadata.gcsAudioPath`. Readers do not apply the video bucket hint to the audio path. An in-flight job that already has an mp3 only on the legacy bucket is still found, because a missing regional object falls through to the legacy bucket. When both copies exist, the regional one wins. Deleting a job removes the audio key from both buckets.
 
 ## What Bret runs
 
@@ -42,7 +44,7 @@ From a machine with `gcloud`, as `bret@bwkdigitalsolutions.com`:
 
 `--signer-sa` is the `client_email` of the key Railway already uses to sign uploads. The script grants that account `objectAdmin` on the new bucket only. Without it, the browser PUT returns 403.
 
-Then add secret versions (the script creates the secrets empty and never reads these values):
+Then add secret versions (the script creates the secrets empty and never reads these values). Append `?sslmode=no-verify` to `DATABASE_URL`. Railway Postgres presents a self-signed certificate, and the worker will not connect without that query parameter. Staging already uses it.
 
 ```bash
 printf '%s' "$DATABASE_URL" | gcloud secrets versions add swm-video-database-url --data-file=- --project=swm-producer-portal
@@ -69,7 +71,11 @@ Create the job once the secrets have versions:
   --create-invoker-key /tmp/swm-video-invoker-key.json
 ```
 
-Re-running does not modify an existing job. Pass `--update-job` after you push a new image. `--grant-legacy-read` is optional. It adds `objectViewer` on `gs://swm-producer-uploads` for the processor account and mounts that bucket read-only, so older objects can be read without copying them onto the 32 GiB filesystem. Those reads are still within-GCP egress (about $0.02/GiB). They are not free: a region is not the same location as a multi-region bucket.
+Re-running does not modify an existing job. Pass `--update-job` after you push a new image. A re-run also grants `roles/iam.serviceAccountTokenCreator` to `swm-video-processor` on itself if that binding is missing. That grant was added by hand on staging; the script is idempotent, so running it again does not duplicate the role.
+
+`--grant-legacy-read` is optional. It adds `objectViewer` on `gs://swm-producer-uploads` for the processor account and mounts that bucket read-only, so older objects can be read without copying them onto the 32 GiB filesystem. It does not grant write. Those reads are still within-GCP egress (about $0.02/GiB). They are not free: a region is not the same location as a multi-region bucket.
+
+`--env` defaults to `staging` and keeps the job name `swm-video-processor` and the secret names `swm-video-*`. Production is a separate invocation, below.
 
 Copy existing objects only when you want them on the regional bucket. This is separate, dry-run by default, and it does not delete the source:
 
@@ -91,9 +97,48 @@ Set these on the **dev** service first. Leave `GCS_BUCKET_NAME=swm-producer-uplo
 | `CLOUD_RUN_JOB` | `projects/swm-producer-portal/locations/us-central1/jobs/swm-video-processor` |
 | `CLOUD_RUN_INVOKER_CREDENTIALS_JSON` | Contents of the invoker key file. Delete the file after. |
 
-Do not put the invoker key in git. Production gets these only after the `production` branch contains this code.
+Do not put the invoker key in git. Production gets its own job and its own variables, in the next section. Do not point production at the staging job: that job's database URL, `NEXTAUTH_URL`, and API secrets are the staging values.
 
-`DATABASE_URL` on the job must be reachable from Cloud Run over TLS. If the Railway Postgres instance rejects public connections, the worker cannot write status. Confirm that before flipping the flag.
+`DATABASE_URL` on the job must be reachable from Cloud Run over TLS, and the secret value must include `?sslmode=no-verify` because Railway's Postgres certificate is self-signed. If the Railway Postgres instance rejects public connections, the worker cannot write status. Confirm that before flipping the flag.
+
+## Production rollout
+
+The staging job cannot be reused. Create a second job and a second secret set with the same script. Shared resources (the regional bucket, Artifact Registry, both service accounts, the token-creator binding, and the invoker) are created either way and are left alone when they already exist. A prod run does not change the staging job unless you also pass `--env staging --update-job`.
+
+1. Promote this code to the `production` branch and let Railway deploy it with `VIDEO_PROCESSING_RUNTIME` still `railway` (or unset).
+2. Create the prod secrets and job. Use the production portal origin and the production `DATABASE_URL` (with `?sslmode=no-verify`):
+
+```bash
+./infra/cloudrun/setup.sh --env prod \
+  --portal-origins "https://portal.stolenwatermedia.com,http://localhost:3000" \
+  --nextauth-url "https://portal.stolenwatermedia.com" \
+  --signer-sa "THE_CLIENT_EMAIL_INSIDE_GCS_CREDENTIALS_JSON"
+```
+
+3. Add versions of `swm-video-prod-database-url`, `swm-video-prod-google-client-id`, `swm-video-prod-google-client-secret`, `swm-video-prod-deepgram-api-key`, `swm-video-prod-anthropic-api-key`, `swm-video-prod-resend-api-key`, `swm-video-prod-wp-api-url`, `swm-video-prod-wp-app-user`, and `swm-video-prod-wp-app-password`. Add `swm-video-prod-youtube-cookies` only if yt-dlp needs it. The database URL is the production Railway URL plus `?sslmode=no-verify`.
+4. Push the image you intend to run, then create the job. The same invoker key can run both jobs; pass `--create-invoker-key` only if production does not already have `CLOUD_RUN_INVOKER_CREDENTIALS_JSON`.
+
+```bash
+./infra/cloudrun/setup.sh --env prod \
+  --portal-origins "https://portal.stolenwatermedia.com,http://localhost:3000" \
+  --nextauth-url "https://portal.stolenwatermedia.com" \
+  --signer-sa "THE_CLIENT_EMAIL_INSIDE_GCS_CREDENTIALS_JSON" \
+  --image us-central1-docker.pkg.dev/swm-producer-portal/swm-portal/portal:YYYYMMDD
+```
+
+5. On the **production** Railway service, set:
+
+| Variable | Value |
+| --- | --- |
+| `GCS_BUCKET_NAME` | `swm-producer-uploads` (unchanged) |
+| `GCS_UPLOAD_BUCKET_NAME` | `swm-producer-uploads-central1` |
+| `VIDEO_PROCESSING_RUNTIME` | `cloudrun` after a small upload looks right |
+| `CLOUD_RUN_JOB` | `projects/swm-producer-portal/locations/us-central1/jobs/swm-video-processor-prod` |
+| `CLOUD_RUN_INVOKER_CREDENTIALS_JSON` | The same invoker key the dev service uses |
+
+6. Upload a small file on production, then set the runtime to `cloudrun` and distribute it. `metadata.processingExecution` should name an execution of `swm-video-processor-prod`. A legacy video's extracted mp3 should land in `gs://swm-producer-uploads-central1`, not in the old bucket.
+
+Re-running `setup.sh --env prod` does not modify an existing prod job. Pass `--update-job` with `--env prod` after you push a new image. That still leaves the staging job unchanged.
 
 There is no schema migration in this change. When a later change has one, deploy Railway (which runs migrations) before you `--update-job` the image.
 

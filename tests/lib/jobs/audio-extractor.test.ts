@@ -6,19 +6,24 @@ import { join } from "node:path";
 const {
   mockExecFile,
   mockBucketUpload,
+  mockBucket,
   mockMkdtemp,
   mockRm,
   mockDownload,
-} = vi.hoisted(() => ({
-  mockExecFile: vi.fn(
-    (_cmd: string, _args: string[], _opts: unknown, cb: (err: unknown, result: unknown) => void) =>
-      cb(null, { stdout: "", stderr: "" })
-  ),
-  mockBucketUpload: vi.fn().mockResolvedValue([]),
-  mockMkdtemp: vi.fn().mockResolvedValue("/tmp/swm-audio-test"),
-  mockRm: vi.fn().mockResolvedValue(undefined),
-  mockDownload: vi.fn().mockResolvedValue(undefined),
-}));
+} = vi.hoisted(() => {
+  const mockBucketUpload = vi.fn().mockResolvedValue([]);
+  return {
+    mockExecFile: vi.fn(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (err: unknown, result: unknown) => void) =>
+        cb(null, { stdout: "", stderr: "" })
+    ),
+    mockBucketUpload,
+    mockBucket: vi.fn(() => ({ upload: mockBucketUpload })),
+    mockMkdtemp: vi.fn().mockResolvedValue("/tmp/swm-audio-test"),
+    mockRm: vi.fn().mockResolvedValue(undefined),
+    mockDownload: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 vi.mock("node:child_process", () => ({
   default: { execFile: mockExecFile },
@@ -27,7 +32,7 @@ vi.mock("node:child_process", () => ({
 
 vi.mock("@google-cloud/storage", () => ({
   Storage: function Storage() {
-    return { bucket: () => ({ upload: mockBucketUpload }) };
+    return { bucket: (name: string) => mockBucket(name) };
   },
 }));
 
@@ -101,6 +106,24 @@ describe("extractAudio", () => {
       recursive: true,
       force: true,
     });
+    expect(mockBucket).toHaveBeenCalledWith("test-bucket");
+  });
+
+  it("writes the mp3 to the regional bucket when the source video is on the legacy bucket", async () => {
+    process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+
+    const result = await extractAudio("uploads/2026/03/episode.mp4", {
+      bucket: "legacy-bucket",
+    });
+
+    expect(result).toBe("uploads/2026/03/episode.mp3");
+    expect(mockDownload).toHaveBeenCalledWith(
+      "uploads/2026/03/episode.mp4",
+      "/tmp/swm-audio-test/input.mp4",
+      { bucket: "legacy-bucket" }
+    );
+    expect(mockBucket).toHaveBeenCalledWith("regional-bucket");
+    expect(mockBucket).not.toHaveBeenCalledWith("legacy-bucket");
   });
 
   it("reuses a local video and does not read it from GCS or delete it", async () => {

@@ -12,7 +12,7 @@ import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
 import { getRecentEpisodeTitles, getLatestEpisodeNumbers, getShow } from "@/lib/wordpress/client";
 import { enqueueJob } from "@/lib/jobs/job-queue";
-import { bucketHint } from "@/lib/jobs/gcs-location";
+import { bucketHint, recordedDerivedBucket } from "@/lib/jobs/gcs-location";
 import { dispatchVideoProcessing } from "@/lib/jobs/cloud-run-dispatch";
 import { getProcessingRuntime, isAnalyzeStale } from "@/lib/jobs/processing-runtime";
 
@@ -116,8 +116,8 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
       }
     }
 
-    // 1. Extract audio. A stored or just-written bucket wins. With no hint,
-    // extractAudio checks the legacy bucket and then the regional bucket.
+    // 1. Extract audio. `bucket` is where the source video lives. The mp3
+    // is written to the regional upload bucket.
     await setAnalyzeState(jobId, { ...startState, step: "extracting" });
     console.log(`[analyze] Extracting audio for job ${jobId}`);
     if (!gcsPath) throw new Error("No video uploaded.");
@@ -152,11 +152,13 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
 
     // Store transcript in job metadata (race-safe merge — doesn't clobber
     // the analyze progress writes above)
+    const recordedAudioBucket = recordedDerivedBucket();
     await mergeJobMetadata(jobId, {
       transcript: transcription.fullText,
       transcriptLanguage: transcription.language,
       audioDuration: transcription.duration,
       gcsAudioPath,
+      ...(recordedAudioBucket ? { gcsAudioBucket: recordedAudioBucket } : {}),
       ...(transcriptVtt ? { transcriptVtt } : {}),
     });
 

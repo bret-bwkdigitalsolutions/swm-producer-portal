@@ -12,6 +12,12 @@
 #     --nextauth-url https://YOUR_DEV_ORIGIN \
 #     --signer-sa SIGNER_SA_EMAIL
 #
+# Production is a second job and a second secret set. The staging names stay:
+#   ./infra/cloudrun/setup.sh --env prod \
+#     --portal-origins https://portal.stolenwatermedia.com,http://localhost:3000 \
+#     --nextauth-url https://portal.stolenwatermedia.com \
+#     --signer-sa SIGNER_SA_EMAIL
+#
 # Read docs/cloudrun-video-processing.md before the first run.
 set -euo pipefail
 
@@ -21,7 +27,6 @@ EXPECTED_ACCOUNT="bret@bwkdigitalsolutions.com"
 LEGACY_BUCKET="swm-producer-uploads"
 NEW_BUCKET="swm-producer-uploads-central1"
 AR_REPO="swm-portal"
-JOB_NAME="swm-video-processor"
 PROCESSOR_SA_NAME="swm-video-processor"
 INVOKER_SA_NAME="swm-video-invoker"
 REGIONAL_MOUNT="/mnt/gcs-regional"
@@ -31,6 +36,7 @@ PORTAL_ORIGINS=""
 NEXTAUTH_URL=""
 SIGNER_SA=""
 IMAGE=""
+ENV_NAME="staging"
 GRANT_LEGACY_READ=0
 UPDATE_JOB=0
 CREATE_INVOKER_KEY=""
@@ -47,6 +53,13 @@ Required:
   --nextauth-url URL      Portal origin stored on the job (email links).
 
 Optional:
+  --env staging|prod      Which job and secret set to create. Default is
+                          staging, which keeps the names already in use:
+                          job swm-video-processor and secrets swm-video-*.
+                          prod creates job swm-video-processor-prod and
+                          secrets swm-video-prod-*. The same two service
+                          accounts are used either way. A prod run does not
+                          modify the staging job.
   --signer-sa EMAIL       client_email of the existing Railway GCS key.
                           Grants that account objectAdmin on the NEW bucket
                           only, so browser signed uploads succeed.
@@ -78,6 +91,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --portal-origins) PORTAL_ORIGINS="${2:-}"; shift 2 ;;
     --nextauth-url) NEXTAUTH_URL="${2:-}"; shift 2 ;;
+    --env) ENV_NAME="${2:-}"; shift 2 ;;
     --signer-sa) SIGNER_SA="${2:-}"; shift 2 ;;
     --image) IMAGE="${2:-}"; shift 2 ;;
     --create-invoker-key) CREATE_INVOKER_KEY="${2:-}"; shift 2 ;;
@@ -94,6 +108,22 @@ if [[ -z "$PORTAL_ORIGINS" || -z "$NEXTAUTH_URL" ]]; then
   usage
   exit 2
 fi
+
+case "$ENV_NAME" in
+  staging)
+    JOB_NAME="swm-video-processor"
+    SECRET_PREFIX="swm-video"
+    ;;
+  prod)
+    JOB_NAME="swm-video-processor-prod"
+    SECRET_PREFIX="swm-video-prod"
+    ;;
+  *)
+    echo "--env must be staging or prod (got '${ENV_NAME}')." >&2
+    usage
+    exit 2
+    ;;
+esac
 
 if ! command -v gcloud >/dev/null 2>&1; then
   echo "gcloud is not installed." >&2
@@ -114,6 +144,9 @@ fi
 echo "Project:  $PROJECT"
 echo "Account:  $ACCOUNT"
 echo "Region:   $REGION"
+echo "Env:      $ENV_NAME"
+echo "Job:      $JOB_NAME"
+echo "Secrets:  ${SECRET_PREFIX}-*"
 echo "Bucket:   gs://${NEW_BUCKET} (new)"
 echo "Legacy:   gs://${LEGACY_BUCKET} (not modified unless --grant-legacy-read)"
 
@@ -155,6 +188,16 @@ gcloud iam service-accounts add-iam-policy-binding "$PROCESSOR_EMAIL" \
   --project="$PROJECT" \
   --member="serviceAccount:${RUN_AGENT}" \
   --role="roles/iam.serviceAccountUser" \
+  >/dev/null
+
+# Transcription signs a V4 URL for the mp3. With no JSON key, the Storage
+# client calls IAM signBlob, which requires this role on the runtime account
+# itself. One binding covers both jobs. Idempotent if it was added by hand.
+echo "Granting the processor account permission to sign URLs as itself..."
+gcloud iam service-accounts add-iam-policy-binding "$PROCESSOR_EMAIL" \
+  --project="$PROJECT" \
+  --member="serviceAccount:${PROCESSOR_EMAIL}" \
+  --role="roles/iam.serviceAccountTokenCreator" \
   >/dev/null
 
 if gcloud artifacts repositories describe "$AR_REPO" --location="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
@@ -277,17 +320,17 @@ gcloud projects add-iam-policy-binding "$PROJECT" \
   >/dev/null
 
 REQUIRED_SECRETS=(
-  "swm-video-database-url:DATABASE_URL"
-  "swm-video-google-client-id:GOOGLE_CLIENT_ID"
-  "swm-video-google-client-secret:GOOGLE_CLIENT_SECRET"
-  "swm-video-deepgram-api-key:DEEPGRAM_API_KEY"
-  "swm-video-anthropic-api-key:ANTHROPIC_API_KEY"
-  "swm-video-resend-api-key:RESEND_API_KEY"
-  "swm-video-wp-api-url:WP_API_URL"
-  "swm-video-wp-app-user:WP_APP_USER"
-  "swm-video-wp-app-password:WP_APP_PASSWORD"
+  "${SECRET_PREFIX}-database-url:DATABASE_URL"
+  "${SECRET_PREFIX}-google-client-id:GOOGLE_CLIENT_ID"
+  "${SECRET_PREFIX}-google-client-secret:GOOGLE_CLIENT_SECRET"
+  "${SECRET_PREFIX}-deepgram-api-key:DEEPGRAM_API_KEY"
+  "${SECRET_PREFIX}-anthropic-api-key:ANTHROPIC_API_KEY"
+  "${SECRET_PREFIX}-resend-api-key:RESEND_API_KEY"
+  "${SECRET_PREFIX}-wp-api-url:WP_API_URL"
+  "${SECRET_PREFIX}-wp-app-user:WP_APP_USER"
+  "${SECRET_PREFIX}-wp-app-password:WP_APP_PASSWORD"
 )
-OPTIONAL_SECRET="swm-video-youtube-cookies:YOUTUBE_COOKIES"
+OPTIONAL_SECRET="${SECRET_PREFIX}-youtube-cookies:YOUTUBE_COOKIES"
 
 ensure_secret() {
   local name="$1"
@@ -418,12 +461,16 @@ fi
 cat <<EOF
 
 Done.
-Job resource (set this on Railway when you are ready to dispatch):
+Job resource (set this on the ${ENV_NAME} Railway service when you are ready to dispatch):
   CLOUD_RUN_JOB=projects/${PROJECT}/locations/${REGION}/jobs/${JOB_NAME}
 New upload bucket:
   GCS_UPLOAD_BUCKET_NAME=${NEW_BUCKET}
 Leave GCS_BUCKET_NAME=${LEGACY_BUCKET}.
 
+DATABASE_URL for this job must include ?sslmode=no-verify. Railway Postgres
+uses a self-signed certificate.
+
 Do not set GCS_CREDENTIALS_JSON on the Cloud Run job. The runtime service
 account is the identity. Do not commit the invoker key.
+Do not grant this account write access on gs://${LEGACY_BUCKET}.
 EOF

@@ -115,14 +115,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const meta = (job.metadata as Record<string, unknown>) ?? {};
-    const pinned =
-      typeof meta.gcsBucket === "string" && meta.gcsBucket.trim()
-        ? meta.gcsBucket.trim()
-        : undefined;
-    const gcsPath = pinned
-      ? await uploadBuffer(filename!, buffer!, contentType!, pinned)
-      : await uploadBuffer(filename!, buffer!, contentType!);
+    // Derived image. The video's gcsBucket is not a write target: the
+    // processor can only read the legacy bucket.
+    const gcsPath = await uploadBuffer(filename!, buffer!, contentType!);
 
     // Store the thumbnail path only. gcsBucket stays the video's bucket.
     await mergeJobMetadata(jobId, { thumbnailGcsPath: gcsPath });
