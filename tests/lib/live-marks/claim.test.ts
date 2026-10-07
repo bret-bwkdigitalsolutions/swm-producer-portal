@@ -1,14 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_TRANSCRIPT_ATTEMPTS } from "@/lib/live-marks/constants";
+import {
+  LIVE_SCAN_LOCK_CLASS,
+  LIVE_SCAN_LOCK_KEY,
+  MAX_TRANSCRIPT_ATTEMPTS,
+} from "@/lib/live-marks/constants";
+import { startOfUtcDay } from "@/lib/live-marks/retry";
 
 const updateMany = vi.hoisted(() => vi.fn());
 const findFirst = vi.hoisted(() => vi.fn());
 const findUnique = vi.hoisted(() => vi.fn());
 const findMany = vi.hoisted(() => vi.fn());
 const count = vi.hoisted(() => vi.fn());
+const executeRawUnsafe = vi.hoisted(() => vi.fn());
+const paidCount = vi.hoisted(() => vi.fn());
+const paidCreate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/db", () => ({
   db: {
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        $executeRawUnsafe: executeRawUnsafe,
+        liveRecording: {
+          updateMany,
+          findFirst,
+          findUnique,
+          findMany,
+          count,
+          update: vi.fn(),
+        },
+        liveScanPaidClaim: { count: paidCount, create: paidCreate },
+      }),
     liveRecording: {
       updateMany,
       findFirst,
@@ -36,12 +57,18 @@ beforeEach(() => {
   findUnique.mockReset();
   findMany.mockReset();
   count.mockReset();
+  executeRawUnsafe.mockReset();
+  paidCount.mockReset();
+  paidCreate.mockReset();
   findFirst.mockResolvedValue(null);
   findUnique.mockResolvedValue({
     transcriptVtt: null,
     transcriptStatus: "pending",
   });
   count.mockResolvedValue(0);
+  paidCount.mockResolvedValue(0);
+  paidCreate.mockResolvedValue({ id: "claim-1" });
+  executeRawUnsafe.mockResolvedValue(0);
   updateMany.mockResolvedValue({ count: 1 });
   process.env.LIVE_TRANSCRIPTION_ENABLED = "true";
   delete process.env.LIVE_TRANSCRIPTION_DAILY_CAP;
@@ -55,7 +82,15 @@ describe("claimLiveTranscription", () => {
     expect(result.token).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     );
+    expect(executeRawUnsafe).toHaveBeenCalledWith(
+      "SELECT pg_advisory_xact_lock($1::int, $2::int)",
+      LIVE_SCAN_LOCK_CLASS,
+      LIVE_SCAN_LOCK_KEY
+    );
     expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(paidCreate).toHaveBeenCalledWith({
+      data: { liveRecordingId: "rec-1", claimedAt: now },
+    });
     const write = updateMany.mock.calls[0][0];
     expect(write.data.transcriptAttempts).toEqual({ increment: 1 });
     expect(write.data.transcriptClaimToken).toBe(result.token);
@@ -136,13 +171,30 @@ describe("claimLiveTranscription", () => {
     });
   });
 
+  it("counts every paid claim since UTC midnight, including a retry of the same recording", async () => {
+    updateMany.mockResolvedValue({ count: 1 });
+
+    await claimLiveTranscription("rec-1", now);
+    const later = new Date(now.getTime() + 91 * 60 * 1000);
+    await claimLiveTranscription("rec-1", later);
+
+    expect(paidCreate).toHaveBeenCalledTimes(2);
+    expect(paidCount).toHaveBeenCalledWith({
+      where: { claimedAt: { gte: startOfUtcDay(now) } },
+    });
+    expect(paidCount.mock.calls[1][0]).toEqual({
+      where: { claimedAt: { gte: startOfUtcDay(later) } },
+    });
+  });
+
   it("skips a new paid scan once the daily cap is full", async () => {
-    count.mockResolvedValue(10);
+    paidCount.mockResolvedValue(10);
 
     const result = await claimLiveTranscription("rec-1", now);
 
     expect(result.reason).toBe("daily_cap");
     expect(updateMany).not.toHaveBeenCalled();
+    expect(paidCreate).not.toHaveBeenCalled();
   });
 });
 

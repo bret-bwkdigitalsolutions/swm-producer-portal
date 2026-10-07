@@ -1,5 +1,9 @@
 {
   "match": [
+    "mark that moment",
+    "Mark that clip.",
+    "Mark that time stamp.",
+    "Mark that's a clip",
     "Mark that.",
     "mark that one",
     "Mark it!",
@@ -7,6 +11,10 @@
     "mark that real quick"
   ],
   "noMatch": [
+    "check mark this",
+    "Mark that, he said, was wrong.",
+    "Mark it, Dude.",
+    "Mark this: Rangers in six.",
     "Mark that guy",
     "Mark that was his name",
     "Mark this Friday on your calendar",

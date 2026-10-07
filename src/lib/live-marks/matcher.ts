@@ -13,16 +13,19 @@ export interface MarkUtterance {
 }
 
 /**
- * Imperative "mark that|it|this", then either the end of the text, real
- * punctuation, or one short tail: "one", "right there", "real quick",
- * "please", "now". A following word outside that list ("guy", "down",
- * "was", "zero", "Friday") rejects the cue.
+ * Imperative "mark that|it|this", or "mark that's a clip".
+ * A short tail may follow: "time stamp", "timestamp", "right there",
+ * "real quick", "moment", "clip", "please", "now", "one".
+ * After that, only `.` `!` `?`, a dash, the end of the text, or a comma
+ * that ends the text. A comma or colon with more clause after it rejects
+ * the cue, as does a word outside the tail list ("guy", "down", "was").
+ * "question mark" and "check mark" are not cues.
  *
- * Longer tails are listed first so "right there" is not cut down to a
- * shorter alternative.
+ * Longer tails are listed first so "time stamp" and "right there" are not
+ * cut down to a shorter alternative.
  */
 const CUE_RE =
-  /\bmark\s+(?:that|it|this)(?:\s+(?:right there|real quick|one|please|now))?(?=\s*(?:[.!?…,;:\u2014\u2013]+|$))/i;
+  /(?<!question )(?<!check )\bmark\s+(?:that(?:'s a clip)?|it|this)(?:\s+(?:time stamp|right there|real quick|timestamp|moment|clip|please|now|one))?\b(?=\s*(?:[.!?]|[—–]|--+|-(?:\s|$)|$)|,\s*$)/i;
 
 function normalize(text: string): string {
   return text

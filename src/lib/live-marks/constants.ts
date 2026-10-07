@@ -59,10 +59,19 @@ export const WEBSITE_NOT_READY_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 export const WEBSITE_OVERLAP_BACKOFF_MS = 2 * 60 * 1000;
 
 /**
- * Paid scans (download + Deepgram) started per UTC day when
- * LIVE_TRANSCRIPTION_DAILY_CAP is unset.
+ * Paid claims (each attempt that downloads or calls Deepgram) allowed per
+ * UTC day when LIVE_TRANSCRIPTION_DAILY_CAP is unset. The count resets at
+ * UTC midnight (7 PM CT).
  */
 export const DEFAULT_DAILY_SCAN_CAP = 10;
+
+/**
+ * Postgres advisory lock for a live-scan claim. Held for the transaction
+ * that checks the lease, the daily cap, and the row update, so two replicas
+ * cannot both start a scan. Released when the transaction ends.
+ */
+export const LIVE_SCAN_LOCK_CLASS = 764001;
+export const LIVE_SCAN_LOCK_KEY = 17;
 
 /**
  * Hard ceiling for yt-dlp on this path. Shorter than the 90-minute lease

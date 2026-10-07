@@ -44,27 +44,6 @@ function readUtterances(value: unknown): MarkUtterance[] {
   return utterances;
 }
 
-async function withTimeout<T>(
-  work: Promise<T>,
-  ms: number,
-  label: string
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(
-        new Error(`${label} timed out after ${Math.round(ms / 1000)} seconds`)
-      );
-    }, ms);
-  });
-  void work.catch(() => {});
-  try {
-    return await Promise.race([work, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 async function extendLease(id: string, token: string): Promise<boolean> {
   return writeOwnedScan(id, token, {
     transcriptNextAttemptAt: new Date(Date.now() + TRANSCRIPT_STALE_MS),
@@ -153,13 +132,10 @@ export async function runLiveTranscription(
         console.log(
           `[live-transcription] ${row.id}: downloading YouTube VOD ${row.youtubeVideoId}`
         );
-        audioPath = await withTimeout(
-          downloadVideoToGcs(youtubeUrl, row.id, row.wpShowId, {
-            timeoutMs: LIVE_DOWNLOAD_TIMEOUT_MS,
-          }),
-          LIVE_DOWNLOAD_DEADLINE_MS,
-          "YouTube download"
-        );
+        audioPath = await downloadVideoToGcs(youtubeUrl, row.id, row.wpShowId, {
+          timeoutMs: LIVE_DOWNLOAD_TIMEOUT_MS,
+          signal: AbortSignal.timeout(LIVE_DOWNLOAD_DEADLINE_MS),
+        });
         const saved = await writeOwnedScan(row.id, token, {
           transcriptAudioPath: audioPath,
         });

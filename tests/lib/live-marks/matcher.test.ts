@@ -8,6 +8,10 @@ const expectedCue: Record<string, string> = {
   "Mark it!": "Mark it",
   "mark this right there": "mark this right there",
   "mark that real quick": "mark that real quick",
+  "mark that moment": "mark that moment",
+  "Mark that clip.": "Mark that clip",
+  "Mark that time stamp.": "Mark that time stamp",
+  "Mark that's a clip": "Mark that's a clip",
 };
 
 describe("utteranceCue", () => {

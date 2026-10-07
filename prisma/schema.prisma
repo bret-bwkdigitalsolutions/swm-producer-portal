@@ -515,8 +515,8 @@ model LiveRecording {
   transcriptClaimToken    String?
   // When the website route first 404'd. Retries stop 14 days later.
   transcriptNotReadySince DateTime?
-  // Set when a claim will download or call Deepgram. Counts toward the
-  // daily scan cap. Cheap retries (stored transcript) leave it alone.
+  // Last time a paid scan was claimed for this row. The daily cap counts
+  // live_scan_paid_claims (one row per attempt), not this column.
   transcriptLastClaimedAt DateTime?
   createdByUserId     String
   createdAt           DateTime  @default(now())
@@ -528,4 +528,16 @@ model LiveRecording {
   @@index([wpShowId])
   @@index([transcriptStatus, transcriptNextAttemptAt])
   @@map("live_recordings")
+}
+
+// One row per claim that will download or call Deepgram. The daily cap
+// counts rows since UTC midnight (7 PM CT), so a retry of the same
+// recording counts again.
+model LiveScanPaidClaim {
+  id              String   @id @default(cuid())
+  liveRecordingId String
+  claimedAt       DateTime
+
+  @@index([claimedAt])
+  @@map("live_scan_paid_claims")
 }
