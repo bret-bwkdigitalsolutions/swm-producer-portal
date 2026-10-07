@@ -23,6 +23,11 @@ export interface AsrRule {
 
 export const ASR_RULES: readonly AsrRule[] = [
   {
+    find: "Colin Davis",
+    replace: "Cullen Davis",
+    note: "Signal 51 Case 13: Deepgram rendered T. Cullen Davis as Colin Davis.",
+  },
+  {
     find: "Yuri Telemann's",
     replace: "Youri Tielemans'",
     note: "Sunset SC Ep.12: 'Yuri Telemann's plays for Ashton Villa' is Youri Tielemans.",

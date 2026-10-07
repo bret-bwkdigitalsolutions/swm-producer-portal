@@ -23,6 +23,7 @@ describe("applyAsrCorrections", () => {
       "debbie mezar",
       "peter landisman",
       "masletov",
+      "colin davis",
     ]) {
       expect(finds).toContain(phrase);
     }
@@ -77,13 +78,15 @@ describe("applyAsrCorrections", () => {
       "Youri Tielemans' plays"
     );
     expect(applyAsrCorrections("pachitino")).toBe("Pochettino");
+    expect(applyAsrCorrections("T. Colin Davis")).toBe("T. Cullen Davis");
+    expect(applyAsrCorrections("colin davis")).toBe("Cullen Davis");
   });
 
   it("is idempotent and leaves correct names and lookalikes alone", () => {
     const clean = [
       "Norm Hitzges, Jesse Hawila, Pete Delkus, Youri Tielemans, Tanner Tessmann,",
       "Joe Scally, Jozy Altidore, Tim Weah, Aston Villa, Engel Angle, Pochettino,",
-      "Antonin Scalia, Debi Mazar.",
+      "Antonin Scalia, Debi Mazar, Cullen Davis.",
     ].join(" ");
     expect(applyAsrCorrections(clean)).toBe(clean);
     expect(applyAsrCorrections(applyAsrCorrections(clean))).toBe(clean);

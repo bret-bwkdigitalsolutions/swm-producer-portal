@@ -75,7 +75,7 @@ const SHOW_KEYTERMS: Record<number, readonly string[]> = {
   // Just Wondering with Norm Hitzges
   26: ["Just Wondering", "Tony Casillas", "Jesse Hawila", "Pete Delkus"],
   // Signal 51 Chronicles — true crime, not soccer
-  27: ["Signal 51", "Kennedale", "John Hummel"],
+  27: ["Signal 51", "Kennedale", "John Hummel", "Cullen Davis"],
   // Sunset Soccer Club
   28: ["Sunset Soccer Club", "Sunset SC", "Tyler Kern", ...SOCCER_KEYTERMS],
   // Three Wide at Scout, live at The Statler
