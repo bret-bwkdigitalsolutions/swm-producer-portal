@@ -4,7 +4,7 @@ import { generateAiSuggestions } from "./ai-processor";
 import { derivedGcsAudioPath, extractAudio } from "./audio-extractor";
 import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay, formatTranscriptAsVtt } from "@/lib/transcription";
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
-import { uploadToTransistor } from "@/lib/platforms/transistor";
+import { setTransistorEpisodeWebsite, uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
 import { runVerificationTier, type TierResult } from "./verify-distribution";
@@ -331,7 +331,11 @@ async function processJobInner(
         showMeta?.language && showMeta.language !== "en"
           ? showMeta.language
           : undefined;
-      const transcriptionResult = await transcribeAudio(gcsAudioPath, forceLang);
+      const transcriptionResult = await transcribeAudio(gcsAudioPath, {
+        forceLanguage: forceLang,
+        wpShowId: job.wpShowId,
+        hosts: showHosts,
+      });
       const formattedTranscript = formatTranscriptForAI(transcriptionResult.segments);
       const displayTranscript = formatTranscriptForDisplay(transcriptionResult.segments);
       const transcriptVtt = formatTranscriptAsVtt(transcriptionResult.segments);
@@ -611,6 +615,46 @@ async function processJobInner(
     }
   }
 
+  // Transistor episodes whose RSS <link> should become the WordPress
+  // permalink. Show episodes use the show's API key; a network cross-post
+  // is a second episode id under the network key (wpShowId 0).
+  const transistorWebsiteTargets: {
+    episodeId: string;
+    credentialWpShowId: number;
+  }[] = [];
+  const rememberTransistorEpisode = (
+    episodeId: string | null | undefined,
+    credentialWpShowId: number
+  ) => {
+    if (!episodeId) return;
+    const exists = transistorWebsiteTargets.some(
+      (target) =>
+        target.episodeId === episodeId &&
+        target.credentialWpShowId === credentialWpShowId
+    );
+    if (!exists) {
+      transistorWebsiteTargets.push({ episodeId, credentialWpShowId });
+    }
+  };
+  const applyTransistorWebsiteLinks = async (websiteUrl: string) => {
+    for (const target of transistorWebsiteTargets) {
+      try {
+        await setTransistorEpisodeWebsite({
+          wpShowId: target.credentialWpShowId,
+          episodeId: target.episodeId,
+          websiteUrl,
+        });
+      } catch (error) {
+        // The episode is already on Transistor. A missed website link is
+        // recoverable with scripts/backfill-transistor-episode-links.ts.
+        console.error(
+          "[processor] Could not set Transistor episode website link:",
+          error
+        );
+      }
+    }
+  };
+
   // --- Phase 2: Transistor (independent of YouTube) ---
   const transistorPlatform = job.platforms.find(
     (p) => p.platform === "transistor"
@@ -618,6 +662,11 @@ async function processJobInner(
 
   if (transistorPlatform && transistorPlatform.status === "completed") {
     platformResults.push({ platform: "transistor", status: "completed" });
+    rememberTransistorEpisode(transistorPlatform.externalId, job.wpShowId);
+    const networkEpisodeId = updatedMetadata.networkTransistorEpisodeId;
+    if (typeof networkEpisodeId === "string") {
+      rememberTransistorEpisode(networkEpisodeId, 0);
+    }
   } else if (
     transistorPlatform &&
     !platformResults.some(
@@ -685,6 +734,7 @@ async function processJobInner(
       });
 
       platformResults.push({ platform: "transistor", status: "completed" });
+      rememberTransistorEpisode(result.episodeId, job.wpShowId);
 
       // Also publish to the network Transistor feed if this show is part of
       // the Sunset Lounge network (any show that uses the network default
@@ -710,7 +760,7 @@ async function processJobInner(
               // Sunset Lounge (the network feed) is not Clubhouse or Signal 51,
               // so the season must be cleared on the cross-post regardless of
               // what the source show's metadata had set.
-              await uploadToTransistor({
+              const networkResult = await uploadToTransistor({
                 wpShowId: 0, // Use network credentials
                 title: job.title,
                 description: (updatedMetadata.description as string) ?? "",
@@ -728,6 +778,15 @@ async function processJobInner(
                 scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
                   ? (updatedMetadata.scheduledAt as string) ?? undefined
                   : undefined,
+              });
+              rememberTransistorEpisode(networkResult.episodeId, 0);
+              await mergeJobMetadata(job.id, {
+                networkTransistorEpisodeId: networkResult.episodeId,
+              }).catch((error) => {
+                console.error(
+                  "[processor] Could not record network Transistor episode id:",
+                  error
+                );
               });
               console.log("[processor] Network Transistor cross-post succeeded");
             }
@@ -757,6 +816,9 @@ async function processJobInner(
   const websitePlatform = job.platforms.find((p) => p.platform === "website");
   if (websitePlatform && websitePlatform.status === "completed") {
     platformResults.push({ platform: "website", status: "completed" });
+    if (websitePlatform.externalUrl) {
+      await applyTransistorWebsiteLinks(websitePlatform.externalUrl);
+    }
   } else if (websitePlatform) {
     await db.distributionJobPlatform.update({
       where: { id: websitePlatform.id },
@@ -782,11 +844,14 @@ async function processJobInner(
           ? "future"
           : "publish";
 
+      const audioDuration = updatedMetadata.audioDuration;
       const result = await publishToWordPress({
         wpShowId: job.wpShowId,
         title: job.title,
         description,
         chapters: chapters || undefined,
+        audioDurationSeconds:
+          typeof audioDuration === "number" ? audioDuration : undefined,
         youtubeUrl,
         thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
         transcript: (updatedMetadata.transcriptDisplay as string) || (updatedMetadata.transcript as string) || undefined,
@@ -796,6 +861,10 @@ async function processJobInner(
         portalUserId: job.userId,
         isPremiumOnly: isPremium,
       });
+
+      if (result.postUrl) {
+        await applyTransistorWebsiteLinks(result.postUrl);
+      }
 
       await db.distributionJobPlatform.update({
         where: { id: websitePlatform.id },

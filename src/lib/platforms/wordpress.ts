@@ -2,12 +2,21 @@ import { createPost, uploadMedia } from "@/lib/wordpress/client";
 import { ContentType } from "@/lib/constants";
 import { prepareForWordPress } from "@/lib/image";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import {
+  renderChaptersForWordPress,
+  SWM_CHAPTERS_META_KEY,
+} from "@/lib/chapters";
 
 export interface WordPressPublishParams {
   wpShowId: number;
   title: string;
   description: string;
-  chapters?: string; // formatted chapter text
+  chapters?: string; // formatted chapter text (HH:MM:SS - Title)
+  /**
+   * Audio duration in seconds. Used as the last chapter's `end` when the
+   * chapter text parses. Omit when unknown.
+   */
+  audioDurationSeconds?: number;
   youtubeUrl: string;
   thumbnailGcsPath?: string;
   episodeNumber?: number;
@@ -38,6 +47,7 @@ export async function publishToWordPress(
     title,
     description,
     chapters,
+    audioDurationSeconds,
     youtubeUrl,
     thumbnailGcsPath,
     episodeNumber,
@@ -51,11 +61,18 @@ export async function publishToWordPress(
     portalUserId,
   } = params;
 
-  // Build content: description + chapters (if available)
+  // Build content: description + chapters (if available).
+  // Parseable chapters become H2s with id anchors and ?t= seek links, and
+  // the same structure is sent as `_swm_chapters` for the website theme.
+  // Unparseable text keeps the previous <h3> + <br> block. See
+  // docs/transcript-quality.md for the meta contract.
   let content = description.replace(/\n/g, "<br>");
-  if (chapters) {
-    const formattedChapters = chapters.replace(/\n/g, "<br>");
-    content += `<br><br><h3>Chapters</h3>\n${formattedChapters}`;
+  const renderedChapters = renderChaptersForWordPress(
+    chapters,
+    audioDurationSeconds
+  );
+  if (renderedChapters) {
+    content += `<br><br>${renderedChapters.html}`;
   }
 
   // Upload thumbnail as featured image if available (resized to 1200px wide)
@@ -108,6 +125,9 @@ export async function publishToWordPress(
         : {}),
       ...(durationMinutes !== undefined
         ? { duration_minutes: durationMinutes }
+        : {}),
+      ...(renderedChapters?.structuredJson
+        ? { [SWM_CHAPTERS_META_KEY]: renderedChapters.structuredJson }
         : {}),
       ...(transcript ? { episode_transcript: transcript } : {}),
       // Timestamped WebVTT — the website auto-scans this for "Mark That"

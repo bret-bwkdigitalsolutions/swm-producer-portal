@@ -125,13 +125,17 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
     // non-English language (e.g. ¡Al Maximo! in Spanish); else auto-detect.
     const showMeta = await db.showMetadata.findUnique({
       where: { wpShowId: job.wpShowId },
-      select: { language: true },
+      select: { language: true, hosts: true },
     });
     const forceLang =
       showMeta?.language && showMeta.language !== "en"
         ? showMeta.language
         : undefined;
-    const transcription = await transcribeAudio(gcsAudioPath, forceLang);
+    const transcription = await transcribeAudio(gcsAudioPath, {
+      forceLanguage: forceLang,
+      wpShowId: job.wpShowId,
+      hosts: showMeta?.hosts,
+    });
     const formattedTranscript = formatTranscriptForAI(transcription.segments);
     // Timestamped WebVTT for the website's "Mark That" scanner. Built here so
     // the AI-assist path (which skips re-transcription in the processor) still
