@@ -16,6 +16,8 @@ const mockShowMetadataFindUnique = vi.fn();
 const mockPlatformCredentialFindUnique = vi.fn();
 const mockShowPlatformLinkFindUnique = vi.fn();
 const mockQueryRaw = vi.fn();
+const mockActivityLogCreate = vi.fn();
+const mockLiveRecordingFindUnique = vi.fn();
 
 vi.mock("@/lib/db", () => {
   const dbMock: Record<string, unknown> = {
@@ -39,6 +41,12 @@ vi.mock("@/lib/db", () => {
       findUnique: (...args: unknown[]) => mockShowPlatformLinkFindUnique(...args),
     },
     $queryRaw: (...args: unknown[]) => mockQueryRaw(...args),
+    activityLog: {
+      create: (...args: unknown[]) => mockActivityLogCreate(...args),
+    },
+    liveRecording: {
+      findUnique: (...args: unknown[]) => mockLiveRecordingFindUnique(...args),
+    },
     // mergeJobMetadata runs its merge inside a transaction — hand the
     // callback the same mock client.
     $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(dbMock),
@@ -187,6 +195,8 @@ describe("processJob", () => {
     mockPlatformCredentialFindUnique.mockResolvedValue(null);
     mockShowPlatformLinkFindUnique.mockResolvedValue(null);
     mockQueryRaw.mockResolvedValue([{ metadata: {} }]);
+    mockActivityLogCreate.mockResolvedValue({});
+    mockLiveRecordingFindUnique.mockResolvedValue(null);
     delete process.env.GCS_FUSE_MOUNTS;
     delete process.env.GCS_UPLOAD_BUCKET_NAME;
     delete process.env.VIDEO_WORKER;
@@ -271,6 +281,72 @@ describe("processJob", () => {
         (r: { platform: string }) => r.platform === "tiktok"
       )?.error
     ).toContain("not yet supported");
+  });
+
+  it("records a live-stream post the WordPress episode replaces", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        existingYoutubeUrl: "https://www.youtube.com/watch?v=liveVid1234",
+      },
+      gcsPath: "uploads/2026/03/audio.mp3",
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "liveVid1234",
+          externalUrl: "https://www.youtube.com/watch?v=liveVid1234",
+        },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: 55,
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wpShowId: 42,
+        airDate: "2026-05-21T03:30:00.000Z",
+      })
+    );
+    expect(mockLiveRecordingFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { youtubeVideoId: "liveVid1234" },
+      })
+    );
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ supersedesLivePostId: 55 }),
+        }),
+      })
+    );
+    expect(mockActivityLogCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "user-1",
+        action: "distribute",
+        contentType: "episode",
+        wpPostId: 900,
+        wpShowId: 42,
+        details: "Replaces live stream post #55",
+      }),
+    });
   });
 
   it("sends error notification when any platform fails", async () => {

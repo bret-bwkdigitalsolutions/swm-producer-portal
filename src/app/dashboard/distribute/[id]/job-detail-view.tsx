@@ -13,6 +13,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  liveStreamReplacementNote,
+  readSupersedesLivePostId,
+} from "@/lib/live-stream-note";
+import {
   ArrowLeftIcon,
   CheckIcon,
   XIcon,
@@ -110,7 +114,13 @@ const SUGGESTION_LABELS: Record<string, string> = {
   blog: "Blog Recommendations",
 };
 
-function PlatformStatusRow({ platform }: { platform: Platform }) {
+function PlatformStatusRow({
+  platform,
+  note,
+}: {
+  platform: Platform;
+  note?: string | null;
+}) {
   const [retryState, retryAction, isRetrying] = useActionState(retryPlatform, {});
 
   return (
@@ -123,6 +133,9 @@ function PlatformStatusRow({ platform }: { platform: Platform }) {
           <p className="text-sm font-medium">
             {PLATFORM_LABELS[platform.platform] ?? platform.platform}
           </p>
+          {note && (
+            <p className="text-xs text-muted-foreground">{note}</p>
+          )}
           {platform.error && (
             <p className="text-xs text-destructive">{platform.error}</p>
           )}
@@ -261,6 +274,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const [liveVerifications, setLiveVerifications] = useState<TierResult[] | null>(
     (job.metadata.verifications as TierResult[] | undefined) ?? null
   );
+  const [supersedesLivePostId, setSupersedesLivePostId] = useState<number | null>(
+    readSupersedesLivePostId(job.metadata.supersedesLivePostId)
+  );
 
   const isTerminal = TERMINAL_STATUSES.includes(liveStatus);
   // Verification fires up to 30 min after distribution completes, so keep
@@ -277,6 +293,11 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
       setLiveStatus(data.status);
       setLivePlatforms(data.platforms);
       if (data.verifications !== undefined) setLiveVerifications(data.verifications);
+      if ("supersedesLivePostId" in data) {
+        setSupersedesLivePostId(
+          readSupersedesLivePostId(data.supersedesLivePostId)
+        );
+      }
     } catch {
       // Silently ignore — next poll will retry
     }
@@ -419,6 +440,14 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
               </p>
             </div>
           )}
+          {supersedesLivePostId != null && (
+            <div>
+              <p className="font-medium text-muted-foreground">Live stream</p>
+              <p className="mt-1">
+                {liveStreamReplacementNote(supersedesLivePostId)}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -429,7 +458,15 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         </CardHeader>
         <CardContent className="space-y-2">
           {livePlatforms.map((platform) => (
-            <PlatformStatusRow key={platform.id} platform={platform} />
+            <PlatformStatusRow
+              key={platform.id}
+              platform={platform}
+              note={
+                platform.platform === "website" && supersedesLivePostId != null
+                  ? liveStreamReplacementNote(supersedesLivePostId)
+                  : null
+              }
+            />
           ))}
         </CardContent>
       </Card>

@@ -2,10 +2,16 @@ import { createPost, uploadMedia } from "@/lib/wordpress/client";
 import { ContentType } from "@/lib/constants";
 import { prepareForWordPress } from "@/lib/image";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { liveStreamReplacementNote } from "@/lib/live-stream-note";
 import {
   renderChaptersForWordPress,
   SWM_CHAPTERS_META_KEY,
 } from "@/lib/chapters";
+import {
+  findLiveStreamCandidate,
+  toAirDate,
+  type LiveStreamCandidate,
+} from "@/lib/wordpress/live-candidate";
 
 export interface WordPressPublishParams {
   wpShowId: number;
@@ -28,12 +34,20 @@ export interface WordPressPublishParams {
   isPremiumOnly?: boolean;
   status: "publish" | "draft" | "future";
   scheduledDate?: string; // ISO date for future posts
+  /**
+   * When this episode aired or was recorded (ISO 8601 or YYYY-MM-DD).
+   * Used to find a same-day live-stream post to supersede. Falls back to
+   * `scheduledDate`, then today in America/Chicago.
+   */
+  airDate?: string;
   portalUserId: string;
 }
 
 export interface WordPressPublishResult {
   postId: number;
   postUrl: string;
+  /** WordPress post id of the live-stream episode this post replaces. */
+  supersedesLivePostId: number | null;
 }
 
 /**
@@ -58,8 +72,24 @@ export async function publishToWordPress(
     isPremiumOnly,
     status,
     scheduledDate,
+    airDate,
     portalUserId,
   } = params;
+
+  // Same-day live-stream posts are retired by the website when this episode
+  // carries `_swm_supersedes`. The lookup fails open so a missing endpoint
+  // (website dedup not deployed yet) never blocks the publish.
+  const lookupDate = toAirDate(airDate ?? scheduledDate);
+  const liveCandidatePromise = findLiveStreamCandidate(
+    wpShowId,
+    lookupDate
+  ).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[wordpress] Live-candidate lookup failed (${message}); publishing without supersede.`
+    );
+    return null;
+  });
 
   // Build content: description + chapters (if available).
   // Parseable chapters become H2s with id anchors and ?t= seek links, and
@@ -101,6 +131,13 @@ export async function publishToWordPress(
     console.warn(`[wordpress] Could not extract video ID from YouTube URL: ${youtubeUrl}`);
   }
 
+  const liveCandidate = await liveCandidatePromise;
+  if (liveCandidate) {
+    console.log(
+      `[wordpress] ${liveStreamReplacementNote(liveCandidate.id)}`
+    );
+  }
+
   console.log(`[wordpress] Creating episode post: "${title}"`);
 
   const payload = {
@@ -134,6 +171,7 @@ export async function publishToWordPress(
       // bookmarks the moment it arrives. Only send when non-empty.
       ...(transcriptVtt ? { _swm_transcript_vtt: transcriptVtt } : {}),
       ...(isPremiumOnly ? { is_premium_only: true } : {}),
+      ...liveCandidateMeta(liveCandidate),
     },
   };
 
@@ -141,5 +179,19 @@ export async function publishToWordPress(
 
   console.log(`[wordpress] Episode post created: ${post.link}`);
 
-  return { postId: post.id, postUrl: post.link };
+  return {
+    postId: post.id,
+    postUrl: post.link,
+    supersedesLivePostId: liveCandidate?.id ?? null,
+  };
+}
+
+function liveCandidateMeta(
+  candidate: LiveStreamCandidate | null
+): Record<string, number | string> {
+  if (!candidate) return {};
+  return {
+    _swm_supersedes: candidate.id,
+    _swm_live_youtube_id: candidate.youtube_id,
+  };
 }

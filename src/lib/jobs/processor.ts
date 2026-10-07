@@ -6,6 +6,7 @@ import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay, for
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { setTransistorEpisodeWebsite, uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
+import { liveStreamReplacementNote } from "@/lib/live-stream-note";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
 import { runVerificationTier, type TierResult } from "./verify-distribution";
 import { mergeJobMetadata } from "./job-metadata";
@@ -899,6 +900,10 @@ async function processJobInner(
           : "publish";
 
       const audioDuration = updatedMetadata.audioDuration;
+      const recordingAirDate = await lookupLiveRecordingAirDate(
+        youtubeUrl,
+        job.wpShowId
+      );
       const result = await publishToWordPress({
         wpShowId: job.wpShowId,
         title: job.title,
@@ -912,12 +917,45 @@ async function processJobInner(
         transcriptVtt: (updatedMetadata.transcriptVtt as string) || undefined,
         status: wpStatus,
         scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
+        airDate: recordingAirDate ?? scheduledAt,
         portalUserId: job.userId,
         isPremiumOnly: isPremium,
       });
 
       if (result.postUrl) {
         await applyTransistorWebsiteLinks(result.postUrl);
+      }
+
+      if (result.supersedesLivePostId) {
+        const note = liveStreamReplacementNote(result.supersedesLivePostId);
+        // The WordPress post already exists. A failure to record the link
+        // locally must not mark the platform failed — a retry would create
+        // a second episode.
+        await mergeJobMetadata(job.id, {
+          supersedesLivePostId: result.supersedesLivePostId,
+        }).catch((error) => {
+          console.error(
+            "[processor] Could not record superseded live post:",
+            error
+          );
+        });
+        await db.activityLog
+          .create({
+            data: {
+              userId: job.userId,
+              action: "distribute",
+              contentType: "episode",
+              wpPostId: result.postId,
+              wpShowId: job.wpShowId,
+              details: note,
+            },
+          })
+          .catch((error) => {
+            console.error(
+              "[processor] Could not log live-stream replacement:",
+              error
+            );
+          });
       }
 
       await db.distributionJobPlatform.update({
@@ -1015,6 +1053,38 @@ async function processJobInner(
   }
 
   return { jobId: job.id, status: finalStatus, platformResults };
+}
+
+/**
+ * Air date for a distribution that reuses an existing YouTube live URL.
+ * Prefers the broadcast's actual start, then the scheduled start, so the
+ * website dedup lookup matches the live-stream post from that day.
+ */
+async function lookupLiveRecordingAirDate(
+  youtubeUrl: string,
+  wpShowId: number
+): Promise<string | undefined> {
+  const videoId = extractYoutubeVideoId(youtubeUrl);
+  if (!videoId) return undefined;
+  try {
+    const recording = await db.liveRecording.findUnique({
+      where: { youtubeVideoId: videoId },
+      select: {
+        wpShowId: true,
+        actualStartedAt: true,
+        scheduledStartAt: true,
+      },
+    });
+    if (!recording || recording.wpShowId !== wpShowId) return undefined;
+    const stamp = recording.actualStartedAt ?? recording.scheduledStartAt;
+    return stamp.toISOString();
+  } catch (error) {
+    console.warn(
+      "[processor] Live recording air-date lookup failed; using publish date:",
+      error
+    );
+    return undefined;
+  }
 }
 
 const VERIFICATION_TIER_DELAYS_MS: Record<1 | 2 | 3 | 4, number> = {
