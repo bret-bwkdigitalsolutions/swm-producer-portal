@@ -7,15 +7,21 @@ import {
   cancelLiveRecording,
   retryStuckLiveRecording,
   forceArchiveLiveRecording,
+  rescanLiveRecordingMarks,
 } from "./actions";
 import type { LiveRecordingState } from "@/lib/live-recording/types";
 
 interface Props {
   liveRecordingId: string;
   state: LiveRecordingState;
+  canRescan?: boolean;
 }
 
-export function LiveRecordingAdminActions({ liveRecordingId, state }: Props) {
+export function LiveRecordingAdminActions({
+  liveRecordingId,
+  state,
+  canRescan = false,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{
@@ -62,6 +68,18 @@ export function LiveRecordingAdminActions({ liveRecordingId, state }: Props) {
             onClick={() => run("Retry", () => retryStuckLiveRecording(liveRecordingId))}
           >
             Retry handoff
+          </Button>
+        )}
+        {canRescan && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() =>
+              run("Re-scan", () => rescanLiveRecordingMarks(liveRecordingId))
+            }
+          >
+            Re-scan
           </Button>
         )}
         {canForceArchive && (

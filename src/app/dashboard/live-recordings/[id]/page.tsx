@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { LiveRecordingStateBadge } from "@/components/dashboard/live-recording-state-badge";
 import { LiveRecordingAdminActions } from "./admin-actions";
+import { LiveRecordingMarks } from "@/components/dashboard/live-recording-marks";
 import type { LiveRecordingState } from "@/lib/live-recording/types";
 
 interface PageProps {
@@ -167,6 +168,19 @@ export default async function LiveRecordingDetailPage({ params }: PageProps) {
         </Card>
       )}
 
+      {(recording.state === "archived" || recording.transcriptStatus) && (
+        <LiveRecordingMarks
+          youtubeVideoId={recording.youtubeVideoId}
+          transcriptStatus={recording.transcriptStatus}
+          transcriptMarks={recording.transcriptMarks}
+          transcriptMarksResponse={recording.transcriptMarksResponse}
+          transcriptError={recording.transcriptError}
+          transcriptAttempts={recording.transcriptAttempts}
+          transcriptNextAttemptAt={recording.transcriptNextAttemptAt}
+          transcriptScannedAt={recording.transcriptScannedAt}
+        />
+      )}
+
       {isAdmin && (
         <Card>
           <CardHeader>
@@ -176,6 +190,7 @@ export default async function LiveRecordingDetailPage({ params }: PageProps) {
             <LiveRecordingAdminActions
               liveRecordingId={recording.id}
               state={recording.state as LiveRecordingState}
+              canRescan={recording.state === "archived"}
             />
           </CardContent>
         </Card>

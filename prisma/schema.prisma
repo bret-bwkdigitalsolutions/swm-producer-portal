@@ -494,6 +494,21 @@ model LiveRecording {
   downloadAttempts    Int       @default(0)
   errorMessage        String?   @db.Text  // last error when state = stuck
   isPremiumOnly       Boolean   @default(false) // mirrors swm_episode is_premium_only on the WP post
+  // Mark-that scan of the archived YouTube VOD. Null until the recording
+  // is archived (then "pending"). Other values: processing, completed,
+  // skipped, website_not_ready, failed.
+  transcriptStatus        String?
+  transcriptVtt           String?   @db.Text
+  transcriptUtterances    Json?
+  transcriptMarks         Json?
+  transcriptMarksResponse Json?
+  transcriptError         String?   @db.Text
+  transcriptAttempts      Int       @default(0)
+  transcriptNextAttemptAt DateTime?
+  transcriptScannedAt     DateTime?
+  transcriptDurationSec   Int?
+  // YouTube-VOD audio in GCS. Retries reuse it so a 404 does not re-download.
+  transcriptAudioPath     String?
   createdByUserId     String
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -502,5 +517,6 @@ model LiveRecording {
 
   @@index([state, scheduledStartAt])
   @@index([wpShowId])
+  @@index([transcriptStatus, transcriptNextAttemptAt])
   @@map("live_recordings")
 }
