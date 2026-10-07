@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getYouTubeAuthUrl } from "@/lib/youtube-oauth";
+import {
+  createOAuthState,
+  oauthStateCookieOptions,
+  YOUTUBE_OAUTH_STATE_COOKIE,
+} from "@/lib/oauth-state";
 
 function baseUrl(): string {
   return process.env.NEXTAUTH_URL ?? "http://localhost:3000";
@@ -21,6 +26,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const authUrl = getYouTubeAuthUrl(showIdNum);
-  return NextResponse.redirect(authUrl);
+  // Random state, also stored in an httpOnly cookie; the callback rejects
+  // any response whose state doesn't match (CSRF protection).
+  const state = createOAuthState(showIdNum);
+  const response = NextResponse.redirect(getYouTubeAuthUrl(state));
+  response.cookies.set(YOUTUBE_OAUTH_STATE_COOKIE, state, oauthStateCookieOptions());
+  return response;
 }

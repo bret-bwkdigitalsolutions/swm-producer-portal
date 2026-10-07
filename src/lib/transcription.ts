@@ -1,6 +1,12 @@
 import "server-only";
 
+import { applyAsrCorrections } from "@/lib/asr-corrections";
 import { generateSignedDownloadUrl } from "@/lib/gcs";
+import {
+  buildDeepgramListenQuery,
+  keytermsForShow,
+  keytermsFromHosts,
+} from "@/lib/keyterms";
 
 export interface TranscriptSegment {
   start: number;   // seconds
@@ -16,49 +22,73 @@ export interface TranscriptionResult {
   duration: number; // total audio duration in seconds
 }
 
+export interface TranscribeOptions {
+  /**
+   * BCP-47 code (e.g. "es") to force the transcription language. When set,
+   * Deepgram transcribes in that language instead of auto-detecting — used
+   * for shows configured to a specific language (e.g. ¡Al Maximo! in Spanish).
+   * When omitted, language is auto-detected (default for most shows).
+   */
+  forceLanguage?: string;
+  /** Show id used to pick the Deepgram keyterm list. */
+  wpShowId?: number;
+  /**
+   * Extra phrases merged into the show list. Usually `ShowMetadata.hosts`.
+   * Pass either the raw comma-separated hosts string via `hosts` or phrases
+   * already split via `extraKeyterms`.
+   */
+  extraKeyterms?: string[];
+  /** Comma-separated host names from ShowMetadata. */
+  hosts?: string | null;
+}
+
+function resolveTranscribeOptions(
+  options?: string | TranscribeOptions
+): TranscribeOptions {
+  if (typeof options === "string") return { forceLanguage: options };
+  return options ?? {};
+}
+
 /**
- * Transcribe an audio file stored in GCS using Deepgram.
+ * Transcribe an audio file stored in GCS using Deepgram Nova-3.
  *
- * @param gcsAudioPath - GCS path of the audio file
- * @param forceLanguage - BCP-47 code (e.g. "es") to force the transcription
- *   language. When set, Deepgram transcribes in that language instead of
- *   auto-detecting — used for shows configured to a specific language (e.g.
- *   ¡Al Maximo! in Spanish) so the transcript is reliably in that language.
- *   When omitted, language is auto-detected (default for most shows).
- * @returns Transcription result with timestamped segments
+ * The second argument is either a BCP-47 language code (legacy) or
+ * {@link TranscribeOptions}. Show keyterms are sent as repeated `keyterm`
+ * params. The returned transcript has the reviewed ASR dictionary applied
+ * to the full text and to each segment before the caller saves or publishes it.
  */
 export async function transcribeAudio(
   gcsAudioPath: string,
-  forceLanguage?: string
+  options?: string | TranscribeOptions
 ): Promise<TranscriptionResult> {
+  const { forceLanguage, wpShowId, extraKeyterms, hosts } =
+    resolveTranscribeOptions(options);
+
   const apiKey = process.env.DEEPGRAM_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPGRAM_API_KEY is not set.");
   }
 
   const downloadUrl = await generateSignedDownloadUrl(gcsAudioPath);
+  const keyterms = keytermsForShow(wpShowId, [
+    ...keytermsFromHosts(hosts),
+    ...(extraKeyterms ?? []),
+  ]);
 
   console.log(
     `[transcription] Transcribing: ${gcsAudioPath}` +
-      (forceLanguage ? ` (forced language: ${forceLanguage})` : " (auto-detect)")
+      (forceLanguage ? ` (forced language: ${forceLanguage})` : " (auto-detect)") +
+      ` (${keyterms.length} keyterms` +
+      (wpShowId != null ? `, show ${wpShowId}` : "") +
+      ")"
   );
 
   // Deepgram takes either an explicit `language` OR `detect_language`, not both.
-  const params: Record<string, string> = {
-    model: "nova-3",
-    smart_format: "true",
-    diarize: "true",
-    paragraphs: "true",
-    utterances: "true",
-  };
-  if (forceLanguage) {
-    params.language = forceLanguage;
-  } else {
-    params.detect_language = "true";
-  }
+  // Keyterms must be repeated params — see buildDeepgramListenQuery.
+  const query = buildDeepgramListenQuery({ forceLanguage, keyterms });
 
   const response = await fetch(
-    "https://api.deepgram.com/v1/listen?" + new URLSearchParams(params),
+    "https://api.deepgram.com/v1/listen?" + query.toString(),
     {
       method: "POST",
       headers: {
@@ -85,7 +115,10 @@ export async function transcribeAudio(
     (p: any) => ({
       start: p.start,
       end: p.end,
-      text: p.sentences?.map((s: any) => s.text).join(" ") ?? "",
+      // Correct names before anything persists this text.
+      text: applyAsrCorrections(
+        p.sentences?.map((s: any) => s.text).join(" ") ?? ""
+      ),
       speaker: p.speaker,
     })
   );
@@ -103,7 +136,7 @@ export async function transcribeAudio(
   );
 
   return {
-    fullText: result.transcript ?? "",
+    fullText: applyAsrCorrections(result.transcript ?? ""),
     segments,
     language: detectedLanguage,
     duration,

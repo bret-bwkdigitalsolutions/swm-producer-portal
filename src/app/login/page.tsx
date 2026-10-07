@@ -1,8 +1,8 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+
+/** Errors from the Google flow come back as ?error=... on this page. */
+function OAuthErrorMessage() {
+  const code = useSearchParams().get("error");
+  if (!code) return null;
+  const message =
+    code === "AccessDenied"
+      ? "That Google account doesn't have access to the portal. Ask an admin for an invite, or sign in with the email address you were invited with."
+      : "Sign-in failed. Please try again.";
+  return <p className="text-sm text-red-600">{message}</p>;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,7 +44,10 @@ export default function LoginPage() {
       redirect: false,
     });
 
-    if (result?.error) {
+    if (result?.code === "rate_limited") {
+      setError("Too many sign-in attempts. Please wait 15 minutes and try again.");
+      setLoading(false);
+    } else if (result?.error) {
       setError("Invalid email or password");
       setLoading(false);
     } else {
@@ -51,6 +65,9 @@ export default function LoginPage() {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Suspense fallback={null}>
+            <OAuthErrorMessage />
+          </Suspense>
           <Button
             variant="outline"
             className="w-full"

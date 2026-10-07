@@ -68,6 +68,7 @@ vi.mock("@/lib/platforms/youtube", () => ({
 
 vi.mock("@/lib/platforms/transistor", () => ({
   uploadToTransistor: (...args: unknown[]) => mockUploadToTransistor(...args),
+  setTransistorEpisodeWebsite: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/platforms/wordpress", () => ({

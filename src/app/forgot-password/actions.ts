@@ -1,6 +1,9 @@
 "use server";
 
+import { headers } from "next/headers";
 import { db } from "@/lib/db";
+import { PASSWORD_RESET_RATE_LIMITS } from "@/lib/auth-policy";
+import { clientIpFromHeaders, rateLimit } from "@/lib/rate-limit";
 import { createAndSendPasswordReset } from "@/lib/password-reset";
 
 interface ForgotPasswordState {
@@ -20,6 +23,20 @@ export async function requestPasswordReset(
 
   if (!email) {
     return { error: "Please enter your email address." };
+  }
+
+  // Abuse protection. The per-IP limit returns an error (it doesn't reveal
+  // anything about the account); the per-email limit silently skips sending
+  // so the response stays identical whether or not the account exists.
+  const ip = clientIpFromHeaders(await headers());
+  const byIp = await rateLimit(`pwreset:ip:${ip}`, PASSWORD_RESET_RATE_LIMITS.perIp);
+  if (!byIp.allowed) {
+    return { error: "Too many requests. Please try again later." };
+  }
+  const byEmail = await rateLimit(`pwreset:email:${email}`, PASSWORD_RESET_RATE_LIMITS.perEmail);
+  if (!byEmail.allowed) {
+    console.warn("[forgot-password] per-email rate limit hit — not sending");
+    return { sent: true };
   }
 
   const user = await db.user.findUnique({

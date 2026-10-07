@@ -295,3 +295,49 @@ export async function uploadToTransistor(
 
   return { episodeId: String(episodeId), episodeUrl: shareUrl };
 }
+
+/**
+ * Point a Transistor episode's website / RSS `<link>` at the SWM episode
+ * permalink. Transistor's `alternate_url` overrides `share_url` in the feed,
+ * which is what aggregators cite when the link is left on share.transistor.fm.
+ *
+ * Call this after WordPress returns `post.link`. The show episode uses that
+ * show's API key (network default when the show has no override). A Sunset
+ * Lounge network cross-post is a different episode id and must be updated
+ * with the network key (`wpShowId` 0).
+ */
+export async function setTransistorEpisodeWebsite(params: {
+  wpShowId: number;
+  episodeId: string;
+  websiteUrl: string;
+}): Promise<void> {
+  const { wpShowId, episodeId, websiteUrl } = params;
+  if (!websiteUrl) return;
+
+  const apiKey = await getTransistorApiKey(wpShowId);
+  if (!apiKey) {
+    throw new Error(
+      `No Transistor API key found for show ${wpShowId}. Cannot set episode website.`
+    );
+  }
+
+  const res = await fetch(`${BASE_URL}/episodes/${episodeId}`, {
+    method: "PATCH",
+    headers: {
+      "x-api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ episode: { alternate_url: websiteUrl } }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Transistor alternate_url update failed (${res.status}) for episode ${episodeId}: ${body.slice(0, 300)}`
+    );
+  }
+
+  console.log(
+    `[transistor] Episode ${episodeId} website set to ${websiteUrl}`
+  );
+}

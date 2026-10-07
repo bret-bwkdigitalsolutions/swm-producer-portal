@@ -63,8 +63,10 @@ function buildChapterPrompt(ctx: AnalysisContext): string {
       `Description: ${ctx.description ?? "N/A"}`,
       "",
       "Based on the title and description, suggest a logical chapter structure.",
-      "Format each chapter as: HH:MM:SS - Chapter Title",
-      "Include a brief one-sentence description for each chapter.",
+      "Format each chapter as its own block, separated by a blank line:",
+      "HH:MM:SS - Chapter Title",
+      "One-sentence description of that chapter.",
+      "The timestamp is the chapter start. Do not put the description on the timestamp line.",
       ctx.language === "es"
         ? "Write all chapter titles and descriptions in Spanish since the episode is in Spanish."
         : "",
@@ -77,9 +79,11 @@ function buildChapterPrompt(ctx: AnalysisContext): string {
   return [
     "You are helping a podcast producer create timestamped chapter markers for an episode.",
     "Analyze the timestamped transcript below and identify natural topic breaks.",
-    "Format each chapter as: HH:MM:SS - Chapter Title",
-    "Use the actual timestamps from the transcript. Aim for chapters every 5-15 minutes depending on topic changes.",
-    "Include a brief one-sentence description for each chapter.",
+    "Format each chapter as its own block, separated by a blank line:",
+    "HH:MM:SS - Chapter Title",
+    "One-sentence description of that chapter.",
+    "The timestamp is the chapter start. Use the actual timestamps from the transcript. Aim for chapters every 5-15 minutes depending on topic changes.",
+    "Do not put the description on the timestamp line. The title is the text after the dash.",
     ctx.language === "es"
       ? "Write all chapter titles and descriptions in Spanish since the episode is in Spanish."
       : "",
