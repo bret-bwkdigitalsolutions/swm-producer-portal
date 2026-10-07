@@ -929,12 +929,10 @@ async function processJobInner(
 
       if (result.supersedeDropped) {
         // The episode exists. WordPress accepted the create and discarded
-        // the supersede meta. Record that and do not retry.
+        // the supersede meta. Record the drop only — do not store a
+        // replacement id the UI would render as "Replaces live stream post".
         await mergeJobMetadata(job.id, {
           supersedeDropped: true,
-          ...(result.supersedesLivePostId
-            ? { supersedesLivePostId: result.supersedesLivePostId }
-            : {}),
         }).catch((error) => {
           console.error(
             "[processor] Could not record dropped supersede meta:",

@@ -1,8 +1,4 @@
-import {
-  createPost,
-  findEpisodeCreatedForShow,
-  uploadMedia,
-} from "@/lib/wordpress/client";
+import { createPost, uploadMedia } from "@/lib/wordpress/client";
 import { ContentType } from "@/lib/constants";
 import { prepareForWordPress } from "@/lib/image";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
@@ -16,7 +12,6 @@ import {
   parseAirDate,
   type LiveStreamCandidate,
 } from "@/lib/wordpress/live-candidate";
-import { WpApiError, type WpPost } from "@/lib/wordpress/types";
 
 export interface WordPressPublishParams {
   wpShowId: number;
@@ -57,7 +52,11 @@ export interface WordPressPublishParams {
 export interface WordPressPublishResult {
   postId: number;
   postUrl: string;
-  /** WordPress post id of the live-stream episode this post replaces. */
+  /**
+   * WordPress post id of the live-stream episode this post replaces.
+   * Set only when the 201 body echoed `_swm_supersedes`. A dropped meta
+   * key leaves this null so the UI cannot claim a replacement.
+   */
   supersedesLivePostId: number | null;
   /**
    * True when `_swm_supersedes` was sent and the 201 body did not echo it.
@@ -160,8 +159,6 @@ export async function publishToWordPress(
     console.warn(
       `[wordpress] Live candidate #${liveCandidate.id} does not match recording ${matchedYoutubeId}; publishing without supersede.`
     );
-  } else if (supersede) {
-    console.log(`[wordpress] ${liveStreamReplacementNote(supersede.id)}`);
   }
 
   console.log(`[wordpress] Creating episode post: "${title}"`);
@@ -201,42 +198,24 @@ export async function publishToWordPress(
     },
   };
 
-  try {
-    const post = await createPost(ContentType.EPISODE, payload);
-    console.log(`[wordpress] Episode post created: ${post.link}`);
-    const supersedeDropped = supersede
-      ? !responseKeptSupersede(post.meta, supersede.id)
-      : false;
-    if (supersedeDropped && supersede) {
-      console.warn(
-        `[wordpress] Create response omitted _swm_supersedes for live post #${supersede.id}; not retrying.`
-      );
-    }
-    return {
-      postId: post.id,
-      postUrl: post.link,
-      supersedesLivePostId: supersede?.id ?? null,
-      supersedeDropped,
-    };
-  } catch (error) {
-    const recovered = await recoverCreatedEpisode(error, {
-      wpShowId,
-      title,
-      excludeIds: supersede ? [supersede.id] : [],
-    });
-    if (!recovered) throw error;
+  const post = await createPost(ContentType.EPISODE, payload);
+  console.log(`[wordpress] Episode post created: ${post.link}`);
+  const echoed =
+    supersede != null && responseKeptSupersede(post.meta, supersede.id);
+  const supersedeDropped = supersede != null && !echoed;
+  if (supersedeDropped && supersede) {
     console.warn(
-      `[wordpress] WordPress returned HTTP ${
-        error instanceof WpApiError ? error.status : "error"
-      } for supersede meta; using existing post #${recovered.id}.`
+      `[wordpress] Create response omitted _swm_supersedes for live post #${supersede.id}; not retrying.`
     );
-    return {
-      postId: recovered.id,
-      postUrl: recovered.link,
-      supersedesLivePostId: supersede?.id ?? null,
-      supersedeDropped: false,
-    };
+  } else if (echoed && supersede) {
+    console.log(`[wordpress] ${liveStreamReplacementNote(supersede.id)}`);
   }
+  return {
+    postId: post.id,
+    postUrl: post.link,
+    supersedesLivePostId: echoed && supersede ? supersede.id : null,
+    supersedeDropped,
+  };
 }
 
 /**
@@ -255,35 +234,6 @@ function responseKeptSupersede(
     return Number(raw.trim()) === sentId;
   }
   return false;
-}
-
-/**
- * WordPress sometimes inserts the episode and then returns 400/403 because
- * `_swm_supersedes` / `_swm_live_youtube_id` are not registered. Retrying the
- * create would duplicate the post, so adopt the one that just landed.
- */
-async function recoverCreatedEpisode(
-  error: unknown,
-  args: { wpShowId: number; title: string; excludeIds: number[] }
-): Promise<Pick<WpPost, "id" | "link"> | null> {
-  if (!(error instanceof WpApiError)) return null;
-  if (error.status !== 400 && error.status !== 403) return null;
-  const mentionsSupersedeMeta =
-    error.message.includes("_swm_supersedes") ||
-    error.message.includes("_swm_live_youtube_id");
-  if (!mentionsSupersedeMeta) return null;
-
-  try {
-    return await findEpisodeCreatedForShow(args.wpShowId, args.title, {
-      excludeIds: args.excludeIds,
-    });
-  } catch (lookupError) {
-    console.warn(
-      "[wordpress] Could not look up episode after supersede meta rejection:",
-      lookupError
-    );
-    return null;
-  }
 }
 
 function liveCandidateMeta(

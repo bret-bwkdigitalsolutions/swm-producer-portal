@@ -4,13 +4,10 @@ vi.mock("server-only", () => ({}));
 
 const mockCreatePost = vi.fn();
 const mockFindLiveStreamCandidate = vi.fn();
-const mockFindEpisodeCreatedForShow = vi.fn();
 
 vi.mock("@/lib/wordpress/client", () => ({
   createPost: (...args: unknown[]) => mockCreatePost(...args),
   uploadMedia: vi.fn(),
-  findEpisodeCreatedForShow: (...args: unknown[]) =>
-    mockFindEpisodeCreatedForShow(...args),
 }));
 
 vi.mock("@/lib/image", () => ({
@@ -63,14 +60,6 @@ function createdMeta(): Record<string, unknown> {
     meta: Record<string, unknown>;
   };
   return payload.meta;
-}
-
-function metaError(status: 400 | 403, key: string): WpApiError {
-  return new WpApiError(
-    `WP API error: ${status} — {"code":"rest_invalid_param","message":"Invalid meta ${key}"}`,
-    status,
-    "/swm_episode"
-  );
 }
 
 describe("publishToWordPress live-stream dedup", () => {
@@ -223,60 +212,27 @@ describe("publishToWordPress live-stream dedup", () => {
     );
   });
 
-  it("adopts the created post when WordPress rejects supersede meta with 400 or 403", async () => {
+  it("fails the publish when WordPress rejects the create", async () => {
     mockFindLiveStreamCandidate.mockResolvedValue({
       id: 55,
       title: "Friday Live",
       youtube_id: "liveVid1234",
       date: "2026-05-20",
     });
-    mockFindEpisodeCreatedForShow.mockResolvedValue({
-      id: 901,
-      link: "https://example.com/episode/friday-night-live",
-    });
-
-    for (const failure of [
-      metaError(400, "_swm_supersedes"),
-      metaError(403, "_swm_live_youtube_id"),
-    ]) {
-      mockCreatePost.mockRejectedValueOnce(failure);
-      const result = await publishToWordPress({
-        ...baseParams,
-        ...matchedRecording,
-      });
-      expect(result).toEqual({
-        postId: 901,
-        postUrl: "https://example.com/episode/friday-night-live",
-        supersedesLivePostId: 55,
-        supersedeDropped: false,
-      });
-    }
-
-    expect(mockFindEpisodeCreatedForShow).toHaveBeenCalledWith(
-      22,
-      "Friday Night Live",
-      { excludeIds: [55] }
+    const failure = new WpApiError(
+      'WP API error: 400 — {"code":"rest_invalid_param","message":"Invalid meta _swm_supersedes"}',
+      400,
+      "/swm_episode"
     );
-    expect(mockCreatePost).toHaveBeenCalledTimes(2);
-  });
-
-  it("still fails when supersede meta is rejected and the new post cannot be found", async () => {
-    mockFindLiveStreamCandidate.mockResolvedValue({
-      id: 55,
-      title: "Friday Live",
-      youtube_id: "liveVid1234",
-      date: "2026-05-20",
-    });
-    const failure = metaError(400, "_swm_supersedes");
     mockCreatePost.mockRejectedValueOnce(failure);
-    mockFindEpisodeCreatedForShow.mockResolvedValue(null);
 
     await expect(
       publishToWordPress({ ...baseParams, ...matchedRecording })
     ).rejects.toBe(failure);
+    expect(mockCreatePost).toHaveBeenCalledTimes(1);
   });
 
-  it("flags a 201 that omitted _swm_supersedes and does not retry", async () => {
+  it("flags a 201 that omitted _swm_supersedes and does not claim a replacement", async () => {
     mockFindLiveStreamCandidate.mockResolvedValue({
       id: 55,
       title: "Friday Live",
@@ -298,7 +254,7 @@ describe("publishToWordPress live-stream dedup", () => {
     expect(result).toEqual({
       postId: 900,
       postUrl: "https://example.com/episode/friday",
-      supersedesLivePostId: 55,
+      supersedesLivePostId: null,
       supersedeDropped: true,
     });
     expect(console.warn).toHaveBeenCalledWith(
@@ -325,31 +281,7 @@ describe("publishToWordPress live-stream dedup", () => {
     });
 
     expect(result.supersedeDropped).toBe(false);
+    expect(result.supersedesLivePostId).toBe(55);
     expect(mockCreatePost).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not look up an existing post for unrelated create errors", async () => {
-    mockFindLiveStreamCandidate.mockResolvedValue({
-      id: 55,
-      title: "Friday Live",
-      youtube_id: "liveVid1234",
-      date: "2026-05-20",
-    });
-    mockCreatePost.mockRejectedValueOnce(
-      new WpApiError("WP API error: 400 — {\"message\":\"title is empty\"}", 400, "/swm_episode")
-    );
-
-    await expect(
-      publishToWordPress({ ...baseParams, ...matchedRecording })
-    ).rejects.toBeInstanceOf(WpApiError);
-    expect(mockFindEpisodeCreatedForShow).not.toHaveBeenCalled();
-
-    mockCreatePost.mockRejectedValueOnce(
-      new WpApiError("WP API error: 500 — {_swm_supersedes}", 500, "/swm_episode")
-    );
-    await expect(
-      publishToWordPress({ ...baseParams, ...matchedRecording })
-    ).rejects.toBeInstanceOf(WpApiError);
-    expect(mockFindEpisodeCreatedForShow).not.toHaveBeenCalled();
   });
 });

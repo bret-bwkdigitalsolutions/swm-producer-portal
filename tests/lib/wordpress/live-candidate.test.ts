@@ -193,7 +193,7 @@ describe("findLiveStreamCandidate", () => {
     }
   });
 
-  it("rejects a candidate whose date is a different America/Chicago day", async () => {
+  it("keeps a candidate whose date is a different day", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -207,10 +207,14 @@ describe("findLiveStreamCandidate", () => {
       }),
     });
 
-    await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toBeNull();
+    await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toMatchObject({
+      id: 55,
+      youtube_id: "vid",
+      date: "2026-05-21",
+    });
   });
 
-  it("accepts a winter timestamp that falls on the requested Chicago day", async () => {
+  it("normalizes a winter timestamp onto the Chicago calendar day", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -224,10 +228,21 @@ describe("findLiveStreamCandidate", () => {
       }),
     });
 
-    await expect(findLiveStreamCandidate(21, "2026-01-14")).resolves.toMatchObject({
+    await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toMatchObject({
       id: 55,
       date: "2026-01-14",
     });
+  });
+
+  it("fails open when WordPress credentials are unset", async () => {
+    delete process.env.WP_APP_USER;
+    delete process.env.WP_APP_PASSWORD;
+
+    await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("WP_APP_USER")
+    );
   });
 
   it("returns an empty youtube id when the field is missing", async () => {

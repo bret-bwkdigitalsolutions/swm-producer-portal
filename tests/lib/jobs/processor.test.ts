@@ -486,7 +486,7 @@ describe("processJob", () => {
     mockPublishToWordPress.mockResolvedValue({
       postId: 900,
       postUrl: "https://example.com/episode/friday",
-      supersedesLivePostId: 55,
+      supersedesLivePostId: null,
       supersedeDropped: true,
     });
 
@@ -501,11 +501,18 @@ describe("processJob", () => {
         data: expect.objectContaining({
           metadata: expect.objectContaining({
             supersedeDropped: true,
-            supersedesLivePostId: 55,
           }),
         }),
       })
     );
+    const recorded = mockJobUpdate.mock.calls.map(
+      (call) =>
+        (call[0] as { data?: { metadata?: Record<string, unknown> } }).data
+          ?.metadata
+    );
+    expect(
+      recorded.some((metadata) => metadata && "supersedesLivePostId" in metadata)
+    ).toBe(false);
     expect(mockActivityLogCreate).not.toHaveBeenCalled();
   });
 

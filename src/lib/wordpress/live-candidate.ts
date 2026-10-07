@@ -77,26 +77,21 @@ function parseCandidateId(value: unknown): number | null {
   return id;
 }
 
-function parseCandidate(
-  value: unknown,
-  requestedDate: string
-): LiveStreamCandidate | null {
+function parseCandidate(value: unknown): LiveStreamCandidate | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
   const id = parseCandidateId(raw.id);
   if (id == null) return null;
 
-  const requestedDay = parseAirDate(requestedDate);
-  const candidateDay =
-    typeof raw.date === "string" ? parseAirDate(raw.date) : null;
-  if (!requestedDay || !candidateDay || candidateDay !== requestedDay) return null;
-
+  // The YouTube id match in publishToWordPress is the safety check. Do not
+  // reject on candidate.date: that parse depends on the server timezone.
   const youtubeId = typeof raw.youtube_id === "string" ? raw.youtube_id.trim() : "";
+  const rawDate = typeof raw.date === "string" ? raw.date : "";
   return {
     id,
     title: typeof raw.title === "string" ? raw.title : "",
     youtube_id: youtubeId,
-    date: candidateDay,
+    date: parseAirDate(rawDate) ?? rawDate.trim(),
   };
 }
 
@@ -141,7 +136,7 @@ export async function findLiveStreamCandidate(
     const candidate = (body as { candidate?: unknown }).candidate;
     if (candidate == null) return null;
 
-    const parsed = parseCandidate(candidate, airDate);
+    const parsed = parseCandidate(candidate);
     if (!parsed) {
       console.warn(
         "[wordpress] Live-candidate response had an unusable candidate; publishing without supersede."

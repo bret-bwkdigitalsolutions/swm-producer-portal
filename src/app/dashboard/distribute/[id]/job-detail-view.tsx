@@ -447,6 +447,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
               </p>
             </div>
           )}
+          {/* The replacement sentence is stored only after a 201 that echoed
+              `_swm_supersedes`. A dropped key sets supersedeDropped and
+              leaves the post id unset. */}
           {supersedeDropped ? (
             <div>
               <p className="font-medium text-muted-foreground">Live stream</p>
