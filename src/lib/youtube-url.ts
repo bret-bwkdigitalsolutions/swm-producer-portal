@@ -31,6 +31,10 @@ export function extractYoutubeVideoId(input: string): string | null {
     return null;
   }
 
+  // `new URL` accepts any scheme. A `javascript:` URL whose host is
+  // youtube.com must not yield a video id.
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+
   if (!isYoutubeHostname(url.hostname)) return null;
 
   let id: string | null = null;
@@ -53,6 +57,12 @@ export function extractYoutubeVideoId(input: string): string | null {
 
   if (!id || !VIDEO_ID_PATTERN.test(id)) return null;
   return id;
+}
+
+/** Canonical watch URL for a validated 11-character YouTube video id. */
+export function youtubeWatchUrl(videoId: string): string | null {
+  if (!VIDEO_ID_PATTERN.test(videoId)) return null;
+  return `https://www.youtube.com/watch?v=${videoId}`;
 }
 
 /** Returns true when the string is a recognisable YouTube video URL. */

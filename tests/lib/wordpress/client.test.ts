@@ -18,8 +18,9 @@ import {
   getTaxonomyTerms,
   uploadMedia,
   createPost,
+  wpAuthorizationHeader,
 } from "@/lib/wordpress/client";
-import { WpApiError } from "@/lib/wordpress/types";
+import { WpApiError, WpConfigError } from "@/lib/wordpress/types";
 
 beforeEach(() => {
   mockFetch.mockReset();
@@ -118,6 +119,54 @@ describe("WordPress client", () => {
     expect(callBody.meta._swm_poster_url).toBe(
       "https://example.com/poster.jpg"
     );
+  });
+
+  it("labels missing WordPress credentials as a config error and does not retry", async () => {
+    const user = process.env.WP_APP_USER;
+    const password = process.env.WP_APP_PASSWORD;
+    delete process.env.WP_APP_USER;
+    delete process.env.WP_APP_PASSWORD;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const thrown = await getShows().then(
+        () => null,
+        (error: unknown) => error
+      );
+      expect(thrown).toBeInstanceOf(WpConfigError);
+      expect((thrown as Error).message).toMatch(/WP API config error/);
+      expect((thrown as Error).message).not.toMatch(/network error/);
+      expect(mockFetch).not.toHaveBeenCalled();
+      const attempts = errorSpy.mock.calls.filter((call) =>
+        String(call[0]).includes("attempt")
+      );
+      expect(attempts).toHaveLength(1);
+    } finally {
+      process.env.WP_APP_USER = user;
+      process.env.WP_APP_PASSWORD = password;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("throws when WordPress app credentials are unset", () => {
+    const user = process.env.WP_APP_USER;
+    const password = process.env.WP_APP_PASSWORD;
+    try {
+      delete process.env.WP_APP_USER;
+      delete process.env.WP_APP_PASSWORD;
+      expect(() => wpAuthorizationHeader()).toThrow(
+        /WP_APP_USER and WP_APP_PASSWORD/
+      );
+
+      process.env.WP_APP_USER = " ";
+      process.env.WP_APP_PASSWORD = password;
+      expect(() => wpAuthorizationHeader()).toThrow(
+        /WP_APP_USER and WP_APP_PASSWORD/
+      );
+    } finally {
+      process.env.WP_APP_USER = user;
+      process.env.WP_APP_PASSWORD = password;
+    }
   });
 
   it("uploadMedia sends file as FormData", async () => {

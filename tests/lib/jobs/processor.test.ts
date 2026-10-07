@@ -16,6 +16,8 @@ const mockShowMetadataFindUnique = vi.fn();
 const mockPlatformCredentialFindUnique = vi.fn();
 const mockShowPlatformLinkFindUnique = vi.fn();
 const mockQueryRaw = vi.fn();
+const mockActivityLogCreate = vi.fn();
+const mockLiveRecordingFindUnique = vi.fn();
 
 vi.mock("@/lib/db", () => {
   const dbMock: Record<string, unknown> = {
@@ -39,6 +41,12 @@ vi.mock("@/lib/db", () => {
       findUnique: (...args: unknown[]) => mockShowPlatformLinkFindUnique(...args),
     },
     $queryRaw: (...args: unknown[]) => mockQueryRaw(...args),
+    activityLog: {
+      create: (...args: unknown[]) => mockActivityLogCreate(...args),
+    },
+    liveRecording: {
+      findUnique: (...args: unknown[]) => mockLiveRecordingFindUnique(...args),
+    },
     // mergeJobMetadata runs its merge inside a transaction — hand the
     // callback the same mock client.
     $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(dbMock),
@@ -118,6 +126,7 @@ vi.mock("@/lib/jobs/ai-processor", () => ({
 // ---------------------------------------------------------------------------
 
 import { processJob } from "@/lib/jobs/processor";
+import { toAirDate } from "@/lib/wordpress/live-candidate";
 import { downloadFullVideoToGcs } from "@/lib/jobs/video-downloader";
 
 // ---------------------------------------------------------------------------
@@ -187,6 +196,8 @@ describe("processJob", () => {
     mockPlatformCredentialFindUnique.mockResolvedValue(null);
     mockShowPlatformLinkFindUnique.mockResolvedValue(null);
     mockQueryRaw.mockResolvedValue([{ metadata: {} }]);
+    mockActivityLogCreate.mockResolvedValue({});
+    mockLiveRecordingFindUnique.mockResolvedValue(null);
     delete process.env.GCS_FUSE_MOUNTS;
     delete process.env.GCS_UPLOAD_BUCKET_NAME;
     delete process.env.GCS_BUCKET_NAME;
@@ -272,6 +283,331 @@ describe("processJob", () => {
         (r: { platform: string }) => r.platform === "tiktok"
       )?.error
     ).toContain("not yet supported");
+  });
+
+  it("records a live-stream post the WordPress episode replaces", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        existingYoutubeUrl: "https://www.youtube.com/watch?v=liveVid1234",
+      },
+      gcsPath: "uploads/2026/03/audio.mp3",
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "liveVid1234",
+          externalUrl: "https://www.youtube.com/watch?v=liveVid1234",
+        },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: 55,
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wpShowId: 42,
+        airDate: "2026-05-21T03:30:00.000Z",
+        liveRecordingYoutubeId: "liveVid1234",
+      })
+    );
+    expect(mockLiveRecordingFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { youtubeVideoId: "liveVid1234" },
+      })
+    );
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ supersedesLivePostId: 55 }),
+        }),
+      })
+    );
+    expect(mockActivityLogCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "user-1",
+        action: "distribute",
+        contentType: "episode",
+        wpPostId: 900,
+        wpShowId: 42,
+        details: "Replaces live stream post #55",
+      }),
+    });
+  });
+
+  function archivedLiveJob(metadata: Record<string, unknown> = {}) {
+    return makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        existingYoutubeUrl: "https://www.youtube.com/watch?v=liveVid1234",
+        scheduleMode: "now",
+        scheduledAt: "2026-06-01T19:00:00-05:00",
+        ...metadata,
+      },
+      gcsPath: "uploads/2026/03/audio.mp3",
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "liveVid1234",
+          externalUrl: "https://www.youtube.com/watch?v=liveVid1234",
+        },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+  }
+
+  it("does not pass a show-date guess when no live recording matches", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue(null);
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: null,
+    });
+
+    await processJob("job-1");
+
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "publish",
+        airDate: undefined,
+        liveRecordingYoutubeId: undefined,
+      })
+    );
+    expect(mockActivityLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("uses an entered live video id when the published video is a different cut", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-07T18:00:00Z"));
+    try {
+      const job = archivedLiveJob({
+        existingYoutubeUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+        liveYoutubeVideoId: "sLB7STNGACI",
+      });
+      job.platforms = job.platforms.map((platform) =>
+        platform.platform === "youtube"
+          ? {
+              ...platform,
+              externalId: "CrP0kNuyT_Y",
+              externalUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+            }
+          : platform
+      );
+      mockFindUnique.mockResolvedValue(job);
+      mockLiveRecordingFindUnique.mockImplementation(
+        async (args: { where: { youtubeVideoId: string } }) => {
+          if (args.where.youtubeVideoId === "CrP0kNuyT_Y") {
+            return {
+              wpShowId: 42,
+              actualStartedAt: new Date("2026-01-01T18:00:00Z"),
+              scheduledStartAt: new Date("2026-01-01T18:00:00Z"),
+            };
+          }
+          return null;
+        }
+      );
+      mockPublishToWordPress.mockResolvedValue({
+        postId: 900,
+        postUrl: "https://example.com/episode/friday",
+        supersedesLivePostId: 4234,
+        supersedeDropped: false,
+      });
+
+      await processJob("job-1");
+
+      expect(mockPublishToWordPress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          youtubeUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+          liveRecordingYoutubeId: "sLB7STNGACI",
+          airDate: toAirDate(),
+        })
+      );
+      const lookedUp = mockLiveRecordingFindUnique.mock.calls.map(
+        (call) =>
+          (call[0] as { where: { youtubeVideoId: string } }).where.youtubeVideoId
+      );
+      expect(lookedUp).toEqual(["sLB7STNGACI"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses the entered live recording's air date when that broadcast is in the portal", async () => {
+    const job = archivedLiveJob({
+      existingYoutubeUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+      liveYoutubeVideoId: "sLB7STNGACI",
+    });
+    job.platforms = job.platforms.map((platform) =>
+      platform.platform === "youtube"
+        ? {
+            ...platform,
+            externalId: "CrP0kNuyT_Y",
+            externalUrl: "https://www.youtube.com/watch?v=CrP0kNuyT_Y",
+          }
+        : platform
+    );
+    mockFindUnique.mockResolvedValue(job);
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: null,
+    });
+
+    await processJob("job-1");
+
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        liveRecordingYoutubeId: "sLB7STNGACI",
+        airDate: "2026-05-21T03:30:00.000Z",
+      })
+    );
+  });
+
+  it("ignores a live recording that belongs to a different show", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 99,
+      actualStartedAt: new Date("2026-05-20T19:00:00Z"),
+      scheduledStartAt: new Date("2026-05-20T19:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: null,
+    });
+
+    await processJob("job-1");
+
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        airDate: undefined,
+        liveRecordingYoutubeId: undefined,
+      })
+    );
+  });
+
+  it("still completes WordPress when saving the supersede link fails", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: 55,
+    });
+    mockQueryRaw.mockRejectedValueOnce(new Error("metadata lock failed"));
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      "[processor] Could not record superseded live post:",
+      expect.any(Error)
+    );
+    expect(mockActivityLogCreate).toHaveBeenCalled();
+  });
+
+  it("still completes WordPress when the activity log write fails", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: 55,
+    });
+    mockActivityLogCreate.mockRejectedValueOnce(new Error("activity log down"));
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ supersedesLivePostId: 55 }),
+        }),
+      })
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      "[processor] Could not log live-stream replacement:",
+      expect.any(Error)
+    );
+  });
+
+  it("records a dropped supersede without retrying WordPress", async () => {
+    mockFindUnique.mockResolvedValue(archivedLiveJob());
+    mockLiveRecordingFindUnique.mockResolvedValue({
+      wpShowId: 42,
+      actualStartedAt: new Date("2026-05-21T03:30:00Z"),
+      scheduledStartAt: new Date("2026-05-20T23:00:00Z"),
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/friday",
+      supersedesLivePostId: null,
+      supersedeDropped: true,
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(mockPublishToWordPress).toHaveBeenCalledTimes(1);
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            supersedeDropped: true,
+          }),
+        }),
+      })
+    );
+    const recorded = mockJobUpdate.mock.calls.map(
+      (call) =>
+        (call[0] as { data?: { metadata?: Record<string, unknown> } }).data
+          ?.metadata
+    );
+    expect(
+      recorded.some((metadata) => metadata && "supersedesLivePostId" in metadata)
+    ).toBe(false);
+    expect(mockActivityLogCreate).not.toHaveBeenCalled();
   });
 
   it("sends error notification when any platform fails", async () => {
