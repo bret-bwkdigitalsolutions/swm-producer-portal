@@ -56,6 +56,7 @@ function resolveTranscribeOptions(
  * {@link TranscribeOptions}. Show keyterms are sent as repeated `keyterm`
  * params. The returned transcript has the reviewed ASR dictionary applied
  * to the full text and to each segment before the caller saves or publishes it.
+ * Show-scoped rules use `wpShowId`; unscoped rules always run.
  */
 export async function transcribeAudio(
   gcsAudioPath: string,
@@ -117,7 +118,8 @@ export async function transcribeAudio(
       end: p.end,
       // Correct names before anything persists this text.
       text: applyAsrCorrections(
-        p.sentences?.map((s: any) => s.text).join(" ") ?? ""
+        p.sentences?.map((s: any) => s.text).join(" ") ?? "",
+        wpShowId
       ),
       speaker: p.speaker,
     })
@@ -136,7 +138,7 @@ export async function transcribeAudio(
   );
 
   return {
-    fullText: applyAsrCorrections(result.transcript ?? ""),
+    fullText: applyAsrCorrections(result.transcript ?? "", wpShowId),
     segments,
     language: detectedLanguage,
     duration,
