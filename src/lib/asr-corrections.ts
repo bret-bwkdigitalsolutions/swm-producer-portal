@@ -10,6 +10,9 @@
  * longest-first so a shorter rule cannot chop a longer one. Replacements
  * use the canonical spelling regardless of the ASR's capitalization.
  * Running the dictionary twice is a no-op.
+ *
+ * A rule with `showIds` applies only on those WordPress show ids. Rules
+ * without `showIds` apply on every show, including when the show is unknown.
  */
 
 export interface AsrRule {
@@ -19,13 +22,19 @@ export interface AsrRule {
   replace: string;
   /** Why this rule exists. Keep this when adding a row. */
   note: string;
+  /**
+   * WordPress show ids this rule may rewrite. Omit to apply on every show.
+   * A listed rule is skipped when the show id is missing.
+   */
+  showIds?: readonly number[];
 }
 
 export const ASR_RULES: readonly AsrRule[] = [
   {
     find: "Colin Davis",
     replace: "Cullen Davis",
-    note: "Signal 51 Case 13: Deepgram rendered T. Cullen Davis as Colin Davis.",
+    showIds: [27],
+    note: "Signal 51 Case 13: Deepgram rendered T. Cullen Davis as Colin Davis. Show 27 only — a real Colin Davis can appear on the sports shows.",
   },
   {
     find: "Yuri Telemann's",
@@ -188,7 +197,11 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const COMPILED_RULES: { pattern: RegExp; replace: string }[] = [...ASR_RULES]
+const COMPILED_RULES: {
+  pattern: RegExp;
+  replace: string;
+  showIds?: readonly number[];
+}[] = [...ASR_RULES]
   .sort((a, b) => b.find.length - a.find.length)
   .map((rule) => ({
     // Straight and curly apostrophes both appear in ASR text.
@@ -197,13 +210,23 @@ const COMPILED_RULES: { pattern: RegExp; replace: string }[] = [...ASR_RULES]
       "gi"
     ),
     replace: rule.replace,
+    showIds: rule.showIds,
   }));
 
-/** Apply the reviewed dictionary. Safe to run more than once. */
-export function applyAsrCorrections(text: string): string {
+/**
+ * Apply the reviewed dictionary. Safe to run more than once.
+ * `wpShowId` selects rules that list `showIds`; unscoped rules always run.
+ */
+export function applyAsrCorrections(text: string, wpShowId?: number): string {
   if (!text) return text;
   let next = text;
   for (const rule of COMPILED_RULES) {
+    if (
+      rule.showIds &&
+      (wpShowId == null || !rule.showIds.includes(wpShowId))
+    ) {
+      continue;
+    }
     next = next.replace(rule.pattern, rule.replace);
   }
   return next;

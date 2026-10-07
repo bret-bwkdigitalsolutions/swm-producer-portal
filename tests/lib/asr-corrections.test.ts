@@ -78,8 +78,25 @@ describe("applyAsrCorrections", () => {
       "Youri Tielemans' plays"
     );
     expect(applyAsrCorrections("pachitino")).toBe("Pochettino");
-    expect(applyAsrCorrections("T. Colin Davis")).toBe("T. Cullen Davis");
-    expect(applyAsrCorrections("colin davis")).toBe("Cullen Davis");
+  });
+
+  it("rewrites Colin Davis only on Signal 51 Chronicles", () => {
+    const rule = ASR_RULES.find((entry) => entry.find === "Colin Davis");
+    expect(rule?.showIds).toEqual([27]);
+
+    expect(applyAsrCorrections("T. Colin Davis", 27)).toBe("T. Cullen Davis");
+    expect(applyAsrCorrections("colin davis", 27)).toBe("Cullen Davis");
+    const fixed = applyAsrCorrections("Colin Davis", 27);
+    expect(applyAsrCorrections(fixed, 27)).toBe(fixed);
+
+    // Sunset Soccer Club: a real Colin Davis is left alone.
+    expect(applyAsrCorrections("Colin Davis scored for the club.", 28)).toBe(
+      "Colin Davis scored for the club."
+    );
+    expect(applyAsrCorrections("Colin Davis met Pachitino", 28)).toBe(
+      "Colin Davis met Pochettino"
+    );
+    expect(applyAsrCorrections("Colin Davis")).toBe("Colin Davis");
   });
 
   it("is idempotent and leaves correct names and lookalikes alone", () => {
