@@ -496,7 +496,7 @@ model LiveRecording {
   isPremiumOnly       Boolean   @default(false) // mirrors swm_episode is_premium_only on the WP post
   // Mark-that scan of the archived YouTube VOD. Null until the recording
   // is archived (then "pending"). Other values: processing, completed,
-  // skipped, website_not_ready, failed.
+  // skipped, website_not_ready, failed, config_error.
   transcriptStatus        String?
   transcriptVtt           String?   @db.Text
   transcriptUtterances    Json?

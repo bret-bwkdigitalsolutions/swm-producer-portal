@@ -57,14 +57,17 @@ export function LiveRecordingMarks({
           <Field label="Scanned" value={transcriptScannedAt.toLocaleString()} />
         )}
         {(transcriptStatus === "failed" ||
+          transcriptStatus === "config_error" ||
           transcriptStatus === "website_not_ready") && (
           <Field
             label="Next attempt"
             value={
-              transcriptStatus === "failed" &&
-              (gaveUp || !transcriptNextAttemptAt)
-                ? "Retry budget used. Re-scan to try again."
-                : transcriptNextAttemptAt?.toLocaleString() ?? "Waiting"
+              transcriptStatus === "config_error"
+                ? "Not retrying. Fix the WordPress app user, then Re-scan."
+                : transcriptStatus === "failed" &&
+                    (gaveUp || !transcriptNextAttemptAt)
+                  ? "Retry budget used. Re-scan to try again."
+                  : transcriptNextAttemptAt?.toLocaleString() ?? "Waiting"
             }
           />
         )}
@@ -100,7 +103,9 @@ export function LiveRecordingMarks({
                   {formatMarkClock(mark.seconds)}
                 </a>
                 {mark.quote ? ` “${mark.quote}”` : ""}
-                <span className="text-muted-foreground"> · {mark.cue}</span>
+                {mark.cue ? (
+                  <span className="text-muted-foreground"> · {mark.cue}</span>
+                ) : null}
               </li>
             ))}
           </ul>

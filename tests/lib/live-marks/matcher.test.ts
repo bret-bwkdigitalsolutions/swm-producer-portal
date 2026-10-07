@@ -2,20 +2,36 @@ import { describe, expect, it } from "vitest";
 import { detectMarks, utteranceCue } from "@/lib/live-marks/matcher";
 
 describe("utteranceCue", () => {
-  it.each(["Mark that.", "Okay, mark it!", "mark this"])(
-    "matches %j",
-    (text) => {
-      expect(utteranceCue(text)).toMatch(/^mark\s+(that|it|this)$/i);
-    }
-  );
+  it.each([
+    ["Mark that.", "Mark that"],
+    ["Okay, mark it!", "mark it"],
+    ["mark this", "mark this"],
+    ["mark that one", "mark that one"],
+  ])("matches %j", (text, cue) => {
+    expect(utteranceCue(text)).toBe(cue);
+  });
 
   it.each([
     "Mark it down.",
     "they mark this with a bar graph",
     "Marky Mark that he went",
     "Mark said that",
+    "Mark that guy",
+    "Mark that was his name",
+    "Mark this Friday on your calendar",
+    "question mark that is",
+    "Mark it zero!",
   ])("rejects %j", (text) => {
     expect(utteranceCue(text)).toBeNull();
+  });
+
+  it.each([
+    ["mark that right there", "mark that right there"],
+    ["Mark that real quick.", "Mark that real quick"],
+    ["mark it please", "mark it please"],
+    ["Mark this now!", "Mark this now"],
+  ])("allows the short tail in %j", (text, cue) => {
+    expect(utteranceCue(text)).toBe(cue);
   });
 
   it("matches a cue sentence that is followed by another sentence", () => {

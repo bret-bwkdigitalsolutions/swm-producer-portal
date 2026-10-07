@@ -23,6 +23,37 @@ describe("buildLiveMarksPayload", () => {
     });
   });
 
+  it("sends integer seconds from 0 to 86400, a short cue, and plain quote text", () => {
+    const payload = buildLiveMarksPayload({
+      wpShowId: 21,
+      youtubeVideoId: "abcdefghijk",
+      marks: [
+        {
+          seconds: 32.9,
+          quote: "  <b>Nobody&nbsp;looked</b> there.  ",
+          cue: "mark that",
+        },
+        {
+          seconds: 90000,
+          quote: "x".repeat(300),
+          cue: "m".repeat(50),
+        },
+        { seconds: -4, quote: "Start.", cue: "   " },
+      ],
+    });
+
+    expect(payload.marks[0]).toEqual({
+      seconds: 32,
+      quote: "Nobody looked there.",
+      cue: "mark that",
+    });
+    expect(payload.marks[1].seconds).toBe(86400);
+    expect(payload.marks[1].quote.length).toBeLessThanOrEqual(280);
+    expect(payload.marks[1].cue?.length).toBeLessThanOrEqual(40);
+    expect(payload.marks[2]).toEqual({ seconds: 0, quote: "Start." });
+    expect(payload.marks[2].cue).toBeUndefined();
+  });
+
   it("keeps an empty marks array in the same shape", () => {
     const payload = buildLiveMarksPayload({
       wpShowId: 28,

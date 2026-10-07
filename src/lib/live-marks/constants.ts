@@ -15,6 +15,12 @@ export const MARK_DEDUPE_SECONDS = 30;
 
 export const MARK_QUOTE_MAX_CHARS = 280;
 
+/** Website rejects a cue longer than about 40 characters. */
+export const MARK_CUE_MAX_CHARS = 40;
+
+/** Website accepts an integer second in this inclusive range. */
+export const MARK_SECONDS_MAX = 86400;
+
 export const MARK_QUOTE_UTTERANCES = 2;
 
 /** Download / Deepgram / non-404 failures before the cron stops retrying. */
@@ -42,4 +48,5 @@ export type TranscriptScanStatus =
   | "completed"
   | "skipped"
   | "website_not_ready"
-  | "failed";
+  | "failed"
+  | "config_error";

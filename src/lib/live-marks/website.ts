@@ -31,9 +31,13 @@ export function liveMarksEndpointUrl(wpApiUrl: string): string {
 }
 
 /**
- * POST the marks. A 404 is `website_not_ready` (the portal may ship before
- * the website route exists). Missing app credentials are a config error,
- * the same class as {@link WpConfigError} in the WordPress client.
+ * POST the marks with the same Basic app-password header as other portal
+ * writes (`createPost` / `_swm_supersedes` in the WordPress client).
+ * The website accepts that user when it can `edit_others_posts`.
+ *
+ * A 404 is `website_not_ready` (the portal may ship before the route
+ * exists). A 401 or 403 is a config error, the same class as
+ * {@link WpConfigError}: the caller must not retry it.
  */
 export async function postLiveMarks(input: {
   wpShowId: number;
@@ -97,6 +101,14 @@ export async function postLiveMarksPayload(
 
   if (response.status === 404) {
     return { ok: false, kind: "website_not_ready" };
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    const configError = new WpConfigError(
+      `WordPress rejected the marks request (HTTP ${response.status}). The app user must be allowed to edit others' posts. Not retrying.`,
+      endpoint
+    );
+    return { ok: false, kind: "config", message: configError.message };
   }
 
   if (!response.ok) {

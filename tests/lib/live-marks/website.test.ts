@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WEBSITE_NOT_READY_BACKOFF_MS } from "@/lib/live-marks/constants";
 import {
   isTranscriptDue,
+  planConfigError,
   planWebsiteNotReady,
 } from "@/lib/live-marks/retry";
 import { postLiveMarks } from "@/lib/live-marks/website";
@@ -47,6 +48,40 @@ describe("postLiveMarks 404", () => {
     expect(body.source).toBe("live_transcript");
     expect(body.marks).toHaveLength(1);
   });
+});
+
+describe("postLiveMarks 401 and 403", () => {
+  it.each([401, 403])(
+    "treats HTTP %s as a non-retryable config error",
+    async (status) => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status,
+        text: async () => "rest_forbidden",
+      });
+
+      const result = await postLiveMarks(payload);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.kind).toBe("config");
+      const plan = planConfigError(
+        1,
+        result.ok ? "" : result.message
+      );
+      expect(plan.transcriptStatus).toBe("config_error");
+      expect(plan.transcriptNextAttemptAt).toBeNull();
+      expect(
+        isTranscriptDue(
+          {
+            transcriptStatus: plan.transcriptStatus,
+            transcriptAttempts: plan.transcriptAttempts,
+            transcriptNextAttemptAt: plan.transcriptNextAttemptAt,
+          },
+          new Date("2026-10-07T18:00:00.000Z")
+        )
+      ).toBe(false);
+    }
+  );
 });
 
 describe("planWebsiteNotReady", () => {

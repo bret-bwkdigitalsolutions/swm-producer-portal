@@ -84,6 +84,24 @@ export function planWebsiteNotReady(
   };
 }
 
+/**
+ * 401/403 or missing WordPress app credentials. Same class as
+ * {@link WpConfigError}: the cron must not keep posting.
+ * An admin Re-scan can try again after the credentials are fixed.
+ */
+export function planConfigError(
+  attempts: number,
+  message: string
+): TranscriptWritePlan {
+  return {
+    transcriptStatus: "config_error",
+    transcriptError: message,
+    transcriptAttempts: attempts,
+    transcriptNextAttemptAt: null,
+    transcriptScannedAt: null,
+  };
+}
+
 export function planTranscriptFailure(
   now: Date,
   attemptsAfter: number,

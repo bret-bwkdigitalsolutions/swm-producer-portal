@@ -1,9 +1,15 @@
-import { LIVE_MARKS_SOURCE } from "./constants";
+import {
+  LIVE_MARKS_SOURCE,
+  MARK_CUE_MAX_CHARS,
+  MARK_QUOTE_MAX_CHARS,
+  MARK_SECONDS_MAX,
+} from "./constants";
 
 export interface LiveMark {
   seconds: number;
   quote: string;
-  cue: string;
+  /** Short spoken cue, e.g. "mark that". Omitted when empty. */
+  cue?: string;
 }
 
 export interface LiveMarksPayload {
@@ -19,6 +25,47 @@ export interface LiveMarksApiResponse {
   live_post_id: number | null;
 }
 
+/** Integer seconds in `[0, 86400]`. */
+export function clampMarkSeconds(seconds: number): number {
+  if (!Number.isFinite(seconds)) return 0;
+  return Math.min(MARK_SECONDS_MAX, Math.max(0, Math.floor(seconds)));
+}
+
+/** Plain text, at most 280 characters, keeping the end closest to the cue. */
+export function plainQuote(text: string): string {
+  const plain = text
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length <= MARK_QUOTE_MAX_CHARS) return plain;
+  const tail = plain.slice(plain.length - MARK_QUOTE_MAX_CHARS).trimStart();
+  const space = tail.search(/\s/);
+  if (space > 0 && space < 40) return tail.slice(space + 1);
+  return tail.slice(0, MARK_QUOTE_MAX_CHARS);
+}
+
+/** Short cue such as "mark that". Empty becomes "". */
+export function plainCue(text: string | null | undefined): string {
+  const plain = (text ?? "").replace(/\s+/g, " ").trim();
+  if (plain.length <= MARK_CUE_MAX_CHARS) return plain;
+  return plain.slice(0, MARK_CUE_MAX_CHARS).trim();
+}
+
+export function sanitizeLiveMark(mark: {
+  seconds: number;
+  quote: string;
+  cue?: string | null;
+}): LiveMark {
+  const cue = plainCue(mark.cue);
+  const sanitized: LiveMark = {
+    seconds: clampMarkSeconds(mark.seconds),
+    quote: plainQuote(mark.quote),
+  };
+  if (cue) sanitized.cue = cue;
+  return sanitized;
+}
+
 export function buildLiveMarksPayload(input: {
   wpShowId: number;
   youtubeVideoId: string;
@@ -27,11 +74,7 @@ export function buildLiveMarksPayload(input: {
   return {
     show_id: input.wpShowId,
     live_youtube_id: input.youtubeVideoId,
-    marks: input.marks.map((mark) => ({
-      seconds: mark.seconds,
-      quote: mark.quote,
-      cue: mark.cue,
-    })),
+    marks: input.marks.map((mark) => sanitizeLiveMark(mark)),
     source: LIVE_MARKS_SOURCE,
   };
 }
@@ -59,12 +102,14 @@ export function readStoredMarks(value: unknown): LiveMark[] {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
     if (typeof row.seconds !== "number" || !Number.isFinite(row.seconds)) continue;
-    if (typeof row.quote !== "string" || typeof row.cue !== "string") continue;
-    marks.push({
-      seconds: Math.max(0, Math.floor(row.seconds)),
-      quote: row.quote,
-      cue: row.cue,
-    });
+    if (typeof row.quote !== "string") continue;
+    const cue = typeof row.cue === "string" ? plainCue(row.cue) : "";
+    const mark: LiveMark = {
+      seconds: clampMarkSeconds(row.seconds),
+      quote: plainQuote(row.quote),
+    };
+    if (cue) mark.cue = cue;
+    marks.push(mark);
   }
   return marks;
 }
@@ -101,6 +146,8 @@ export function transcriptStatusLabel(status: string | null | undefined): string
       return "Skipped";
     case "website_not_ready":
       return "Website not ready";
+    case "config_error":
+      return "Configuration error";
     case "failed":
       return "Failed";
     default:

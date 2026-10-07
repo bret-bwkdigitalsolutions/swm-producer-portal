@@ -10,7 +10,11 @@ import {
 import { MARK_CUE_KEYTERMS, TRANSCRIPT_STALE_MS } from "./constants";
 import { evaluateBroadcastDuration } from "./duration";
 import { detectMarks, type MarkUtterance } from "./matcher";
-import { planTranscriptFailure, planWebsiteNotReady } from "./retry";
+import {
+  planConfigError,
+  planTranscriptFailure,
+  planWebsiteNotReady,
+} from "./retry";
 import { postLiveMarks } from "./website";
 
 function asJson(value: unknown): Prisma.InputJsonValue {
@@ -190,6 +194,16 @@ export async function runLiveTranscription(
       });
       console.log(`[live-transcription] ${fresh.id}: website route not ready`);
       return { ok: true, message: plan.transcriptError ?? "Website not ready." };
+    }
+
+    if (!posted.ok && posted.kind === "config") {
+      const plan = planConfigError(fresh.transcriptAttempts, posted.message);
+      await db.liveRecording.updateMany({
+        where: { id: fresh.id, transcriptStatus: "processing" },
+        data: plan,
+      });
+      console.error(`[live-transcription] ${fresh.id}: ${posted.message}`);
+      return { ok: false, message: plan.transcriptError ?? posted.message };
     }
 
     if (!posted.ok) {
