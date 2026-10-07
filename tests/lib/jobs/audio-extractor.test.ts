@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const {
   mockExecFile,
@@ -61,6 +64,9 @@ describe("extractAudio", () => {
     );
     process.env.GCS_BUCKET_NAME = "test-bucket";
     process.env.GCS_CREDENTIALS_JSON = JSON.stringify({ type: "service_account" });
+    delete process.env.GCS_UPLOAD_BUCKET_NAME;
+    delete process.env.GCS_FUSE_MOUNTS;
+    delete process.env.VIDEO_WORKER;
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -71,7 +77,8 @@ describe("extractAudio", () => {
     expect(mockDownload).toHaveBeenCalledTimes(1);
     expect(mockDownload).toHaveBeenCalledWith(
       "uploads/2026/03/episode.mp4",
-      "/tmp/swm-audio-test/input.mp4"
+      "/tmp/swm-audio-test/input.mp4",
+      { bucket: "test-bucket" }
     );
     expect(mockExecFile).toHaveBeenCalledWith(
       "ffmpeg",
@@ -153,5 +160,27 @@ describe("extractAudio", () => {
       recursive: true,
       force: true,
     });
+  });
+
+  it("reads a GCS FUSE file and does not download the video", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "swm-fuse-"));
+    const objectPath = "uploads/2026/03/episode.mp4";
+    mkdirSync(join(dir, "uploads/2026/03"), { recursive: true });
+    writeFileSync(join(dir, objectPath), "video");
+    process.env.GCS_FUSE_MOUNTS = `test-bucket=${dir}`;
+    try {
+      const result = await extractAudio(objectPath);
+      expect(result).toBe("uploads/2026/03/episode.mp3");
+      expect(mockDownload).not.toHaveBeenCalled();
+      expect(mockExecFile).toHaveBeenCalledWith(
+        "ffmpeg",
+        expect.arrayContaining(["-i", join(dir, objectPath)]),
+        expect.any(Object),
+        expect.any(Function)
+      );
+    } finally {
+      delete process.env.GCS_FUSE_MOUNTS;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

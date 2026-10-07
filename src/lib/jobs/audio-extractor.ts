@@ -3,8 +3,10 @@ import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Storage } from "@google-cloud/storage";
+import { createStorageClient } from "@/lib/gcs";
 import { downloadGcsObjectToFile } from "./gcs-download";
+import { existingFuseFile, resolveObjectBucket } from "./gcs-location";
+import { mediaToolTimeoutMs } from "./processing-runtime";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,11 +17,14 @@ export function derivedGcsAudioPath(gcsVideoPath: string): string {
 
 export interface ExtractAudioOptions {
   /**
-   * Already-downloaded source video. When set, the GCS object is not read
-   * again. The caller keeps ownership of this file — it is not deleted here,
-   * including when ffmpeg or the audio upload fails.
+   * Already-downloaded source video, or a GCS FUSE path. When set, the GCS
+   * object is not read again over HTTPS. The caller keeps ownership of this
+   * file — it is not deleted here, including when ffmpeg or the audio upload
+   * fails.
    */
   localVideoPath?: string;
+  /** Bucket that holds the video. The mp3 is written back to the same bucket. */
+  bucket?: string;
 }
 
 /**
@@ -37,7 +42,17 @@ export async function extractAudio(
   options?: ExtractAudioOptions
 ): Promise<string> {
   const tempDir = await mkdtemp(join(tmpdir(), "swm-audio-"));
-  const borrowedVideo = options?.localVideoPath;
+  const bucket =
+    options?.bucket?.trim() ||
+    (await resolveObjectBucket(gcsVideoPath));
+  let borrowedVideo = options?.localVideoPath;
+  if (!borrowedVideo) {
+    const mounted = existingFuseFile(bucket, gcsVideoPath);
+    if (mounted) {
+      borrowedVideo = mounted;
+      console.log(`[audio-extractor] Reading video from GCS FUSE mount: ${mounted}`);
+    }
+  }
   const tempVideoPath = borrowedVideo ?? join(tempDir, "input.mp4");
   const tempAudioPath = join(tempDir, "output.mp3");
   const gcsAudioPath = derivedGcsAudioPath(gcsVideoPath);
@@ -46,8 +61,8 @@ export async function extractAudio(
     if (!borrowedVideo) {
       // Download video from GCS
       console.log(`[audio-extractor] Downloading video from GCS: ${gcsVideoPath}`);
-      await downloadGcsObjectToFile(gcsVideoPath, tempVideoPath);
-    } else {
+      await downloadGcsObjectToFile(gcsVideoPath, tempVideoPath, { bucket });
+    } else if (options?.localVideoPath) {
       console.log(
         `[audio-extractor] Extracting audio from local file (no GCS download): ${borrowedVideo}`
       );
@@ -63,17 +78,13 @@ export async function extractAudio(
       "-ar", "44100",  // 44.1kHz sample rate
       "-y",            // overwrite output
       tempAudioPath,
-    ], { timeout: 30 * 60 * 1000 }); // 30 minute timeout
+    ], { timeout: mediaToolTimeoutMs() });
 
-    // Upload audio to GCS
-    console.log(`[audio-extractor] Uploading audio to GCS: ${gcsAudioPath}`);
-    const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
-    const bucketName = process.env.GCS_BUCKET_NAME!;
-    const storage = credentialsJson
-      ? new Storage({ credentials: JSON.parse(credentialsJson) })
-      : new Storage({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
+    // Upload audio to GCS (same bucket as the source video).
+    console.log(`[audio-extractor] Uploading audio to GCS: ${gcsAudioPath} (${bucket})`);
+    const storage = createStorageClient();
 
-    await storage.bucket(bucketName).upload(tempAudioPath, {
+    await storage.bucket(bucket).upload(tempAudioPath, {
       destination: gcsAudioPath,
       metadata: { contentType: "audio/mpeg" },
     });

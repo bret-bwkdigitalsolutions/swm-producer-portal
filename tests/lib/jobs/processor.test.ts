@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -187,6 +187,9 @@ describe("processJob", () => {
     mockPlatformCredentialFindUnique.mockResolvedValue(null);
     mockShowPlatformLinkFindUnique.mockResolvedValue(null);
     mockQueryRaw.mockResolvedValue([{ metadata: {} }]);
+    delete process.env.GCS_FUSE_MOUNTS;
+    delete process.env.GCS_UPLOAD_BUCKET_NAME;
+    delete process.env.VIDEO_WORKER;
 
     // Suppress console output during tests
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -543,6 +546,39 @@ describe("processJob", () => {
     expect(mockGenerateSignedDownloadUrl).not.toHaveBeenCalled();
     expect(mockUploadToYouTube).not.toHaveBeenCalled();
     expect(leftoverVideoDirs()).toEqual([]);
+  });
+
+  it("reads a mounted video for YouTube and does not download it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "swm-fuse-mount-"));
+    const objectPath = "uploads/2026/03/video.mp4";
+    mkdirSync(join(dir, "uploads/2026/03"), { recursive: true });
+    const fusePath = join(dir, objectPath);
+    writeFileSync(fusePath, "video-bytes");
+    process.env.GCS_FUSE_MOUNTS = `regional-bucket=${dir}`;
+
+    const job = makeJob({
+      metadata: { description: "A test episode", gcsBucket: "regional-bucket" },
+    });
+    mockFindUnique.mockResolvedValue(job);
+    installVideoFetch();
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
+
+    try {
+      const result = await processJob("job-1");
+      expect(result.status).toBe("completed");
+      expect(mockGenerateSignedDownloadUrl).not.toHaveBeenCalled();
+      expect(signedDownloadCount()).toBe(0);
+      expect(mockUploadToYouTube).toHaveBeenCalledWith(
+        expect.objectContaining({ videoFilePath: fusePath })
+      );
+      expect(existsSync(fusePath)).toBe(true);
+    } finally {
+      delete process.env.GCS_FUSE_MOUNTS;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("keeps the shared file for YouTube when audio extraction fails, and still cleans it up", async () => {

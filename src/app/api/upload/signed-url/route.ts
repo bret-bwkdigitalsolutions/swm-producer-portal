@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
   // Verify the distribution job exists and belongs to this user
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
-    select: { id: true, userId: true, status: true },
+    select: { id: true, userId: true, status: true, metadata: true },
   });
 
   if (!job) {
@@ -88,21 +88,30 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { uploadUrl, gcsPath } = await generateSignedUploadUrl(
+    const meta = (job.metadata as Record<string, unknown>) ?? {};
+    const pinned =
+      typeof meta.gcsBucket === "string" && meta.gcsBucket.trim()
+        ? meta.gcsBucket.trim()
+        : undefined;
+    const { uploadUrl, gcsPath, bucketName } = await generateSignedUploadUrl(
       filename,
       contentType,
-      { resumable: !isThumbnail }
+      { resumable: !isThumbnail, bucket: pinned }
     );
 
     if (isThumbnail) {
-      // Store thumbnail path in job metadata (race-safe merge)
+      // Do not set gcsBucket from a thumbnail. That hint is the video's
+      // bucket; a thumbnail-only write would send later video reads to the
+      // wrong bucket during dual-read.
       await mergeJobMetadata(jobId, { thumbnailGcsPath: gcsPath });
     } else {
-      // Update the distribution job with the video GCS path
+      // Update the distribution job with the video GCS path and pin the bucket
+      // so later reads do not guess during the dual-bucket period.
       await db.distributionJob.update({
         where: { id: jobId },
         data: { gcsPath },
       });
+      await mergeJobMetadata(jobId, { gcsBucket: bucketName });
     }
 
     return NextResponse.json({ uploadUrl, gcsPath });

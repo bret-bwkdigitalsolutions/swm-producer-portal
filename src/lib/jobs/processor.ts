@@ -14,6 +14,8 @@ import { gcsObjectExists, generateSignedDownloadUrl, uploadBuffer } from "@/lib/
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { downloadVideoToGcs, downloadFullVideoToGcs } from "./video-downloader";
 import { downloadGcsObjectToFile } from "./gcs-download";
+import { bucketHint, locateProducerVideo } from "./gcs-location";
+import { formatDuration, jobTimeoutMs } from "./processing-runtime";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -39,9 +41,6 @@ export interface ProcessingResult {
  *   2. Transistor (parallel-safe, uses extracted audio)
  *   3. WordPress (last — needs YouTube URL for embed)
  */
-// 30 minutes — large videos need time for YouTube + 2x Transistor uploads
-const JOB_TIMEOUT_MS = 30 * 60 * 1000;
-
 export async function processJob(jobId: string): Promise<ProcessingResult> {
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
@@ -60,17 +59,21 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
     data: { status: "processing" },
   });
 
-  // Wrap the actual work in a timeout so hangs (e.g. thumbnail upload)
-  // don't leave the job stuck in "processing" forever.
+  // Wrap the actual work in a timeout so hangs don't leave the job stuck
+  // in "processing". Railway stays at 30 minutes. The Cloud Run worker
+  // raises this to 23 hours; the platform task timeout is the backstop,
+  // and the timer is cleared so a finished worker can exit.
+  const timeoutMs = jobTimeoutMs();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       processJobInner(job),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Job timed out after 30 minutes")),
-          JOB_TIMEOUT_MS
-        )
-      ),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Job timed out after ${formatDuration(timeoutMs)}`)),
+          timeoutMs
+        );
+      }),
     ]);
   } catch (error) {
     const errMsg =
@@ -129,6 +132,8 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
         error: errMsg,
       })),
     };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -166,8 +171,22 @@ async function processJobInner(
     });
     effectiveGcsPath = downloadedPath;
     youtubeAudioPath = downloadedPath; // Already audio — skip extractAudio later
+    const writtenBucket =
+      process.env.GCS_UPLOAD_BUCKET_NAME?.trim() || process.env.GCS_BUCKET_NAME;
+    if (writtenBucket) {
+      metadata.gcsBucket = writtenBucket;
+      await mergeJobMetadata(job.id, { gcsBucket: writtenBucket }).catch((error) => {
+        console.error("[processor] Could not record GCS bucket:", error);
+      });
+    }
     console.log(`[processor] Source audio downloaded to GCS: ${downloadedPath}`);
   }
+
+  // Empty unless a regional bucket or a FUSE mount is configured. The Railway
+  // path leaves both unset and keeps the single local download below.
+  const located = effectiveGcsPath
+    ? await locateProducerVideo(effectiveGcsPath, bucketHint(metadata))
+    : { fusePath: null as string | null, bucket: undefined as string | undefined };
 
   // Look up show hosts for Transistor author field
   const showMeta = await db.showMetadata.findUnique({
@@ -199,7 +218,10 @@ async function processJobInner(
       );
     } else {
       try {
-        if (await gcsObjectExists(storedAudioPath)) {
+        const audioExists = located.bucket
+          ? await gcsObjectExists(storedAudioPath, located.bucket)
+          : await gcsObjectExists(storedAudioPath);
+        if (audioExists) {
           gcsAudioPath = storedAudioPath;
           console.log(
             `[processor] Reusing extracted audio already in GCS: ${storedAudioPath}`
@@ -259,14 +281,25 @@ async function processJobInner(
   // single episode can be ~90 GB, so a second local copy would not fit.
   // Peak disk stays one video plus the much smaller mp3 — the same peak as
   // the previous sequential downloads.
-  if (needsExtractedAudio && needsUploadedVideo && effectiveGcsPath) {
+  if (needsExtractedAudio && needsUploadedVideo && effectiveGcsPath && located.fusePath) {
+    tempVideoPath = located.fusePath;
+    console.log(
+      `[processor] Using GCS FUSE mount for audio extraction and YouTube (no download): ${located.fusePath}`
+    );
+  } else if (needsExtractedAudio && needsUploadedVideo && effectiveGcsPath) {
     try {
       tempVideoDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
       tempVideoPath = join(tempVideoDir, "video.mp4");
       console.log(
         `[processor] Downloading video once for audio extraction and YouTube: ${effectiveGcsPath}`
       );
-      await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+      if (located.bucket) {
+        await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath, {
+          bucket: located.bucket,
+        });
+      } else {
+        await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+      }
     } catch (error) {
       console.error("[processor] Video download failed:", error);
       sharedDownloadError =
@@ -280,12 +313,15 @@ async function processJobInner(
       if (tempVideoPath) {
         gcsAudioPath = await extractAudio(effectiveGcsPath, {
           localVideoPath: tempVideoPath,
+          ...(located.bucket ? { bucket: located.bucket } : {}),
         });
       } else if (sharedDownloadError) {
         // The shared GET already failed. Don't read the object again here;
         // YouTube still gets its own attempt below, matching the old
         // independent download.
         throw sharedDownloadError;
+      } else if (located.bucket) {
+        gcsAudioPath = await extractAudio(effectiveGcsPath, { bucket: located.bucket });
       } else {
         gcsAudioPath = await extractAudio(effectiveGcsPath);
       }
@@ -397,6 +433,11 @@ async function processJobInner(
   } else if (needsUploadedVideo && effectiveGcsPath) {
     if (tempVideoPath) {
       console.log("[processor] Reusing downloaded video for YouTube upload");
+    } else if (located.fusePath) {
+      tempVideoPath = located.fusePath;
+      console.log(
+        `[processor] Using GCS FUSE mount for YouTube (no download): ${located.fusePath}`
+      );
     } else {
       try {
         tempVideoDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
@@ -404,7 +445,13 @@ async function processJobInner(
         console.log(
           `[processor] Downloading video for YouTube: ${effectiveGcsPath}`
         );
-        await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+        if (located.bucket) {
+          await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath, {
+            bucket: located.bucket,
+          });
+        } else {
+          await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+        }
       } catch (error) {
         console.error("[processor] Video download failed:", error);
         await releaseTempVideo();
@@ -592,11 +639,18 @@ async function processJobInner(
 
       if (thumbResponse.ok) {
         const buffer = Buffer.from(await thumbResponse.arrayBuffer());
-        const gcsPath = await uploadBuffer(
-          `yt-thumb-${youtubeVideoId}.jpg`,
-          buffer,
-          "image/jpeg"
-        );
+        const gcsPath = located.bucket
+          ? await uploadBuffer(
+              `yt-thumb-${youtubeVideoId}.jpg`,
+              buffer,
+              "image/jpeg",
+              located.bucket
+            )
+          : await uploadBuffer(
+              `yt-thumb-${youtubeVideoId}.jpg`,
+              buffer,
+              "image/jpeg"
+            );
 
         updatedMetadata.thumbnailGcsPath = gcsPath;
 

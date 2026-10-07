@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { deleteFile } from "@/lib/gcs";
 import { processJob } from "@/lib/jobs/processor";
+import { dispatchVideoProcessing } from "@/lib/jobs/cloud-run-dispatch";
+import { getProcessingRuntime } from "@/lib/jobs/processing-runtime";
 
 interface FormState {
   success?: boolean;
@@ -156,10 +158,35 @@ export async function retryPlatform(
   });
 
   if (parentClaim.count > 0) {
-    // Trigger processing (non-blocking) — processor skips completed platforms
-    processJob(platformJob.job.id).catch((error) => {
-      console.error(`[retry] Processing failed for job ${platformJob.job.id}:`, error);
-    });
+    if (getProcessingRuntime() === "cloudrun") {
+      await db.distributionJob.update({
+        where: { id: platformJob.job.id },
+        data: { status: "processing" },
+      });
+      try {
+        await dispatchVideoProcessing(platformJob.job.id, "process");
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Could not start Cloud Run processing.";
+        console.error(
+          `[retry] Cloud Run dispatch failed for job ${platformJob.job.id}:`,
+          error
+        );
+        await db.distributionJob.update({
+          where: { id: platformJob.job.id },
+          data: { status: "failed", errorMessage: message.slice(0, 4000) },
+        });
+        return {
+          success: false,
+          message: "Could not start video processing. Try again.",
+        };
+      }
+    } else {
+      // Trigger processing (non-blocking) — processor skips completed platforms
+      processJob(platformJob.job.id).catch((error) => {
+        console.error(`[retry] Processing failed for job ${platformJob.job.id}:`, error);
+      });
+    }
   }
 
   revalidatePath(`/dashboard/distribute/${platformJob.job.id}`);
@@ -189,16 +216,23 @@ export async function deleteJob(jobId: string): Promise<FormState> {
     return { success: false, message: "You do not have access to this job." };
   }
 
-  // Delete GCS files (video + extracted audio if present)
+  const metadata = (job.metadata as Record<string, unknown>) ?? {};
+  const bucket =
+    typeof metadata.gcsBucket === "string" && metadata.gcsBucket.trim()
+      ? metadata.gcsBucket.trim()
+      : undefined;
+
+  // Delete GCS files (video + extracted audio if present).
+  // A stored bucket hint deletes that object. With no hint, deleteFile
+  // removes the key from both buckets while dual-read is configured.
   if (job.gcsPath) {
-    await deleteFile(job.gcsPath).catch((e) =>
+    await deleteFile(job.gcsPath, bucket).catch((e) =>
       console.error("[deleteJob] Failed to delete video from GCS:", e)
     );
 
-    const metadata = job.metadata as Record<string, unknown>;
-    const audioPath = metadata?.gcsAudioPath as string | undefined;
+    const audioPath = metadata.gcsAudioPath as string | undefined;
     if (audioPath) {
-      await deleteFile(audioPath).catch((e) =>
+      await deleteFile(audioPath, bucket).catch((e) =>
         console.error("[deleteJob] Failed to delete audio from GCS:", e)
       );
     }

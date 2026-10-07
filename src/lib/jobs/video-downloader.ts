@@ -3,12 +3,29 @@ import { unlink, mkdtemp, readdir, rmdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { Storage } from "@google-cloud/storage";
+import { createStorageClient } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { extractVimeoId } from "@/lib/vimeo-url";
 import { getYoutubeCookiesForShow } from "@/lib/youtube-identity";
+import { mediaToolTimeoutMs } from "./processing-runtime";
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * New yt-dlp output goes to the regional bucket when one is configured.
+ * The caller records that name on the job so later reads do not guess.
+ */
+function destinationBucket(kind: "audio" | "video"): string {
+  const bucket =
+    process.env.GCS_UPLOAD_BUCKET_NAME?.trim() || process.env.GCS_BUCKET_NAME?.trim();
+  if (!bucket) {
+    const what = kind === "audio" ? "audio" : "video";
+    throw new Error(
+      `GCS_BUCKET_NAME is not set — cannot upload downloaded ${what}`
+    );
+  }
+  return bucket;
+}
 
 /**
  * Build a `<source>-<id>` label for the GCS object name. Supports the two
@@ -59,23 +76,8 @@ export async function downloadVideoToGcs(
   const timestamp = now.getTime();
   const gcsPath = `uploads/${year}/${month}/${timestamp}-${sourceLabel}.mp3`;
 
-  const bucketName = process.env.GCS_BUCKET_NAME;
-  if (!bucketName) {
-    throw new Error("GCS_BUCKET_NAME is not set — cannot upload downloaded audio");
-  }
-  const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
-  let storage: Storage;
-  if (credentialsJson) {
-    let credentials: object;
-    try {
-      credentials = JSON.parse(credentialsJson);
-    } catch {
-      throw new Error("GCS_CREDENTIALS_JSON is not valid JSON — check the Railway environment variable");
-    }
-    storage = new Storage({ credentials });
-  } else {
-    storage = new Storage({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
-  }
+  const bucketName = destinationBucket("audio");
+  const storage = createStorageClient();
 
   const tempDir = await mkdtemp(join(tmpdir(), "swm-video-dl-"));
   const outputTemplate = join(tempDir, "video.%(ext)s");
@@ -117,7 +119,7 @@ export async function downloadVideoToGcs(
     args.push(videoUrl);
 
     const { stderr } = await execFileAsync("yt-dlp", args, {
-      timeout: 30 * 60 * 1000,        // 30 minute timeout — long Vimeo episodes (2000+ DASH fragments) can exceed 10 min
+      timeout: mediaToolTimeoutMs(),  // 30 minutes on Railway; hours on the Cloud Run worker
       killSignal: "SIGKILL",          // Force-kill hung yt-dlp processes on timeout
       maxBuffer: 200 * 1024 * 1024,   // 200 MB — yt-dlp's combined stdout+stderr on long episodes can exceed the 1 MB default
     });
@@ -177,23 +179,8 @@ export async function downloadFullVideoToGcs(
   const timestamp = now.getTime();
   const gcsPath = `uploads/${year}/${month}/${timestamp}-${sourceLabel}-video.mp4`;
 
-  const bucketName = process.env.GCS_BUCKET_NAME;
-  if (!bucketName) {
-    throw new Error("GCS_BUCKET_NAME is not set — cannot upload downloaded video");
-  }
-  const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
-  let storage: Storage;
-  if (credentialsJson) {
-    let credentials: object;
-    try {
-      credentials = JSON.parse(credentialsJson);
-    } catch {
-      throw new Error("GCS_CREDENTIALS_JSON is not valid JSON — check the Railway environment variable");
-    }
-    storage = new Storage({ credentials });
-  } else {
-    storage = new Storage({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
-  }
+  const bucketName = destinationBucket("video");
+  const storage = createStorageClient();
 
   const tempDir = await mkdtemp(join(tmpdir(), "swm-video-full-dl-"));
   const outputTemplate = join(tempDir, "video.%(ext)s");
@@ -231,7 +218,8 @@ export async function downloadFullVideoToGcs(
     args.push(videoUrl);
 
     const { stderr } = await execFileAsync("yt-dlp", args, {
-      timeout: 60 * 60 * 1000,       // 60 minutes — full video downloads are larger
+      // Full videos already needed an hour on Railway. The worker ceiling is longer.
+      timeout: Math.max(mediaToolTimeoutMs(), 60 * 60 * 1000),
       killSignal: "SIGKILL",
       maxBuffer: 200 * 1024 * 1024,
     });

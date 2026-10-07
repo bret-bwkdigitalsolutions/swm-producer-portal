@@ -12,6 +12,9 @@ import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
 import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
 import { getRecentEpisodeTitles, getLatestEpisodeNumbers, getShow } from "@/lib/wordpress/client";
 import { enqueueJob } from "@/lib/jobs/job-queue";
+import { bucketHint } from "@/lib/jobs/gcs-location";
+import { dispatchVideoProcessing } from "@/lib/jobs/cloud-run-dispatch";
+import { getProcessingRuntime, isAnalyzeStale } from "@/lib/jobs/processing-runtime";
 
 type SourceKind = "youtube" | "vimeo" | "upload";
 
@@ -45,12 +48,6 @@ function friendlyAnalyzeError(raw: string, source: SourceKind): string {
   }
   return raw;
 }
-
-// An analyze "running" state older than this is considered dead (the
-// background pipeline died with a server restart/redeploy) and may be
-// restarted. The longest legitimate pipeline (download + transcribe a
-// multi-hour episode) stays well under this.
-const ANALYZE_STALE_MS = 90 * 60 * 1000;
 
 type AnalyzeState = {
   state: "running" | "complete" | "failed";
@@ -96,6 +93,7 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
     // For URL-sourced episodes (YouTube or Vimeo): download the audio to GCS
     // if not already done.
     let gcsPath = job.gcsPath;
+    let writtenBucket: string | undefined;
     if (!gcsPath) {
       const jobMeta = job.metadata as Record<string, unknown>;
       const sourceUrl =
@@ -107,16 +105,26 @@ async function runAnalysis(jobId: string, startState: AnalyzeState) {
       await setAnalyzeState(jobId, { ...startState, step: "downloading" });
       console.log(`[analyze] Downloading source video for job ${jobId}`);
       gcsPath = await downloadVideoToGcs(sourceUrl, jobId, job.wpShowId);
+      writtenBucket =
+        process.env.GCS_UPLOAD_BUCKET_NAME?.trim() || process.env.GCS_BUCKET_NAME;
       await db.distributionJob.update({
         where: { id: jobId },
         data: { gcsPath },
       });
+      if (writtenBucket) {
+        await mergeJobMetadata(jobId, { gcsBucket: writtenBucket });
+      }
     }
 
-    // 1. Extract audio
+    // 1. Extract audio. A stored or just-written bucket wins. With no hint,
+    // extractAudio checks the legacy bucket and then the regional bucket.
     await setAnalyzeState(jobId, { ...startState, step: "extracting" });
     console.log(`[analyze] Extracting audio for job ${jobId}`);
-    const gcsAudioPath = await extractAudio(gcsPath);
+    if (!gcsPath) throw new Error("No video uploaded.");
+    const audioBucket = writtenBucket || bucketHint(jobMetaForSource) || undefined;
+    const gcsAudioPath = audioBucket
+      ? await extractAudio(gcsPath, { bucket: audioBucket })
+      : await extractAudio(gcsPath);
 
     // 2. Transcribe
     await setAnalyzeState(jobId, { ...startState, step: "transcribing" });
@@ -267,13 +275,9 @@ export async function POST(request: NextRequest) {
   if (existing?.state === "running") {
     // Already in flight (e.g. user retried after a transient client error) —
     // don't start a second pipeline, just let the client resume polling.
-    // EXCEPT: a "running" state with a stale startedAt means the background
-    // pipeline died (server restart/redeploy kills fire-and-forget work).
-    // Without this check the job would report "running" forever and the
-    // producer could never re-analyze.
-    const startedAt = existing.startedAt ? Date.parse(existing.startedAt) : NaN;
-    const isStale = Number.isNaN(startedAt) || Date.now() - startedAt > ANALYZE_STALE_MS;
-    if (!isStale) {
+    // A stale Railway run died with the web process. A Cloud Run run is stale
+    // when its heartbeat stops. Either one may be restarted.
+    if (!isAnalyzeStale(meta, existing)) {
       return NextResponse.json({ started: true, resumed: true }, { status: 202 });
     }
     console.warn(`[analyze] Stale running state for job ${jobId} — restarting analysis`);
@@ -300,11 +304,69 @@ export async function POST(request: NextRequest) {
   };
   await setAnalyzeState(jobId, startState);
 
-  // Fire-and-forget, under the global concurrency cap (shared with processJob)
-  // so download + transcription + processing don't stack memory and OOM.
-  enqueueJob(`analyze:${jobId}`, () => runAnalysis(jobId, startState));
+  if (getProcessingRuntime() === "cloudrun") {
+    try {
+      await dispatchVideoProcessing(jobId, "analyze");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not start Cloud Run analysis.";
+      console.error(`[analyze] Cloud Run dispatch failed for ${jobId}:`, error);
+      await db.distributionJob
+        .update({
+          where: { id: jobId },
+          data: { status: "failed", errorMessage: message.slice(0, 4000) },
+        })
+        .catch(() => {});
+      await setAnalyzeState(jobId, {
+        state: "failed",
+        startedAt: startState.startedAt,
+        error: "Could not start video processing. Try again, or ask an admin to check Cloud Run.",
+      }).catch(() => {});
+      return NextResponse.json(
+        { error: "Could not start video processing." },
+        { status: 502 }
+      );
+    }
+  } else {
+    // Fire-and-forget, under the global concurrency cap (shared with processJob)
+    // so download + transcription + processing don't stack memory and OOM.
+    enqueueJob(`analyze:${jobId}`, () => runAnalysis(jobId, startState));
+  }
 
   return NextResponse.json({ started: true }, { status: 202 });
+}
+
+/**
+ * Cloud Run entry for analysis. Reloads the state the POST handler stored
+ * and runs the same pipeline. Throws after a recorded failure so the task
+ * exits non-zero. Retries stay at 0 on the job; the producer retries.
+ */
+export async function executeAnalysis(jobId: string): Promise<void> {
+  const job = await db.distributionJob.findUnique({
+    where: { id: jobId },
+    select: { metadata: true },
+  });
+  if (!job) {
+    throw new Error(`Job ${jobId} not found.`);
+  }
+  const meta = (job.metadata as Record<string, unknown>) ?? {};
+  const existing = meta.analyze as AnalyzeState | undefined;
+  const startState: AnalyzeState = {
+    state: "running",
+    step: existing?.step ?? "starting",
+    startedAt: existing?.startedAt ?? new Date().toISOString(),
+  };
+  await runAnalysis(jobId, startState);
+
+  const after = await db.distributionJob.findUnique({
+    where: { id: jobId },
+    select: { metadata: true, status: true },
+  });
+  const analyze = ((after?.metadata as Record<string, unknown> | null)?.analyze ??
+    {}) as AnalyzeState;
+  if (analyze.state === "failed" || after?.status === "failed") {
+    throw new Error(analyze.error || "Analysis failed");
+  }
 }
 
 /**
@@ -335,14 +397,12 @@ export async function GET(request: NextRequest) {
   }
 
   if (analyze.state === "running") {
-    const startedAt = analyze.startedAt ? Date.parse(analyze.startedAt) : NaN;
-    if (Number.isNaN(startedAt) || Date.now() - startedAt > ANALYZE_STALE_MS) {
-      // Background pipeline died (server restart). Report failed so the
-      // client stops polling and offers a retry.
-      return NextResponse.json({
-        state: "failed",
-        error: "Analysis was interrupted by a server restart — please try again.",
-      });
+    if (isAnalyzeStale(meta, analyze)) {
+      const error =
+        meta.processingRuntime === "cloudrun"
+          ? "Analysis stopped responding. Please try again."
+          : "Analysis was interrupted by a server restart — please try again.";
+      return NextResponse.json({ state: "failed", error });
     }
     return NextResponse.json({ state: "running", step: analyze.step ?? "starting" });
   }
