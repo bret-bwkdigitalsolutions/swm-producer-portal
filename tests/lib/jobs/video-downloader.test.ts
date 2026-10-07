@@ -4,7 +4,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // hoisted to the top of the file).
 const {
   mockExecFile,
+  mockSpawn,
   mockBucketUpload,
+  mockCreateWriteStream,
+  mockFileDelete,
   mockMkdtemp,
   mockReaddir,
   mockUnlink,
@@ -18,7 +21,10 @@ const {
     (_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, r: unknown) => void) =>
       cb(null, { stdout: "", stderr: "" })
   ),
+  mockSpawn: vi.fn(),
   mockBucketUpload: vi.fn().mockResolvedValue([]),
+  mockCreateWriteStream: vi.fn(),
+  mockFileDelete: vi.fn().mockResolvedValue([]),
   mockMkdtemp: vi.fn().mockResolvedValue("/tmp/swm-video-dl-test"),
   mockReaddir: vi.fn().mockResolvedValue(["video.mp3"]),
   mockUnlink: vi.fn().mockResolvedValue(undefined),
@@ -32,14 +38,21 @@ vi.mock("@/lib/youtube-identity", () => ({
 }));
 
 vi.mock("node:child_process", () => ({
-  default: { execFile: mockExecFile },
+  default: { execFile: mockExecFile, spawn: mockSpawn },
   execFile: mockExecFile,
+  spawn: mockSpawn,
 }));
 
 vi.mock("@google-cloud/storage", () => ({
   Storage: function Storage() {
     return {
-      bucket: vi.fn(() => ({ upload: mockBucketUpload })),
+      bucket: vi.fn(() => ({
+        upload: mockBucketUpload,
+        file: vi.fn(() => ({
+          createWriteStream: mockCreateWriteStream,
+          delete: mockFileDelete,
+        })),
+      })),
     };
   },
 }));
@@ -59,7 +72,33 @@ vi.mock("node:fs/promises", () => ({
   writeFile: mockWriteFile,
 }));
 
+import { EventEmitter } from "node:events";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { Writable } from "node:stream";
 import { downloadVideoToGcs } from "@/lib/jobs/video-downloader";
+
+function fakeYtDlp(closeCode: number | null) {
+  const stdout = new EventEmitter() as EventEmitter & { resume: () => void };
+  const stderr = new EventEmitter() as EventEmitter & {
+    setEncoding: (enc: string) => EventEmitter;
+  };
+  stdout.resume = () => {};
+  stderr.setEncoding = () => stderr;
+  const child = new EventEmitter() as EventEmitter & {
+    pid: number;
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    kill: () => boolean;
+  };
+  child.pid = 4242;
+  child.stdout = stdout;
+  child.stderr = stderr;
+  child.kill = () => true;
+  if (closeCode != null) {
+    setImmediate(() => child.emit("close", closeCode));
+  }
+  return child;
+}
 
 describe("downloadVideoToGcs", () => {
   beforeEach(() => {
@@ -163,5 +202,57 @@ describe("downloadVideoToGcs", () => {
     expect(mockGetYoutubeCookiesForShow).not.toHaveBeenCalled();
     const cookiePayload = mockWriteFile.mock.calls[0][1] as string;
     expect(cookiePayload).toContain("env-fallback");
+  });
+
+  it("spawns yt-dlp detached and kills the process group on timeout", async () => {
+    mockSpawn.mockImplementation(() => fakeYtDlp(null));
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      await expect(
+        downloadVideoToGcs(
+          "https://www.youtube.com/watch?v=abc123xyz45",
+          "job-1",
+          undefined,
+          { timeoutMs: 30 }
+        )
+      ).rejects.toThrow(/timed out/);
+      expect(mockSpawn).toHaveBeenCalledWith(
+        "yt-dlp",
+        expect.any(Array),
+        expect.objectContaining({ detached: true })
+      );
+      expect(kill).toHaveBeenCalledWith(-4242, "SIGKILL");
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it("deletes a partial GCS object when the upload deadline aborts", async () => {
+    mkdirSync("/tmp/swm-video-dl-test", { recursive: true });
+    writeFileSync("/tmp/swm-video-dl-test/video.mp3", "audio");
+    mockSpawn.mockImplementation(() => fakeYtDlp(0));
+    let sawWrite: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      sawWrite = resolve;
+    });
+    mockCreateWriteStream.mockImplementation(
+      () =>
+        new Writable({
+          write(_chunk, _encoding, _callback) {
+            sawWrite?.();
+          },
+        })
+    );
+    const controller = new AbortController();
+    const pending = downloadVideoToGcs(
+      "https://www.youtube.com/watch?v=abc123xyz45",
+      "job-1",
+      undefined,
+      { timeoutMs: 60_000, signal: controller.signal }
+    );
+    await started;
+    controller.abort();
+    await expect(pending).rejects.toThrow(/aborted/);
+    expect(mockFileDelete).toHaveBeenCalledWith({ ignoreNotFound: true });
   });
 });

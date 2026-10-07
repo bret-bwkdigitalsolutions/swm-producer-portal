@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { canTransition, type LiveRecordingState } from "@/lib/live-recording/types";
 import { runHandoff } from "@/lib/live-recording/handoff";
 import { archiveLiveRecording } from "@/lib/live-recording/archive";
+import { requestLiveRescan } from "@/lib/live-marks/queue";
 import { revalidatePath } from "next/cache";
 
 interface ActionResult {
@@ -175,6 +176,38 @@ export async function forceArchiveLiveRecording(
     success: result.ok,
     message: result.message,
   };
+}
+
+/**
+ * Run the mark-that scan again. A stored transcript is reused. This still
+ * runs when LIVE_TRANSCRIPTION_ENABLED is off.
+ */
+export async function rescanLiveRecordingMarks(
+  liveRecordingId: string
+): Promise<ActionResult> {
+  const session = await requireAdmin();
+
+  const row = await db.liveRecording.findUnique({
+    where: { id: liveRecordingId },
+    select: { id: true, wpPostId: true, wpShowId: true },
+  });
+  if (!row) return { success: false, message: "Recording not found." };
+
+  const result = await requestLiveRescan(row.id);
+
+  await db.activityLog.create({
+    data: {
+      userId: session.user.id,
+      action: "rescan_marks",
+      contentType: "live_recording",
+      wpPostId: row.wpPostId ?? null,
+      wpShowId: row.wpShowId,
+    },
+  });
+
+  revalidatePath("/dashboard/live-recordings");
+  revalidatePath(`/dashboard/live-recordings/${row.id}`);
+  return { success: result.ok, message: result.message };
 }
 
 async function unpublishWpPost(wpPostId: number): Promise<void> {

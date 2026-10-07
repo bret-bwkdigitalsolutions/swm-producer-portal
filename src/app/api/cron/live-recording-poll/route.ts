@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bearerTokenMatches } from "@/lib/secure-compare";
+import { queueDueLiveTranscriptions } from "@/lib/live-marks/queue";
 import { pollLiveRecordings } from "@/lib/live-recording/poll";
 
 /**
@@ -24,10 +25,21 @@ export async function POST(request: NextRequest) {
 
   try {
     const summary = await pollLiveRecordings();
+    let liveTranscription: Awaited<
+      ReturnType<typeof queueDueLiveTranscriptions>
+    > | { error: string };
+    try {
+      liveTranscription = await queueDueLiveTranscriptions();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Live transcription queue failed";
+      console.error("[live-recording-poll] Live transcription queue failed:", error);
+      liveTranscription = { error: message };
+    }
     console.log(
-      `[live-recording-poll] checked=${summary.totalChecked} transitions=${summary.transitions.length} handoffs=${summary.handoffsTriggered.length} archived=${summary.archived.length} failures=${summary.failures.length}`
+      `[live-recording-poll] checked=${summary.totalChecked} transitions=${summary.transitions.length} handoffs=${summary.handoffsTriggered.length} archived=${summary.archived.length} failures=${summary.failures.length} transcripts=${"queued" in liveTranscription ? liveTranscription.queued.length : "error"}`
     );
-    return NextResponse.json(summary);
+    return NextResponse.json({ ...summary, liveTranscription });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown poll worker error";
