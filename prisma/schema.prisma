@@ -518,6 +518,9 @@ model LiveRecording {
   // Last time a paid scan was claimed for this row. The daily cap counts
   // live_scan_paid_claims (one row per attempt), not this column.
   transcriptLastClaimedAt DateTime?
+  // Set by an admin Re-scan. A cron retry of that scan still POSTs
+  // marks: [] when it finds none. Cleared after the post succeeds.
+  liveScanAdminRescan     Boolean   @default(false)
   createdByUserId     String
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

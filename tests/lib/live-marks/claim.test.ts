@@ -14,22 +14,26 @@ const count = vi.hoisted(() => vi.fn());
 const executeRawUnsafe = vi.hoisted(() => vi.fn());
 const paidCount = vi.hoisted(() => vi.fn());
 const paidCreate = vi.hoisted(() => vi.fn());
+const transaction = vi.hoisted(() => vi.fn());
+
+function transactionClient() {
+  return {
+    $executeRawUnsafe: executeRawUnsafe,
+    liveRecording: {
+      updateMany,
+      findFirst,
+      findUnique,
+      findMany,
+      count,
+      update: vi.fn(),
+    },
+    liveScanPaidClaim: { count: paidCount, create: paidCreate },
+  };
+}
 
 vi.mock("@/lib/db", () => ({
   db: {
-    $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
-        $executeRawUnsafe: executeRawUnsafe,
-        liveRecording: {
-          updateMany,
-          findFirst,
-          findUnique,
-          findMany,
-          count,
-          update: vi.fn(),
-        },
-        liveScanPaidClaim: { count: paidCount, create: paidCreate },
-      }),
+    $transaction: transaction,
     liveRecording: {
       updateMany,
       findFirst,
@@ -76,6 +80,11 @@ beforeEach(() => {
   paidCreate.mockResolvedValue({ id: "claim-1" });
   executeRawUnsafe.mockResolvedValue(0);
   updateMany.mockResolvedValue({ count: 1 });
+  transaction.mockReset();
+  transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn(transactionClient())
+  );
+  vi.mocked(enqueueJob).mockReset();
   process.env.LIVE_TRANSCRIPTION_ENABLED = "true";
   delete process.env.LIVE_TRANSCRIPTION_DAILY_CAP;
 });
@@ -279,9 +288,13 @@ describe("queueDueLiveTranscriptions", () => {
     const sqls = executeRawUnsafe.mock.calls.map((call) => String(call[0]));
     expect(sqls[0]).toContain("pg_advisory_xact_lock");
     expect(sqls[1]).toContain("UPDATE live_recordings");
+    expect(sqls[1]).not.toContain("NOW()");
+    expect(sqls[1]).toContain('"updatedAt" = $3');
+    expect(executeRawUnsafe.mock.calls[1][3]).toBeInstanceOf(Date);
     expect(sqls[1]).toContain("NOT EXISTS");
     expect(sqls[1]).toContain(`busy."transcriptNextAttemptAt" > $2`);
     expect(updateMany).toHaveBeenCalled();
+    expect(updateMany.mock.calls.at(-1)?.[0].data.liveScanAdminRescan).toBe(true);
     const queued = enqueueJob as unknown as ReturnType<typeof vi.fn>;
     const task = queued.mock.calls[0][1] as () => Promise<unknown>;
     await task();
@@ -313,6 +326,47 @@ describe("queueDueLiveTranscriptions", () => {
       String(call[0]).includes("UPDATE live_recordings")
     );
     expect(updateCall?.[0]).toContain("NOT EXISTS");
+    expect(String(updateCall?.[0])).not.toContain("NOW()");
+    expect(vi.mocked(enqueueJob)).not.toHaveBeenCalled();
+  });
+
+  it("enqueues a re-scan only after the transaction commits", async () => {
+    executeRawUnsafe.mockImplementation(async (sql: string) =>
+      String(sql).includes("UPDATE live_recordings") ? 1 : 0
+    );
+    findUnique.mockResolvedValue({
+      id: "rec-1",
+      state: "archived",
+      transcriptVtt: "WEBVTT",
+      transcriptStatus: "completed",
+    });
+
+    const events: string[] = [];
+    let releaseCommit: () => void = () => {};
+    const commitHold = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const result = await fn(transactionClient());
+      events.push("callback-returned");
+      await commitHold;
+      events.push("commit");
+      return result;
+    });
+    vi.mocked(enqueueJob).mockImplementation(() => {
+      events.push("enqueue");
+    });
+
+    const pending = requestLiveRescan("rec-1");
+    await vi.waitFor(() => {
+      expect(events).toContain("callback-returned");
+    });
+    expect(events).not.toContain("enqueue");
+    releaseCommit();
+    const result = await pending;
+
+    expect(result.ok).toBe(true);
+    expect(events).toEqual(["callback-returned", "commit", "enqueue"]);
   });
 
   it("does not claim when the flag is off", async () => {

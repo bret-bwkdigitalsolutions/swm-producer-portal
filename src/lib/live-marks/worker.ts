@@ -88,7 +88,9 @@ function lostLease(message = "Lost the scan lease."): {
  * A stored transcript is reused, so a website 404 retry does not call
  * Deepgram again. The mp3 is deleted once the transcript is saved.
  * The cron posts only when there is at least one mark. An admin Re-scan
- * posts `marks: []` when it finds none, so the website clears stale marks.
+ * sets `liveScanAdminRescan` and posts `marks: []` when it finds none, so
+ * the website clears stale marks. A cron retry of that scan still sends
+ * the empty list. The flag is cleared after the post succeeds.
  */
 export async function runLiveTranscription(
   liveRecordingId: string,
@@ -204,7 +206,9 @@ export async function runLiveTranscription(
     });
     if (!marksSaved) return lostLease();
 
-    if (marks.length === 0 && !options?.adminRescan) {
+    const clearStaleMarks =
+      options?.adminRescan === true || fresh.liveScanAdminRescan === true;
+    if (marks.length === 0 && !clearStaleMarks) {
       const wrote = await writeOwnedScan(fresh.id, token, {
         transcriptStatus: "completed",
         transcriptError: null,
@@ -277,6 +281,7 @@ export async function runLiveTranscription(
       transcriptMarksResponse: asJson(posted.response),
       transcriptClaimToken: null,
       transcriptNotReadySince: null,
+      liveScanAdminRescan: false,
     });
     if (!wrote) return lostLease("Lost the scan lease after the website call.");
     const cleared = marks.length === 0;

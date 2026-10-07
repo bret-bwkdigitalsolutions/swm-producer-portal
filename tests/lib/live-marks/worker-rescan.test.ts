@@ -51,10 +51,10 @@ beforeEach(() => {
 });
 
 describe("runLiveTranscription empty marks", () => {
-  it("posts marks: [] on an admin re-scan so the website can clear them", async () => {
-    const result = await runLiveTranscription("rec-1", "token-1", {
-      adminRescan: true,
-    });
+  it("posts marks: [] on a cron retry while the admin re-scan flag is set", async () => {
+    findUnique.mockResolvedValue({ ...row, liveScanAdminRescan: true });
+
+    const result = await runLiveTranscription("rec-1", "token-1");
 
     expect(postLiveMarks).toHaveBeenCalledWith({
       wpShowId: 22,
@@ -65,6 +65,21 @@ describe("runLiveTranscription empty marks", () => {
       ok: true,
       message: "Sent an empty mark list so the website clears stale live marks.",
     });
+    const cleared = updateMany.mock.calls.map((call) => call[0].data);
+    expect(cleared.at(-1).liveScanAdminRescan).toBe(false);
+  });
+
+  it("keeps the admin re-scan flag when the empty post does not succeed", async () => {
+    findUnique.mockResolvedValue({ ...row, liveScanAdminRescan: true });
+    postLiveMarks.mockResolvedValue({ ok: false, kind: "website_not_ready" });
+
+    await runLiveTranscription("rec-1", "token-1");
+
+    expect(postLiveMarks).toHaveBeenCalledWith(
+      expect.objectContaining({ marks: [] })
+    );
+    const writes = updateMany.mock.calls.map((call) => call[0].data);
+    expect(writes.some((data) => data.liveScanAdminRescan === false)).toBe(false);
   });
 
   it("does not post when a cron scan finds no marks", async () => {

@@ -98,7 +98,7 @@ async function resetForRescan(tx: ClaimTx, id: string, now: Date): Promise<numbe
          "transcriptScannedAt" = NULL,
          "transcriptClaimToken" = NULL,
          "transcriptNotReadySince" = NULL,
-         "updatedAt" = NOW()
+         "updatedAt" = $3
      WHERE id = $1
        AND state = 'archived'
        AND NOT EXISTS (
@@ -107,7 +107,8 @@ async function resetForRescan(tx: ClaimTx, id: string, now: Date): Promise<numbe
            AND busy."transcriptNextAttemptAt" > $2
        )`,
     id,
-    now
+    now,
+    new Date()
   );
 }
 
@@ -115,7 +116,7 @@ async function claimOn(
   tx: ClaimTx,
   id: string,
   now: Date,
-  options?: { ignoreDailyCap?: boolean }
+  options?: { ignoreDailyCap?: boolean; adminRescan?: boolean }
 ): Promise<ClaimResult> {
   await takeAdvisoryLock(tx);
 
@@ -151,12 +152,13 @@ async function claimOn(
           },
         ],
       },
-      data: {
-        transcriptStatus: "processing",
-        transcriptClaimToken: token,
-        transcriptNextAttemptAt: leased,
-        transcriptError: null,
-      },
+        data: {
+          transcriptStatus: "processing",
+          transcriptClaimToken: token,
+          transcriptNextAttemptAt: leased,
+          transcriptError: null,
+          ...(options?.adminRescan ? { liveScanAdminRescan: true } : {}),
+        },
     });
     if (result.count === 1) {
       return { claimed: true, token, reason: "claimed" as const };
@@ -200,6 +202,7 @@ async function claimOn(
       transcriptNextAttemptAt: leased,
       transcriptError: null,
       ...(expensive ? { transcriptLastClaimedAt: now } : {}),
+      ...(options?.adminRescan ? { liveScanAdminRescan: true } : {}),
     },
   });
   if (result.count !== 1) {
@@ -357,29 +360,60 @@ export async function requestLiveRescan(
       };
     }
     const now = new Date();
-    return db.$transaction(async (tx) => {
+    // Enqueue only after this promise resolves. Prisma commits when the
+    // callback returns; a job started inside the callback can read the row
+    // before that commit and miss the new claim token.
+    const outcome = await db.$transaction(async (tx) => {
       await takeAdvisoryLock(tx);
       const reset = await resetForRescan(tx, id, now);
       if (reset !== 1) {
         if (await hasUnexpiredLease(tx, now)) {
-          return { ok: false, message: "A scan is already running." };
+          return {
+            ok: false,
+            message: "A scan is already running.",
+            token: null,
+            adminRescan: false,
+          };
         }
-        return { ok: false, message: "Could not queue a re-scan." };
+        return {
+          ok: false,
+          message: "Could not queue a re-scan.",
+          token: null,
+          adminRescan: false,
+        };
       }
 
-      const claim = await claimOn(tx, id, now, { ignoreDailyCap: true });
+      const claim = await claimOn(tx, id, now, {
+        ignoreDailyCap: true,
+        adminRescan: true,
+      });
       if (claim.claimed && claim.token) {
-        enqueue(id, claim.token, { adminRescan: true });
         return {
           ok: true,
           message:
             "Re-scan queued. The saved transcript is reused when one exists.",
+          token: claim.token,
+          adminRescan: true,
         };
       }
       if (claim.reason === "in_flight") {
-        return { ok: false, message: "A scan is already running." };
+        return {
+          ok: false,
+          message: "A scan is already running.",
+          token: null,
+          adminRescan: false,
+        };
       }
-      return { ok: false, message: "Could not queue a re-scan." };
+      return {
+        ok: false,
+        message: "Could not queue a re-scan.",
+        token: null,
+        adminRescan: false,
+      };
     });
+    if (outcome.token && outcome.adminRescan) {
+      enqueue(id, outcome.token, { adminRescan: true });
+    }
+    return { ok: outcome.ok, message: outcome.message };
   });
 }
