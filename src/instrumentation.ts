@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { mergeJobMetadata } from "@/lib/jobs/job-metadata";
+import { isCloudRunWorkerFresh } from "@/lib/jobs/processing-runtime";
 import { getAnthropicModel } from "@/lib/ai/model";
 
 /**
@@ -12,6 +13,15 @@ import { getAnthropicModel } from "@/lib/ai/model";
 export async function register() {
   // Only run on the Node.js server, not during build or edge runtime
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  // Cloud Run sets this and overrides the container command to `node server.js`.
+  // Run the one job, then exit. Do not sweep: this process is the worker, and
+  // a sweep would mark the job it is about to run as failed.
+  if (process.env.VIDEO_WORKER === "1") {
+    const { runVideoWorkerAndExit } = await import("@/lib/jobs/video-worker");
+    await runVideoWorkerAndExit();
+    return;
+  }
 
   await sweepStuckProcessingJobs();
   await sweepStuckAnalyses();
@@ -49,6 +59,14 @@ async function sweepStuckProcessingJobs() {
     );
 
     for (const job of stuck) {
+      const metadata = (job.metadata as Record<string, unknown>) ?? {};
+      if (isCloudRunWorkerFresh(metadata)) {
+        console.log(
+          `[instrumentation] Job ${job.id} has a fresh Cloud Run heartbeat — leaving it`
+        );
+        continue;
+      }
+
       // Fail any platform sub-tasks that were still in progress
       for (const platform of job.platforms) {
         if (platform.status === "uploading" || platform.status === "processing") {
@@ -169,6 +187,12 @@ async function sweepStuckAnalyses() {
 
     for (const job of stuck) {
       const metadata = (job.metadata as Record<string, unknown>) ?? {};
+      if (isCloudRunWorkerFresh(metadata)) {
+        console.log(
+          `[instrumentation] Analyze for job ${job.id} has a fresh Cloud Run heartbeat — leaving it`
+        );
+        continue;
+      }
       const analyze = (metadata.analyze as Record<string, unknown>) ?? {};
       await mergeJobMetadata(job.id, {
         analyze: {

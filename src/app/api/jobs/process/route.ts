@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bearerTokenMatches } from "@/lib/secure-compare";
 import { processJob } from "@/lib/jobs/processor";
+import { dispatchVideoProcessing } from "@/lib/jobs/cloud-run-dispatch";
+import { getProcessingRuntime } from "@/lib/jobs/processing-runtime";
 
 /**
  * POST /api/jobs/process
@@ -41,6 +43,19 @@ export async function POST(request: NextRequest) {
       { error: "Missing or invalid jobId in request body" },
       { status: 400 }
     );
+  }
+
+  if (getProcessingRuntime() === "cloudrun") {
+    try {
+      const execution = await dispatchVideoProcessing(jobId, "process");
+      return NextResponse.json({ dispatched: true, execution }, { status: 202 });
+    } catch (error) {
+      console.error("[api/jobs/process] Cloud Run dispatch failed:", error);
+      return NextResponse.json(
+        { error: "Could not start video processing." },
+        { status: 502 }
+      );
+    }
   }
 
   try {

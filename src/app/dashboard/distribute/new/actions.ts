@@ -4,9 +4,13 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { toISOWithTimezone } from "@/lib/timezone";
-import { getLatestEpisodeNumbers } from "@/lib/wordpress/client";
-import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { decodeHtmlEntities, getLatestEpisodeNumbers } from "@/lib/wordpress/client";
+import { extractYoutubeVideoId, youtubeWatchUrl } from "@/lib/youtube-url";
 import { isValidVimeoUrl } from "@/lib/vimeo-url";
+import {
+  lookupLiveStreamCandidate,
+  toAirDate,
+} from "@/lib/wordpress/live-candidate";
 
 interface FormState {
   success?: boolean;
@@ -55,6 +59,7 @@ export async function submitDistribution(
   const videoContentType = formData.get("video_content_type") as string | null;
   const existingYoutubeUrl = formData.get("existing_youtube_url") as string | null;
   const existingVimeoUrl = formData.get("existing_vimeo_url") as string | null;
+  const liveStreamUrl = formData.get("live_stream_url") as string | null;
   const seasonNumber = formData.get("season_number") as string | null;
   const episodeNumber = formData.get("episode_number") as string | null;
   const explicit = formData.get("explicit") === "true";
@@ -108,6 +113,8 @@ export async function submitDistribution(
     }
   }
 
+  const liveYoutubeVideoId = parsedLiveYoutubeVideoId(liveStreamUrl, errors);
+
   if (Object.keys(errors).length > 0) {
     return {
       success: false,
@@ -144,6 +151,12 @@ export async function submitDistribution(
     isPremium,
     ...(existingYoutubeUrl ? { existingYoutubeUrl } : {}),
     ...(existingVimeoUrl ? { existingVimeoUrl } : {}),
+    ...(liveYoutubeVideoId
+      ? {
+          liveYoutubeVideoId,
+          liveStreamUrl: youtubeWatchUrl(liveYoutubeVideoId),
+        }
+      : {}),
   };
 
   // Verify user has access to this show
@@ -227,6 +240,8 @@ export async function updateDistribution(
     episodeNumber?: number;
     explicit?: boolean;
     isPremium?: boolean;
+    /** Current live-stream URL from the form. Omit to leave a stored id alone. */
+    liveStreamUrl?: string;
   }
 ): Promise<FormState> {
   const session = await auth();
@@ -248,6 +263,21 @@ export async function updateDistribution(
   }
 
   const existingMetadata = job.metadata as Record<string, unknown>;
+  const liveErrors: Record<string, string[]> = {};
+  const liveYoutubeVideoId =
+    data.liveStreamUrl !== undefined
+      ? parsedLiveYoutubeVideoId(data.liveStreamUrl, liveErrors)
+      : undefined;
+  const liveWatchUrl = liveYoutubeVideoId
+    ? youtubeWatchUrl(liveYoutubeVideoId)
+    : null;
+  if (liveErrors.live_stream_url) {
+    return {
+      success: false,
+      message: "Please fix the errors below.",
+      errors: liveErrors,
+    };
+  }
 
   await db.$transaction(async (tx) => {
     // Update job metadata with final description, chapters, tags, and optional fields
@@ -278,6 +308,14 @@ export async function updateDistribution(
             : {}),
           ...(data.explicit !== undefined ? { explicit: data.explicit } : {}),
           isPremium,
+          ...(data.liveStreamUrl !== undefined
+            ? liveWatchUrl
+              ? {
+                  liveYoutubeVideoId,
+                  liveStreamUrl: liveWatchUrl,
+                }
+              : { liveYoutubeVideoId: null, liveStreamUrl: null }
+            : {}),
         },
       },
     });
@@ -302,6 +340,89 @@ export async function updateDistribution(
   });
 
   return { success: true, jobId };
+}
+
+export type LiveStreamPreview =
+  | { status: "match"; title: string; date: string }
+  | { status: "none" }
+  | { status: "error" }
+  | { status: "invalid" };
+
+/**
+ * Preview which live-stream post an entered YouTube URL would replace.
+ * Sends show_id, the publish day, and youtube_id. A lookup failure returns
+ * `error` and must not block submit. `none` means there is no candidate whose
+ * youtube_id equals the entered video. Older website code ignores youtube_id
+ * and returns the closest live post for that date, so a mismatched id is
+ * `none` rather than a match.
+ */
+export async function previewLiveStreamReplacement(
+  wpShowId: number,
+  liveStreamUrl: string
+): Promise<LiveStreamPreview> {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login");
+  }
+  if (!session.user.hasDistributionAccess && session.user.role !== "admin") {
+    redirect("/dashboard");
+  }
+
+  const youtubeId = extractYoutubeVideoId(liveStreamUrl);
+  if (!youtubeId || !Number.isInteger(wpShowId) || wpShowId <= 0) {
+    return { status: "invalid" };
+  }
+
+  if (session.user.role !== "admin") {
+    const access = await db.userShowAccess.findUnique({
+      where: {
+        userId_wpShowId: { userId: session.user.id, wpShowId },
+      },
+    });
+    if (!access) return { status: "error" };
+  }
+
+  try {
+    const result = await lookupLiveStreamCandidate(
+      wpShowId,
+      toAirDate(),
+      youtubeId
+    );
+    if (!result.ok) return { status: "error" };
+    if (!result.candidate || result.candidate.youtube_id !== youtubeId) {
+      return { status: "none" };
+    }
+    const title = decodeHtmlEntities(result.candidate.title).trim();
+    return {
+      status: "match",
+      title: title || "Untitled",
+      date: result.candidate.date,
+    };
+  } catch (error) {
+    console.warn("[distribute] Live-stream preview failed:", error);
+    return { status: "error" };
+  }
+}
+
+/**
+ * Parse an optional live-stream URL into a YouTube video id.
+ * Blank is allowed. A non-empty value that is not a YouTube video URL
+ * records `errors.live_stream_url` and returns undefined.
+ */
+function parsedLiveYoutubeVideoId(
+  raw: string | null | undefined,
+  errors: Record<string, string[]>
+): string | undefined {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) return undefined;
+  const id = extractYoutubeVideoId(trimmed);
+  if (!id) {
+    errors.live_stream_url = [
+      "Enter a valid YouTube URL (for example https://www.youtube.com/live/VIDEO_ID), or leave this blank.",
+    ];
+    return undefined;
+  }
+  return id;
 }
 
 /**

@@ -13,6 +13,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  liveStreamReplacementNote,
+  readSupersedeDropped,
+  readSupersedesLivePostId,
+} from "@/lib/live-stream-note";
+import { extractYoutubeVideoId, youtubeWatchUrl } from "@/lib/youtube-url";
+import {
   ArrowLeftIcon,
   CheckIcon,
   XIcon,
@@ -110,7 +116,13 @@ const SUGGESTION_LABELS: Record<string, string> = {
   blog: "Blog Recommendations",
 };
 
-function PlatformStatusRow({ platform }: { platform: Platform }) {
+function PlatformStatusRow({
+  platform,
+  note,
+}: {
+  platform: Platform;
+  note?: string | null;
+}) {
   const [retryState, retryAction, isRetrying] = useActionState(retryPlatform, {});
 
   return (
@@ -123,6 +135,9 @@ function PlatformStatusRow({ platform }: { platform: Platform }) {
           <p className="text-sm font-medium">
             {PLATFORM_LABELS[platform.platform] ?? platform.platform}
           </p>
+          {note && (
+            <p className="text-xs text-muted-foreground">{note}</p>
+          )}
           {platform.error && (
             <p className="text-xs text-destructive">{platform.error}</p>
           )}
@@ -149,7 +164,7 @@ function PlatformStatusRow({ platform }: { platform: Platform }) {
           <a
             href={platform.externalUrl}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noreferrer"
             className="text-muted-foreground transition-colors hover:text-foreground"
           >
             <ExternalLinkIcon className="size-4" />
@@ -261,6 +276,12 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const [liveVerifications, setLiveVerifications] = useState<TierResult[] | null>(
     (job.metadata.verifications as TierResult[] | undefined) ?? null
   );
+  const [supersedesLivePostId, setSupersedesLivePostId] = useState<number | null>(
+    readSupersedesLivePostId(job.metadata.supersedesLivePostId)
+  );
+  const [supersedeDropped, setSupersedeDropped] = useState(
+    readSupersedeDropped(job.metadata.supersedeDropped)
+  );
 
   const isTerminal = TERMINAL_STATUSES.includes(liveStatus);
   // Verification fires up to 30 min after distribution completes, so keep
@@ -277,6 +298,14 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
       setLiveStatus(data.status);
       setLivePlatforms(data.platforms);
       if (data.verifications !== undefined) setLiveVerifications(data.verifications);
+      if ("supersedesLivePostId" in data) {
+        setSupersedesLivePostId(
+          readSupersedesLivePostId(data.supersedesLivePostId)
+        );
+      }
+      if ("supersedeDropped" in data) {
+        setSupersedeDropped(readSupersedeDropped(data.supersedeDropped));
+      }
     } catch {
       // Silently ignore — next poll will retry
     }
@@ -294,6 +323,15 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const videoFileName = (metadata.videoFileName as string) ?? "";
   const scheduleMode = (metadata.scheduleMode as string) ?? "now";
   const scheduledAt = (metadata.scheduledAt as string) ?? null;
+  const enteredLiveVideoId =
+    typeof metadata.liveYoutubeVideoId === "string"
+      ? metadata.liveYoutubeVideoId.trim()
+      : "";
+  const enteredLiveStreamUrl =
+    typeof metadata.liveStreamUrl === "string" ? metadata.liveStreamUrl.trim() : "";
+  const liveStreamHref =
+    youtubeWatchUrl(enteredLiveVideoId) ??
+    youtubeWatchUrl(extractYoutubeVideoId(enteredLiveStreamUrl) ?? "");
 
   const createdDate = new Date(job.createdAt).toLocaleDateString("en-US", {
     month: "long",
@@ -419,6 +457,39 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
               </p>
             </div>
           )}
+          {liveStreamHref && (
+            <div>
+              <p className="font-medium text-muted-foreground">Live stream URL</p>
+              <p className="mt-1">
+                <a
+                  href={liveStreamHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all text-primary underline-offset-2 hover:underline"
+                >
+                  {liveStreamHref}
+                </a>
+              </p>
+            </div>
+          )}
+          {/* The replacement sentence is stored only after a 201 that echoed
+              `_swm_supersedes`. A dropped key sets supersedeDropped and
+              leaves the post id unset. */}
+          {supersedeDropped ? (
+            <div>
+              <p className="font-medium text-muted-foreground">Live stream</p>
+              <p className="mt-1">
+                WordPress did not keep the live-stream replacement.
+              </p>
+            </div>
+          ) : supersedesLivePostId != null ? (
+            <div>
+              <p className="font-medium text-muted-foreground">Live stream</p>
+              <p className="mt-1">
+                {liveStreamReplacementNote(supersedesLivePostId)}
+              </p>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -429,7 +500,18 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         </CardHeader>
         <CardContent className="space-y-2">
           {livePlatforms.map((platform) => (
-            <PlatformStatusRow key={platform.id} platform={platform} />
+            <PlatformStatusRow
+              key={platform.id}
+              platform={platform}
+              note={
+                platform.platform === "website" && supersedeDropped
+                  ? "WordPress did not keep the live-stream replacement."
+                  : platform.platform === "website" &&
+                      supersedesLivePostId != null
+                    ? liveStreamReplacementNote(supersedesLivePostId)
+                    : null
+              }
+            />
           ))}
         </CardContent>
       </Card>

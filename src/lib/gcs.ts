@@ -4,15 +4,26 @@ let storageInstance: Storage | null = null;
 
 function getStorage(): Storage {
   if (!storageInstance) {
-    // Support JSON credentials inline (for Railway/containers) or a file path
+    // Support JSON credentials inline (for Railway/containers) or a file path.
+    // The Cloud Run worker sets neither and uses the runtime service account
+    // (Application Default Credentials) so the same client reads the FUSE mount.
     const credentialsJson = process.env.GCS_CREDENTIALS_JSON;
     const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
     if (credentialsJson) {
-      const credentials = JSON.parse(credentialsJson);
+      let credentials: object;
+      try {
+        credentials = JSON.parse(credentialsJson);
+      } catch {
+        throw new Error(
+          "GCS_CREDENTIALS_JSON is not valid JSON — check the Railway environment variable"
+        );
+      }
       storageInstance = new Storage({ credentials });
     } else if (credentialsPath) {
       storageInstance = new Storage({ keyFilename: credentialsPath });
+    } else if (process.env.VIDEO_WORKER === "1") {
+      storageInstance = new Storage();
     } else {
       throw new Error(
         "Google Cloud credentials not configured. Set GCS_CREDENTIALS_JSON (recommended for Railway) or GOOGLE_APPLICATION_CREDENTIALS."
@@ -21,6 +32,11 @@ function getStorage(): Storage {
   }
 
   return storageInstance;
+}
+
+/** Shared client for modules that upload with the Storage library directly. */
+export function createStorageClient(): Storage {
+  return getStorage();
 }
 
 function getBucketName(): string {
@@ -34,6 +50,14 @@ function getBucketName(): string {
   }
 
   return bucket;
+}
+
+/**
+ * Bucket for objects created from now on.
+ * Unset GCS_UPLOAD_BUCKET_NAME keeps every write on GCS_BUCKET_NAME.
+ */
+export function objectBucketForNewUploads(): string {
+  return process.env.GCS_UPLOAD_BUCKET_NAME?.trim() || getBucketName();
 }
 
 /**
@@ -60,10 +84,10 @@ function generateGcsPath(filename: string): string {
 export async function generateSignedUploadUrl(
   filename: string,
   contentType: string,
-  options?: { resumable?: boolean }
-): Promise<{ uploadUrl: string; gcsPath: string }> {
+  options?: { resumable?: boolean; bucket?: string }
+): Promise<{ uploadUrl: string; gcsPath: string; bucketName: string }> {
   const storage = getStorage();
-  const bucketName = getBucketName();
+  const bucketName = options?.bucket?.trim() || objectBucketForNewUploads();
   const gcsPath = generateGcsPath(filename);
 
   const bucket = storage.bucket(bucketName);
@@ -78,7 +102,7 @@ export async function generateSignedUploadUrl(
     contentType,
   });
 
-  return { uploadUrl: url, gcsPath };
+  return { uploadUrl: url, gcsPath, bucketName };
 }
 
 /**
@@ -90,12 +114,13 @@ export async function generateSignedUploadUrl(
  */
 export async function generateSignedDownloadUrl(
   gcsPath: string,
-  expiresInMs: number = 60 * 60 * 1000 // default 1 hour
+  expiresInMs: number = 60 * 60 * 1000, // default 1 hour
+  bucketName?: string
 ): Promise<string> {
   const storage = getStorage();
-  const bucketName = getBucketName();
+  const resolved = bucketName?.trim() || (await defaultReadBucket(gcsPath));
 
-  const bucket = storage.bucket(bucketName);
+  const bucket = storage.bucket(resolved);
   const file = bucket.file(gcsPath);
 
   const [url] = await file.getSignedUrl({
@@ -114,13 +139,14 @@ export async function generateSignedDownloadUrl(
 export async function uploadBuffer(
   filename: string,
   buffer: Buffer,
-  contentType: string
+  contentType: string,
+  bucketName?: string
 ): Promise<string> {
   const storage = getStorage();
-  const bucketName = getBucketName();
+  const resolved = bucketName?.trim() || objectBucketForNewUploads();
   const gcsPath = generateGcsPath(filename);
 
-  const bucket = storage.bucket(bucketName);
+  const bucket = storage.bucket(resolved);
   const file = bucket.file(gcsPath);
 
   await file.save(buffer, {
@@ -136,11 +162,25 @@ export async function uploadBuffer(
  *
  * This is a metadata check, not a media download, so it does not add egress.
  */
-export async function gcsObjectExists(gcsPath: string): Promise<boolean> {
+export async function gcsObjectExists(
+  gcsPath: string,
+  bucketName?: string
+): Promise<boolean> {
   const storage = getStorage();
-  const bucketName = getBucketName();
-  const [exists] = await storage.bucket(bucketName).file(gcsPath).exists();
+  const resolved = bucketName?.trim() || getBucketName();
+  const [exists] = await storage.bucket(resolved).file(gcsPath).exists();
   return exists;
+}
+
+/**
+ * Bucket to read when the caller did not pass one.
+ * With only GCS_BUCKET_NAME set, this does not call the API.
+ * With both buckets, the regional upload bucket is checked first.
+ */
+async function defaultReadBucket(gcsPath: string): Promise<string> {
+  if (!process.env.GCS_UPLOAD_BUCKET_NAME?.trim()) return getBucketName();
+  const { resolveObjectBucket } = await import("@/lib/jobs/gcs-location");
+  return resolveObjectBucket(gcsPath);
 }
 
 /**
@@ -148,12 +188,23 @@ export async function gcsObjectExists(gcsPath: string): Promise<boolean> {
  *
  * @param gcsPath - The path of the file in GCS
  */
-export async function deleteFile(gcsPath: string): Promise<void> {
+async function deleteFromBucket(bucketName: string, gcsPath: string): Promise<void> {
   const storage = getStorage();
-  const bucketName = getBucketName();
+  await storage.bucket(bucketName).file(gcsPath).delete({ ignoreNotFound: true });
+}
 
-  const bucket = storage.bucket(bucketName);
-  const file = bucket.file(gcsPath);
+export async function deleteFile(gcsPath: string, bucketName?: string): Promise<void> {
+  if (bucketName?.trim()) {
+    await deleteFromBucket(bucketName.trim(), gcsPath);
+    return;
+  }
 
-  await file.delete({ ignoreNotFound: true });
+  const legacy = getBucketName();
+  await deleteFromBucket(legacy, gcsPath);
+  const upload = process.env.GCS_UPLOAD_BUCKET_NAME?.trim();
+  // During dual-read the object may sit in either bucket. Delete is a free
+  // operation and ignoreNotFound makes the extra call harmless.
+  if (upload && upload !== legacy) {
+    await deleteFromBucket(upload, gcsPath);
+  }
 }

@@ -6,14 +6,23 @@ import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay, for
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
 import { setTransistorEpisodeWebsite, uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
+import { liveStreamReplacementNote } from "@/lib/live-stream-note";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
 import { runVerificationTier, type TierResult } from "./verify-distribution";
 import { mergeJobMetadata } from "./job-metadata";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { gcsObjectExists, generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { toAirDate } from "@/lib/wordpress/live-candidate";
 import { downloadVideoToGcs, downloadFullVideoToGcs } from "./video-downloader";
 import { downloadGcsObjectToFile } from "./gcs-download";
+import {
+  audioBucketHint,
+  bucketHint,
+  locateProducerVideo,
+  recordedDerivedBucket,
+} from "./gcs-location";
+import { formatDuration, jobTimeoutMs } from "./processing-runtime";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -33,15 +42,33 @@ export interface ProcessingResult {
 }
 
 /**
+ * The stored mp3 is not in the video's bucket. A recorded audio bucket wins.
+ * Otherwise, when a regional bucket is configured, look there first and then
+ * on the legacy bucket so an mp3 written before this change is still reused.
+ * With a single bucket, this stays a one-argument exists check.
+ */
+async function extractedAudioExists(
+  objectPath: string,
+  metadata: Record<string, unknown>
+): Promise<boolean> {
+  const hinted = audioBucketHint(metadata);
+  if (hinted) return gcsObjectExists(objectPath, hinted);
+  const upload = process.env.GCS_UPLOAD_BUCKET_NAME?.trim();
+  const legacy = process.env.GCS_BUCKET_NAME?.trim();
+  if (upload && legacy && upload !== legacy) {
+    if (await gcsObjectExists(objectPath, upload)) return true;
+    return gcsObjectExists(objectPath, legacy);
+  }
+  return gcsObjectExists(objectPath);
+}
+
+/**
  * Process a specific distribution job by ID.
  * Uploads to platforms in dependency order:
  *   1. YouTube (first — WordPress needs the video URL)
  *   2. Transistor (parallel-safe, uses extracted audio)
  *   3. WordPress (last — needs YouTube URL for embed)
  */
-// 30 minutes — large videos need time for YouTube + 2x Transistor uploads
-const JOB_TIMEOUT_MS = 30 * 60 * 1000;
-
 export async function processJob(jobId: string): Promise<ProcessingResult> {
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
@@ -60,17 +87,21 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
     data: { status: "processing" },
   });
 
-  // Wrap the actual work in a timeout so hangs (e.g. thumbnail upload)
-  // don't leave the job stuck in "processing" forever.
+  // Wrap the actual work in a timeout so hangs don't leave the job stuck
+  // in "processing". Railway stays at 30 minutes. The Cloud Run worker
+  // raises this to 23 hours; the platform task timeout is the backstop,
+  // and the timer is cleared so a finished worker can exit.
+  const timeoutMs = jobTimeoutMs();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       processJobInner(job),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Job timed out after 30 minutes")),
-          JOB_TIMEOUT_MS
-        )
-      ),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Job timed out after ${formatDuration(timeoutMs)}`)),
+          timeoutMs
+        );
+      }),
     ]);
   } catch (error) {
     const errMsg =
@@ -129,6 +160,8 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
         error: errMsg,
       })),
     };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -166,8 +199,22 @@ async function processJobInner(
     });
     effectiveGcsPath = downloadedPath;
     youtubeAudioPath = downloadedPath; // Already audio — skip extractAudio later
+    const writtenBucket =
+      process.env.GCS_UPLOAD_BUCKET_NAME?.trim() || process.env.GCS_BUCKET_NAME;
+    if (writtenBucket) {
+      metadata.gcsBucket = writtenBucket;
+      await mergeJobMetadata(job.id, { gcsBucket: writtenBucket }).catch((error) => {
+        console.error("[processor] Could not record GCS bucket:", error);
+      });
+    }
     console.log(`[processor] Source audio downloaded to GCS: ${downloadedPath}`);
   }
+
+  // Empty unless a regional bucket or a FUSE mount is configured. The Railway
+  // path leaves both unset and keeps the single local download below.
+  const located = effectiveGcsPath
+    ? await locateProducerVideo(effectiveGcsPath, bucketHint(metadata))
+    : { fusePath: null as string | null, bucket: undefined as string | undefined };
 
   // Look up show hosts for Transistor author field
   const showMeta = await db.showMetadata.findUnique({
@@ -199,7 +246,8 @@ async function processJobInner(
       );
     } else {
       try {
-        if (await gcsObjectExists(storedAudioPath)) {
+        const audioExists = await extractedAudioExists(storedAudioPath, metadata);
+        if (audioExists) {
           gcsAudioPath = storedAudioPath;
           console.log(
             `[processor] Reusing extracted audio already in GCS: ${storedAudioPath}`
@@ -259,14 +307,25 @@ async function processJobInner(
   // single episode can be ~90 GB, so a second local copy would not fit.
   // Peak disk stays one video plus the much smaller mp3 — the same peak as
   // the previous sequential downloads.
-  if (needsExtractedAudio && needsUploadedVideo && effectiveGcsPath) {
+  if (needsExtractedAudio && needsUploadedVideo && effectiveGcsPath && located.fusePath) {
+    tempVideoPath = located.fusePath;
+    console.log(
+      `[processor] Using GCS FUSE mount for audio extraction and YouTube (no download): ${located.fusePath}`
+    );
+  } else if (needsExtractedAudio && needsUploadedVideo && effectiveGcsPath) {
     try {
       tempVideoDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
       tempVideoPath = join(tempVideoDir, "video.mp4");
       console.log(
         `[processor] Downloading video once for audio extraction and YouTube: ${effectiveGcsPath}`
       );
-      await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+      if (located.bucket) {
+        await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath, {
+          bucket: located.bucket,
+        });
+      } else {
+        await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+      }
     } catch (error) {
       console.error("[processor] Video download failed:", error);
       sharedDownloadError =
@@ -280,17 +339,25 @@ async function processJobInner(
       if (tempVideoPath) {
         gcsAudioPath = await extractAudio(effectiveGcsPath, {
           localVideoPath: tempVideoPath,
+          ...(located.bucket ? { bucket: located.bucket } : {}),
         });
       } else if (sharedDownloadError) {
         // The shared GET already failed. Don't read the object again here;
         // YouTube still gets its own attempt below, matching the old
         // independent download.
         throw sharedDownloadError;
+      } else if (located.bucket) {
+        gcsAudioPath = await extractAudio(effectiveGcsPath, { bucket: located.bucket });
       } else {
         gcsAudioPath = await extractAudio(effectiveGcsPath);
       }
       // Record the mp3 so a retry can upload it without reading the video again.
-      await mergeJobMetadata(job.id, { gcsAudioPath }).catch((error) => {
+      // The audio bucket is the regional upload bucket, not the video's bucket.
+      const recordedAudioBucket = recordedDerivedBucket();
+      await mergeJobMetadata(job.id, {
+        gcsAudioPath,
+        ...(recordedAudioBucket ? { gcsAudioBucket: recordedAudioBucket } : {}),
+      }).catch((error) => {
         console.error("[processor] Could not record extracted audio path:", error);
       });
     } catch (error) {
@@ -397,6 +464,11 @@ async function processJobInner(
   } else if (needsUploadedVideo && effectiveGcsPath) {
     if (tempVideoPath) {
       console.log("[processor] Reusing downloaded video for YouTube upload");
+    } else if (located.fusePath) {
+      tempVideoPath = located.fusePath;
+      console.log(
+        `[processor] Using GCS FUSE mount for YouTube (no download): ${located.fusePath}`
+      );
     } else {
       try {
         tempVideoDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
@@ -404,7 +476,13 @@ async function processJobInner(
         console.log(
           `[processor] Downloading video for YouTube: ${effectiveGcsPath}`
         );
-        await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+        if (located.bucket) {
+          await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath, {
+            bucket: located.bucket,
+          });
+        } else {
+          await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath);
+        }
       } catch (error) {
         console.error("[processor] Video download failed:", error);
         await releaseTempVideo();
@@ -845,6 +923,23 @@ async function processJobInner(
           : "publish";
 
       const audioDuration = updatedMetadata.audioDuration;
+      const enteredLiveId =
+        typeof updatedMetadata.liveYoutubeVideoId === "string"
+          ? updatedMetadata.liveYoutubeVideoId.trim()
+          : "";
+      // An entered live URL replaces the published-video LiveRecording match.
+      // That id is sent as youtube_id and must still equal candidate.youtube_id.
+      // Date is the portal row for that live video when one exists, otherwise
+      // the Chicago publish day. Older website code ignores youtube_id and
+      // filters by date, so the publish day often misses a live from another
+      // day. Do not guess the latest stream.
+      const liveRecording = enteredLiveId
+        ? undefined
+        : await lookupLiveRecordingAirDate(youtubeUrl, job.wpShowId);
+      const enteredLiveAirDate = enteredLiveId
+        ? (await liveRecordingAirDateForVideo(enteredLiveId, job.wpShowId)) ??
+          toAirDate()
+        : undefined;
       const result = await publishToWordPress({
         wpShowId: job.wpShowId,
         title: job.title,
@@ -858,12 +953,60 @@ async function processJobInner(
         transcriptVtt: (updatedMetadata.transcriptVtt as string) || undefined,
         status: wpStatus,
         scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
+        airDate: enteredLiveId ? enteredLiveAirDate : liveRecording?.airDate,
+        liveRecordingYoutubeId: enteredLiveId
+          ? enteredLiveId
+          : liveRecording?.youtubeVideoId,
         portalUserId: job.userId,
         isPremiumOnly: isPremium,
       });
 
       if (result.postUrl) {
         await applyTransistorWebsiteLinks(result.postUrl);
+      }
+
+      if (result.supersedeDropped) {
+        // The episode exists. WordPress accepted the create and discarded
+        // the supersede meta. Record the drop only — do not store a
+        // replacement id the UI would render as "Replaces live stream post".
+        await mergeJobMetadata(job.id, {
+          supersedeDropped: true,
+        }).catch((error) => {
+          console.error(
+            "[processor] Could not record dropped supersede meta:",
+            error
+          );
+        });
+      } else if (result.supersedesLivePostId) {
+        const note = liveStreamReplacementNote(result.supersedesLivePostId);
+        // The WordPress post already exists. A failure to record the link
+        // locally must not mark the platform failed — a retry would create
+        // a second episode.
+        await mergeJobMetadata(job.id, {
+          supersedesLivePostId: result.supersedesLivePostId,
+        }).catch((error) => {
+          console.error(
+            "[processor] Could not record superseded live post:",
+            error
+          );
+        });
+        await db.activityLog
+          .create({
+            data: {
+              userId: job.userId,
+              action: "distribute",
+              contentType: "episode",
+              wpPostId: result.postId,
+              wpShowId: job.wpShowId,
+              details: note,
+            },
+          })
+          .catch((error) => {
+            console.error(
+              "[processor] Could not log live-stream replacement:",
+              error
+            );
+          });
       }
 
       await db.distributionJobPlatform.update({
@@ -961,6 +1104,47 @@ async function processJobInner(
   }
 
   return { jobId: job.id, status: finalStatus, platformResults };
+}
+
+/**
+ * Air date for a distribution whose published YouTube video is itself a
+ * portal live recording. Returns a match only when this show has a row for
+ * that video. Prefers the broadcast's actual start, then the scheduled
+ * start. Callers must not invent a show+date guess when this is undefined.
+ * Skipped when the producer entered a separate live-stream URL.
+ */
+async function lookupLiveRecordingAirDate(
+  youtubeUrl: string,
+  wpShowId: number
+): Promise<{ airDate: string; youtubeVideoId: string } | undefined> {
+  const videoId = extractYoutubeVideoId(youtubeUrl);
+  if (!videoId) return undefined;
+  const airDate = await liveRecordingAirDateForVideo(videoId, wpShowId);
+  if (!airDate) return undefined;
+  return { airDate, youtubeVideoId: videoId };
+}
+
+/** Air time of this show's LiveRecording for an exact video id, if one exists. */
+async function liveRecordingAirDateForVideo(
+  videoId: string,
+  wpShowId: number
+): Promise<string | undefined> {
+  try {
+    const recording = await db.liveRecording.findUnique({
+      where: { youtubeVideoId: videoId },
+      select: {
+        wpShowId: true,
+        actualStartedAt: true,
+        scheduledStartAt: true,
+      },
+    });
+    if (!recording || recording.wpShowId !== wpShowId) return undefined;
+    const stamp = recording.actualStartedAt ?? recording.scheduledStartAt;
+    return stamp.toISOString();
+  } catch (error) {
+    console.warn("[processor] Live recording air-date lookup failed:", error);
+    return undefined;
+  }
 }
 
 const VERIFICATION_TIER_DELAYS_MS: Record<1 | 2 | 3 | 4, number> = {

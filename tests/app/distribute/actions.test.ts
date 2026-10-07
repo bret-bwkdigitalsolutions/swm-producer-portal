@@ -8,6 +8,7 @@ const {
   mockJobFindUnique,
   mockJobUpdate,
   mockPlatformDeleteMany,
+  mockLookupLiveStreamCandidate,
 } = vi.hoisted(() => ({
   mockCreate: vi.fn().mockResolvedValue({ id: "job-1" }),
   mockCreateMany: vi.fn().mockResolvedValue({}),
@@ -16,6 +17,7 @@ const {
   mockJobFindUnique: vi.fn(),
   mockJobUpdate: vi.fn().mockResolvedValue({}),
   mockPlatformDeleteMany: vi.fn().mockResolvedValue({}),
+  mockLookupLiveStreamCandidate: vi.fn(),
 }));
 
 // Mock auth and db
@@ -27,6 +29,12 @@ vi.mock("@/lib/auth", () => ({
       hasDistributionAccess: true,
     },
   }),
+}));
+
+vi.mock("@/lib/wordpress/live-candidate", () => ({
+  lookupLiveStreamCandidate: (...args: unknown[]) =>
+    mockLookupLiveStreamCandidate(...args),
+  toAirDate: () => "2026-10-07",
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -47,6 +55,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import {
+  previewLiveStreamReplacement,
   submitDistribution,
   updateDistribution,
 } from "@/app/dashboard/distribute/new/actions";
@@ -141,6 +150,57 @@ describe("submitDistribution", () => {
     expect(result.errors?.video_file).toBeDefined();
   });
 
+  it("stores a parsed live stream video id and allows a blank URL", async () => {
+    const withLive = makeFormData({
+      ...BASE_FIELDS,
+      video_file_name: "episode.mp4",
+      live_stream_url: "https://www.youtube.com/live/sLB7STNGACI",
+    });
+    const saved = await submitDistribution({}, withLive);
+    expect(saved.success).toBe(true);
+    expect(mockCreate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBe(
+      "sLB7STNGACI"
+    );
+    expect(mockCreate.mock.calls[0][0].data.metadata.liveStreamUrl).toBe(
+      "https://www.youtube.com/watch?v=sLB7STNGACI"
+    );
+
+    mockCreate.mockClear();
+    const blank = makeFormData({
+      ...BASE_FIELDS,
+      video_file_name: "episode.mp4",
+      live_stream_url: "   ",
+    });
+    const empty = await submitDistribution({}, blank);
+    expect(empty.success).toBe(true);
+    expect(mockCreate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBeUndefined();
+  });
+
+  it("rejects a javascript live stream URL", async () => {
+    const fd = makeFormData({
+      ...BASE_FIELDS,
+      video_file_name: "episode.mp4",
+      live_stream_url:
+        "javascript://youtube.com/%0Aalert(1)//?v=AAAAAAAAAAA",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(false);
+    expect(result.errors?.live_stream_url?.[0]).toMatch(/YouTube URL/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns a form error for an invalid live stream URL", async () => {
+    const fd = makeFormData({
+      ...BASE_FIELDS,
+      video_file_name: "episode.mp4",
+      live_stream_url: "https://vimeo.com/123456789",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(false);
+    expect(result.errors?.live_stream_url?.[0]).toMatch(/YouTube URL/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("accepts a placeholder title for AI path (description not required)", async () => {
     const fd = makeFormData({
       show_id: "42",
@@ -153,6 +213,98 @@ describe("submitDistribution", () => {
     });
     const result = await submitDistribution({}, fd);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("previewLiveStreamReplacement", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the live post title and date for a youtube_id match", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({
+      ok: true,
+      candidate: {
+        id: 4234,
+        title: "Rusty Greer",
+        youtube_id: "sLB7STNGACI",
+        date: "2026-05-20",
+      },
+    });
+
+    const result = await previewLiveStreamReplacement(
+      22,
+      "https://www.youtube.com/live/sLB7STNGACI"
+    );
+
+    expect(result).toEqual({
+      status: "match",
+      title: "Rusty Greer",
+      date: "2026-05-20",
+    });
+    expect(mockLookupLiveStreamCandidate).toHaveBeenCalledWith(
+      22,
+      "2026-10-07",
+      "sLB7STNGACI"
+    );
+  });
+
+  it("decodes HTML entities in the matched title", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({
+      ok: true,
+      candidate: {
+        id: 4234,
+        title: "Rusty &amp; Greer",
+        youtube_id: "sLB7STNGACI",
+        date: "2026-05-20",
+      },
+    });
+
+    await expect(
+      previewLiveStreamReplacement(22, "https://youtu.be/sLB7STNGACI")
+    ).resolves.toEqual({
+      status: "match",
+      title: "Rusty & Greer",
+      date: "2026-05-20",
+    });
+  });
+
+  it("returns none when the candidate youtube id does not match", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({
+      ok: true,
+      candidate: {
+        id: 99,
+        title: "Some other live",
+        youtube_id: "otherLive11",
+        date: "2026-10-07",
+      },
+    });
+
+    await expect(
+      previewLiveStreamReplacement(
+        22,
+        "https://www.youtube.com/live/sLB7STNGACI"
+      )
+    ).resolves.toEqual({ status: "none" });
+  });
+
+  it("reports no match without throwing", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({
+      ok: true,
+      candidate: null,
+    });
+
+    await expect(
+      previewLiveStreamReplacement(22, "https://youtu.be/sLB7STNGACI")
+    ).resolves.toEqual({ status: "none" });
+  });
+
+  it("returns an error status when the lookup fails", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({ ok: false });
+
+    await expect(
+      previewLiveStreamReplacement(22, "https://youtu.be/sLB7STNGACI")
+    ).resolves.toEqual({ status: "error" });
   });
 });
 
@@ -202,6 +354,26 @@ describe("updateDistribution", () => {
     expect(result.success).toBe(true);
     const updateCall = mockJobUpdate.mock.calls[0][0];
     expect(updateCall.data.metadata.explicit).toBe(true);
+  });
+
+  it("replaces a stored live video id from the review form", async () => {
+    mockJobFindUnique.mockResolvedValue({
+      id: "job-1",
+      userId: "user-1",
+      metadata: { description: "old desc", liveYoutubeVideoId: "oldVideo111" },
+    });
+    const result = await updateDistribution("job-1", {
+      description: "Some description",
+      platforms: ["youtube"],
+      liveStreamUrl: "https://youtu.be/sLB7STNGACI",
+    });
+    expect(result.success).toBe(true);
+    expect(mockJobUpdate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBe(
+      "sLB7STNGACI"
+    );
+    expect(mockJobUpdate.mock.calls[0][0].data.metadata.liveStreamUrl).toBe(
+      "https://www.youtube.com/watch?v=sLB7STNGACI"
+    );
   });
 
   it("preserves existing metadata fields not being updated", async () => {

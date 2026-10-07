@@ -44,7 +44,13 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg", "sharp"],
+  serverExternalPackages: [
+    "@prisma/client",
+    "@prisma/adapter-pg",
+    "pg",
+    "sharp",
+    "google-auth-library",
+  ],
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

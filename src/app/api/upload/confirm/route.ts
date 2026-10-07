@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { processJob } from "@/lib/jobs/processor";
 import { enqueueJob } from "@/lib/jobs/job-queue";
 import { checkForDuplicates } from "@/lib/jobs/duplicate-check";
+import { dispatchVideoProcessing } from "@/lib/jobs/cloud-run-dispatch";
+import { getProcessingRuntime } from "@/lib/jobs/processing-runtime";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -131,9 +133,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Trigger processing (non-blocking) under the global concurrency cap so
-  // overlapping distribution jobs don't stack memory and OOM the container.
-  enqueueJob(`processJob:${jobId}`, () => processJob(jobId));
+  if (getProcessingRuntime() === "cloudrun") {
+    // Do not fall back to the in-process path. A failed dispatch must not
+    // pull a 90 GB object through Railway.
+    try {
+      await dispatchVideoProcessing(jobId, "process");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not start Cloud Run processing.";
+      console.error(`[confirm] Cloud Run dispatch failed for ${jobId}:`, error);
+      await db.distributionJob.update({
+        where: { id: jobId },
+        data: { status: "failed", errorMessage: message.slice(0, 4000) },
+      });
+      return NextResponse.json(
+        { error: "Could not start video processing." },
+        { status: 502 }
+      );
+    }
+  } else {
+    // Trigger processing (non-blocking) under the global concurrency cap so
+    // overlapping distribution jobs don't stack memory and OOM the container.
+    enqueueJob(`processJob:${jobId}`, () => processJob(jobId));
+  }
 
   return NextResponse.json({ success: true, status: "processing" });
 }

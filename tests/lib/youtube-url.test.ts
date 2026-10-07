@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { extractYoutubeVideoId, isValidYoutubeUrl } from "@/lib/youtube-url";
+import {
+  extractYoutubeVideoId,
+  isValidYoutubeUrl,
+  youtubeWatchUrl,
+} from "@/lib/youtube-url";
 
 const ID = "dQw4w9WgXcQ";
 
@@ -34,6 +38,24 @@ describe("extractYoutubeVideoId", () => {
     expect(extractYoutubeVideoId(`https://youtu.be/${ID}?t=42`)).toBe(ID);
   });
 
+  it("accepts http as well as https", () => {
+    expect(extractYoutubeVideoId(`http://www.youtube.com/watch?v=${ID}`)).toBe(
+      ID
+    );
+    expect(extractYoutubeVideoId(`http://youtu.be/${ID}`)).toBe(ID);
+  });
+
+  it("rejects non-http schemes, including a javascript URL on a YouTube host", () => {
+    expect(
+      extractYoutubeVideoId(
+        "javascript://youtube.com/%0Aalert(1)//?v=AAAAAAAAAAA"
+      )
+    ).toBeNull();
+    expect(
+      extractYoutubeVideoId(`javascript:https://www.youtube.com/watch?v=${ID}`)
+    ).toBeNull();
+  });
+
   it("rejects lookalike hostnames", () => {
     expect(
       extractYoutubeVideoId(`https://youtube.com.evil.example/watch?v=${ID}`)
@@ -62,6 +84,14 @@ describe("extractYoutubeVideoId", () => {
     ).toBeNull();
     expect(extractYoutubeVideoId("not a url")).toBeNull();
     expect(extractYoutubeVideoId("")).toBeNull();
+  });
+});
+
+describe("youtubeWatchUrl", () => {
+  it("builds a canonical watch URL from a validated id", () => {
+    expect(youtubeWatchUrl(ID)).toBe(`https://www.youtube.com/watch?v=${ID}`);
+    expect(youtubeWatchUrl("short")).toBeNull();
+    expect(youtubeWatchUrl("javascript:alert(1)")).toBeNull();
   });
 });
 

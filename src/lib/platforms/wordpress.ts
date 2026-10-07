@@ -2,10 +2,16 @@ import { createPost, uploadMedia } from "@/lib/wordpress/client";
 import { ContentType } from "@/lib/constants";
 import { prepareForWordPress } from "@/lib/image";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { liveStreamReplacementNote } from "@/lib/live-stream-note";
 import {
   renderChaptersForWordPress,
   SWM_CHAPTERS_META_KEY,
 } from "@/lib/chapters";
+import {
+  findLiveStreamCandidate,
+  parseAirDate,
+  type LiveStreamCandidate,
+} from "@/lib/wordpress/live-candidate";
 
 export interface WordPressPublishParams {
   wpShowId: number;
@@ -28,12 +34,40 @@ export interface WordPressPublishParams {
   isPremiumOnly?: boolean;
   status: "publish" | "draft" | "future";
   scheduledDate?: string; // ISO date for future posts
+  /**
+   * Day sent as `date` on the dedup lookup. An ISO timestamp is converted to
+   * the America/Chicago calendar day. When the producer entered a live-stream
+   * URL and the portal has no LiveRecording for that video, this is the
+   * publish day. Older website code ignores `youtube_id` and filters by this
+   * day, so a publish-day query often misses a live from another day. The
+   * website follow-up ignores `date` when `youtube_id` is present.
+   */
+  airDate?: string;
+  /**
+   * YouTube video id that must equal `candidate.youtube_id` before supersede
+   * meta is sent. This is job metadata `liveYoutubeVideoId` when the producer
+   * entered a live-stream URL, otherwise the published video's LiveRecording
+   * id. Status must be "publish".
+   */
+  liveRecordingYoutubeId?: string;
   portalUserId: string;
 }
 
 export interface WordPressPublishResult {
   postId: number;
   postUrl: string;
+  /**
+   * WordPress post id of the live-stream episode this post replaces.
+   * Set only when the 201 body echoed `_swm_supersedes`. A dropped meta
+   * key leaves this null so the UI cannot claim a replacement.
+   */
+  supersedesLivePostId: number | null;
+  /**
+   * True when `_swm_supersedes` was sent and the 201 body did not echo it.
+   * The website drops invalid supersede meta and still returns 201. The post
+   * stands; do not retry.
+   */
+  supersedeDropped: boolean;
 }
 
 /**
@@ -58,8 +92,27 @@ export async function publishToWordPress(
     isPremiumOnly,
     status,
     scheduledDate,
+    airDate,
+    liveRecordingYoutubeId,
     portalUserId,
   } = params;
+
+  // Supersede meta is only for a published episode whose live video id
+  // matches the website candidate. A show and date alone must not retire a
+  // different episode. Drafts and future posts omit the meta entirely.
+  const matchedYoutubeId = liveRecordingYoutubeId?.trim() ?? "";
+  const lookupDate = airDate ? parseAirDate(airDate) : null;
+  const canSupersede =
+    status === "publish" && matchedYoutubeId.length > 0 && lookupDate != null;
+  const liveCandidatePromise = canSupersede
+    ? findLiveStreamCandidate(wpShowId, lookupDate, matchedYoutubeId).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[wordpress] Live-candidate lookup failed (${message}); publishing without supersede.`
+        );
+        return null;
+      })
+    : Promise.resolve(null);
 
   // Build content: description + chapters (if available).
   // Parseable chapters become H2s with id anchors and ?t= seek links, and
@@ -101,6 +154,17 @@ export async function publishToWordPress(
     console.warn(`[wordpress] Could not extract video ID from YouTube URL: ${youtubeUrl}`);
   }
 
+  const liveCandidate = await liveCandidatePromise;
+  const supersede =
+    liveCandidate && liveCandidate.youtube_id === matchedYoutubeId
+      ? liveCandidate
+      : null;
+  if (liveCandidate && !supersede) {
+    console.warn(
+      `[wordpress] Live candidate #${liveCandidate.id} does not match recording ${matchedYoutubeId}; publishing without supersede.`
+    );
+  }
+
   console.log(`[wordpress] Creating episode post: "${title}"`);
 
   const payload = {
@@ -134,12 +198,59 @@ export async function publishToWordPress(
       // bookmarks the moment it arrives. Only send when non-empty.
       ...(transcriptVtt ? { _swm_transcript_vtt: transcriptVtt } : {}),
       ...(isPremiumOnly ? { is_premium_only: true } : {}),
+      ...liveCandidateMeta(supersede),
     },
   };
 
   const post = await createPost(ContentType.EPISODE, payload);
-
   console.log(`[wordpress] Episode post created: ${post.link}`);
+  const echoed =
+    supersede != null && responseKeptSupersede(post.meta, supersede.id);
+  const supersedeDropped = supersede != null && !echoed;
+  if (supersedeDropped && supersede) {
+    console.warn(
+      `[wordpress] Create response omitted _swm_supersedes for live post #${supersede.id}; not retrying.`
+    );
+  } else if (echoed && supersede) {
+    console.log(`[wordpress] ${liveStreamReplacementNote(supersede.id)}`);
+  }
+  return {
+    postId: post.id,
+    postUrl: post.link,
+    supersedesLivePostId: echoed && supersede ? supersede.id : null,
+    supersedeDropped,
+  };
+}
 
-  return { postId: post.id, postUrl: post.link };
+/**
+ * The website accepts the episode (201) and silently drops supersede meta it
+ * does not consider valid. Kept only when the response echoes the id we sent.
+ */
+function responseKeptSupersede(
+  meta: Record<string, unknown> | undefined,
+  sentId: number
+): boolean {
+  if (!meta) return false;
+  let raw: unknown = meta._swm_supersedes;
+  if (Array.isArray(raw)) raw = raw.length === 1 ? raw[0] : undefined;
+  if (typeof raw === "number") return raw === sentId;
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    return Number(raw.trim()) === sentId;
+  }
+  return false;
+}
+
+function liveCandidateMeta(
+  candidate: LiveStreamCandidate | null
+): Record<string, number | string> {
+  if (!candidate) return {};
+  const meta: Record<string, number | string> = {
+    _swm_supersedes: candidate.id,
+  };
+  // An empty youtube id is not the recording. Leave the key off rather than
+  // sending "" — the caller also refuses to supersede unless the ids match.
+  if (candidate.youtube_id) {
+    meta._swm_live_youtube_id = candidate.youtube_id;
+  }
+  return meta;
 }

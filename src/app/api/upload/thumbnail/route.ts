@@ -115,9 +115,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Derived image. The video's gcsBucket is not a write target: the
+    // processor can only read the legacy bucket.
     const gcsPath = await uploadBuffer(filename!, buffer!, contentType!);
 
-    // Store thumbnail path in job metadata (race-safe merge)
+    // Store the thumbnail path only. gcsBucket stays the video's bucket.
     await mergeJobMetadata(jobId, { thumbnailGcsPath: gcsPath });
 
     console.log(`[thumbnail] Uploaded to GCS: ${gcsPath}`);

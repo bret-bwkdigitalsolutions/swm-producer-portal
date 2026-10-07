@@ -30,5 +30,13 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "scripts/transistor-scraper"]
+  "exclude": [
+    "node_modules",
+    "scripts/transistor-scraper",
+    // Next 16.3 typechecks this tsconfig during `next build`. The Docker
+    // image keeps colocated src tests and drops tests/, where jest-dom
+    // matchers are registered, so those tests fail the production check.
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
 }

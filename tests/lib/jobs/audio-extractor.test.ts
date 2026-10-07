@@ -1,21 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const {
   mockExecFile,
   mockBucketUpload,
+  mockBucket,
   mockMkdtemp,
   mockRm,
   mockDownload,
-} = vi.hoisted(() => ({
-  mockExecFile: vi.fn(
-    (_cmd: string, _args: string[], _opts: unknown, cb: (err: unknown, result: unknown) => void) =>
-      cb(null, { stdout: "", stderr: "" })
-  ),
-  mockBucketUpload: vi.fn().mockResolvedValue([]),
-  mockMkdtemp: vi.fn().mockResolvedValue("/tmp/swm-audio-test"),
-  mockRm: vi.fn().mockResolvedValue(undefined),
-  mockDownload: vi.fn().mockResolvedValue(undefined),
-}));
+} = vi.hoisted(() => {
+  const mockBucketUpload = vi.fn().mockResolvedValue([]);
+  return {
+    mockExecFile: vi.fn(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (err: unknown, result: unknown) => void) =>
+        cb(null, { stdout: "", stderr: "" })
+    ),
+    mockBucketUpload,
+    mockBucket: vi.fn(() => ({ upload: mockBucketUpload })),
+    mockMkdtemp: vi.fn().mockResolvedValue("/tmp/swm-audio-test"),
+    mockRm: vi.fn().mockResolvedValue(undefined),
+    mockDownload: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 vi.mock("node:child_process", () => ({
   default: { execFile: mockExecFile },
@@ -24,7 +32,7 @@ vi.mock("node:child_process", () => ({
 
 vi.mock("@google-cloud/storage", () => ({
   Storage: function Storage() {
-    return { bucket: () => ({ upload: mockBucketUpload }) };
+    return { bucket: (name: string) => mockBucket(name) };
   },
 }));
 
@@ -61,6 +69,9 @@ describe("extractAudio", () => {
     );
     process.env.GCS_BUCKET_NAME = "test-bucket";
     process.env.GCS_CREDENTIALS_JSON = JSON.stringify({ type: "service_account" });
+    delete process.env.GCS_UPLOAD_BUCKET_NAME;
+    delete process.env.GCS_FUSE_MOUNTS;
+    delete process.env.VIDEO_WORKER;
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -71,7 +82,8 @@ describe("extractAudio", () => {
     expect(mockDownload).toHaveBeenCalledTimes(1);
     expect(mockDownload).toHaveBeenCalledWith(
       "uploads/2026/03/episode.mp4",
-      "/tmp/swm-audio-test/input.mp4"
+      "/tmp/swm-audio-test/input.mp4",
+      { bucket: "test-bucket" }
     );
     expect(mockExecFile).toHaveBeenCalledWith(
       "ffmpeg",
@@ -94,6 +106,24 @@ describe("extractAudio", () => {
       recursive: true,
       force: true,
     });
+    expect(mockBucket).toHaveBeenCalledWith("test-bucket");
+  });
+
+  it("writes the mp3 to the regional bucket when the source video is on the legacy bucket", async () => {
+    process.env.GCS_UPLOAD_BUCKET_NAME = "regional-bucket";
+
+    const result = await extractAudio("uploads/2026/03/episode.mp4", {
+      bucket: "legacy-bucket",
+    });
+
+    expect(result).toBe("uploads/2026/03/episode.mp3");
+    expect(mockDownload).toHaveBeenCalledWith(
+      "uploads/2026/03/episode.mp4",
+      "/tmp/swm-audio-test/input.mp4",
+      { bucket: "legacy-bucket" }
+    );
+    expect(mockBucket).toHaveBeenCalledWith("regional-bucket");
+    expect(mockBucket).not.toHaveBeenCalledWith("legacy-bucket");
   });
 
   it("reuses a local video and does not read it from GCS or delete it", async () => {
@@ -153,5 +183,27 @@ describe("extractAudio", () => {
       recursive: true,
       force: true,
     });
+  });
+
+  it("reads a GCS FUSE file and does not download the video", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "swm-fuse-"));
+    const objectPath = "uploads/2026/03/episode.mp4";
+    mkdirSync(join(dir, "uploads/2026/03"), { recursive: true });
+    writeFileSync(join(dir, objectPath), "video");
+    process.env.GCS_FUSE_MOUNTS = `test-bucket=${dir}`;
+    try {
+      const result = await extractAudio(objectPath);
+      expect(result).toBe("uploads/2026/03/episode.mp3");
+      expect(mockDownload).not.toHaveBeenCalled();
+      expect(mockExecFile).toHaveBeenCalledWith(
+        "ffmpeg",
+        expect.arrayContaining(["-i", join(dir, objectPath)]),
+        expect.any(Object),
+        expect.any(Function)
+      );
+    } finally {
+      delete process.env.GCS_FUSE_MOUNTS;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

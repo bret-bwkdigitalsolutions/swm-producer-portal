@@ -6,6 +6,7 @@ import {
   WpMediaUploadResponse,
   WpCreatePostPayload,
   WpApiError,
+  WpConfigError,
 } from "./types";
 import { ContentType } from "@/lib/constants";
 import { withRetry } from "./retry";
@@ -15,7 +16,7 @@ import { withRetry } from "./retry";
 const WP_FETCH_TIMEOUT_MS = 15_000;
 
 /** Decode HTML numeric & named entities that WordPress injects into rendered titles. */
-function decodeHtmlEntities(html: string): string {
+export function decodeHtmlEntities(html: string): string {
   return html
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
     .replace(/&amp;/g, "&")
@@ -26,11 +27,20 @@ function decodeHtmlEntities(html: string): string {
 }
 
 const WP_API_URL = () => process.env.WP_API_URL!;
-const WP_AUTH = () =>
-  "Basic " +
-  Buffer.from(
-    `${process.env.WP_APP_USER}:${process.env.WP_APP_PASSWORD}`
-  ).toString("base64");
+
+/** Basic auth for the WordPress application password. Shared with swm/v1 calls. */
+export function wpAuthorizationHeader(): string {
+  const user = process.env.WP_APP_USER?.trim();
+  const password = process.env.WP_APP_PASSWORD?.trim();
+  if (!user || !password) {
+    throw new Error(
+      "WordPress app credentials are not configured (set WP_APP_USER and WP_APP_PASSWORD)."
+    );
+  }
+  return "Basic " + Buffer.from(`${user}:${password}`).toString("base64");
+}
+
+const WP_AUTH = wpAuthorizationHeader;
 
 // Map portal content types to WP REST API post types
 // These must match the rest_base registered in WordPress
@@ -53,12 +63,21 @@ async function wpFetchOnce<T>(
   const timer = setTimeout(() => controller.abort(), WP_FETCH_TIMEOUT_MS);
 
   let response: Response;
+  let authHeader: string;
+  try {
+    authHeader = WP_AUTH();
+  } catch (err) {
+    clearTimeout(timer);
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new WpConfigError(`WP API config error: ${reason}`, endpoint);
+  }
+
   try {
     response = await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: {
-        Authorization: WP_AUTH(),
+        Authorization: authHeader,
         ...options.headers,
       },
     });
@@ -112,7 +131,10 @@ async function wpFetch<T>(
     },
     // Retry only transient failures: network/timeout (status 0), rate limiting
     // (429), and server errors (5xx). A 4xx (404/401/403) is permanent.
+    // Missing app credentials are a WpConfigError (also status 0) and must
+    // not be retried.
     shouldRetry: (error) => {
+      if (error instanceof WpConfigError) return false;
       if (!(error instanceof WpApiError)) return true;
       return error.status === 0 || error.status === 429 || error.status >= 500;
     },

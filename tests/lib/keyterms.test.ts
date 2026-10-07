@@ -38,6 +38,7 @@ describe("keytermsForShow", () => {
       expect(terms).not.toContain("Joe Scally");
     }
     expect(keytermsForShow(27)).toContain("Kennedale");
+    expect(keytermsForShow(27)).toContain("Cullen Davis");
     expect(keytermsForShow(21)).toContain("Eric Nadel");
     expect(keytermsForShow(21)).toContain("Grant Halliburton");
   });
