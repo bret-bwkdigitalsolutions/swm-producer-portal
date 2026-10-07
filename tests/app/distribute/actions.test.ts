@@ -8,6 +8,7 @@ const {
   mockJobFindUnique,
   mockJobUpdate,
   mockPlatformDeleteMany,
+  mockLookupLiveStreamCandidate,
 } = vi.hoisted(() => ({
   mockCreate: vi.fn().mockResolvedValue({ id: "job-1" }),
   mockCreateMany: vi.fn().mockResolvedValue({}),
@@ -16,6 +17,7 @@ const {
   mockJobFindUnique: vi.fn(),
   mockJobUpdate: vi.fn().mockResolvedValue({}),
   mockPlatformDeleteMany: vi.fn().mockResolvedValue({}),
+  mockLookupLiveStreamCandidate: vi.fn(),
 }));
 
 // Mock auth and db
@@ -27,6 +29,12 @@ vi.mock("@/lib/auth", () => ({
       hasDistributionAccess: true,
     },
   }),
+}));
+
+vi.mock("@/lib/wordpress/live-candidate", () => ({
+  lookupLiveStreamCandidate: (...args: unknown[]) =>
+    mockLookupLiveStreamCandidate(...args),
+  toAirDate: () => "2026-10-07",
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -47,6 +55,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import {
+  previewLiveStreamReplacement,
   submitDistribution,
   updateDistribution,
 } from "@/app/dashboard/distribute/new/actions";
@@ -152,6 +161,9 @@ describe("submitDistribution", () => {
     expect(mockCreate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBe(
       "sLB7STNGACI"
     );
+    expect(mockCreate.mock.calls[0][0].data.metadata.liveStreamUrl).toBe(
+      "https://www.youtube.com/live/sLB7STNGACI"
+    );
 
     mockCreate.mockClear();
     const blank = makeFormData({
@@ -188,6 +200,59 @@ describe("submitDistribution", () => {
     });
     const result = await submitDistribution({}, fd);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("previewLiveStreamReplacement", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the live post title and date for a youtube_id match", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({
+      ok: true,
+      candidate: {
+        id: 4234,
+        title: "Rusty Greer",
+        youtube_id: "sLB7STNGACI",
+        date: "2026-05-20",
+      },
+    });
+
+    const result = await previewLiveStreamReplacement(
+      22,
+      "https://www.youtube.com/live/sLB7STNGACI"
+    );
+
+    expect(result).toEqual({
+      status: "match",
+      title: "Rusty Greer",
+      date: "2026-05-20",
+    });
+    expect(mockLookupLiveStreamCandidate).toHaveBeenCalledWith(
+      22,
+      "2026-10-07",
+      "sLB7STNGACI"
+    );
+  });
+
+  it("reports no match without throwing", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({
+      ok: true,
+      candidate: null,
+    });
+
+    await expect(
+      previewLiveStreamReplacement(22, "https://youtu.be/sLB7STNGACI")
+    ).resolves.toEqual({ status: "none" });
+  });
+
+  it("returns an error status when the lookup fails", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({ ok: false });
+
+    await expect(
+      previewLiveStreamReplacement(22, "https://youtu.be/sLB7STNGACI")
+    ).resolves.toEqual({ status: "error" });
   });
 });
 
@@ -253,6 +318,9 @@ describe("updateDistribution", () => {
     expect(result.success).toBe(true);
     expect(mockJobUpdate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBe(
       "sLB7STNGACI"
+    );
+    expect(mockJobUpdate.mock.calls[0][0].data.metadata.liveStreamUrl).toBe(
+      "https://youtu.be/sLB7STNGACI"
     );
   });
 

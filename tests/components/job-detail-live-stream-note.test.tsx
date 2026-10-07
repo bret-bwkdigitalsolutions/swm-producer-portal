@@ -64,6 +64,28 @@ describe("JobDetailView live-stream replacement", () => {
     expect(screen.queryByText("Replaces live stream post #55")).not.toBeInTheDocument();
   });
 
+  it("shows the live stream URL the producer entered", () => {
+    render(
+      <JobDetailView
+        job={{
+          ...job,
+          metadata: {
+            description: "Archived cut.",
+            liveStreamUrl: "https://www.youtube.com/live/sLB7STNGACI",
+            liveYoutubeVideoId: "sLB7STNGACI",
+          },
+        }}
+      />
+    );
+    const link = screen.getByRole("link", {
+      name: "https://www.youtube.com/live/sLB7STNGACI",
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://www.youtube.com/live/sLB7STNGACI"
+    );
+  });
+
   it("omits the note when no live post was superseded", () => {
     render(
       <JobDetailView

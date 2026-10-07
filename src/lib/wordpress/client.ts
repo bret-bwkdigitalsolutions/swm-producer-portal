@@ -62,12 +62,21 @@ async function wpFetchOnce<T>(
   const timer = setTimeout(() => controller.abort(), WP_FETCH_TIMEOUT_MS);
 
   let response: Response;
+  let authHeader: string;
+  try {
+    authHeader = WP_AUTH();
+  } catch (err) {
+    clearTimeout(timer);
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new WpApiError(`WP API config error: ${reason}`, 0, endpoint);
+  }
+
   try {
     response = await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: {
-        Authorization: WP_AUTH(),
+        Authorization: authHeader,
         ...options.headers,
       },
     });
@@ -121,8 +130,11 @@ async function wpFetch<T>(
     },
     // Retry only transient failures: network/timeout (status 0), rate limiting
     // (429), and server errors (5xx). A 4xx (404/401/403) is permanent.
+    // Missing app credentials are a config error (also status 0) and must
+    // not be retried.
     shouldRetry: (error) => {
       if (!(error instanceof WpApiError)) return true;
+      if (error.message.startsWith("WP API config error:")) return false;
       return error.status === 0 || error.status === 429 || error.status >= 500;
     },
   });

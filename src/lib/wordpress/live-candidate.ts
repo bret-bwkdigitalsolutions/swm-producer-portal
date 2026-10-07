@@ -100,17 +100,27 @@ function parseCandidate(value: unknown): LiveStreamCandidate | null {
   };
 }
 
-export async function findLiveStreamCandidate(
+export type LiveCandidateLookup =
+  | { ok: true; candidate: LiveStreamCandidate | null }
+  | { ok: false };
+
+/**
+ * Same lookup as `findLiveStreamCandidate`, but distinguishes a confirmed
+ * empty result from a failed request. Publish still fail-opens through
+ * `findLiveStreamCandidate`. The distribution form uses this so a lookup
+ * error is not shown as "no matching live post".
+ */
+export async function lookupLiveStreamCandidate(
   wpShowId: number,
   airDate: string,
   youtubeId?: string
-): Promise<LiveStreamCandidate | null> {
+): Promise<LiveCandidateLookup> {
   const base = swmApiBase();
   if (!base) {
     console.warn(
       "[wordpress] Live-candidate lookup skipped (WP_API_URL unset); publishing without supersede."
     );
-    return null;
+    return { ok: false };
   }
 
   const url = new URL(`${base}/swm/v1/dedup/live-candidate`);
@@ -134,7 +144,7 @@ export async function findLiveStreamCandidate(
       console.warn(
         `[wordpress] Live-candidate lookup unavailable (HTTP ${response.status}); publishing without supersede.`
       );
-      return null;
+      return { ok: false };
     }
 
     const body = (await response.json()) as unknown;
@@ -142,25 +152,35 @@ export async function findLiveStreamCandidate(
       console.warn(
         "[wordpress] Live-candidate lookup returned an unexpected body; publishing without supersede."
       );
-      return null;
+      return { ok: false };
     }
 
     const candidate = (body as { candidate?: unknown }).candidate;
-    if (candidate == null) return null;
+    if (candidate == null) return { ok: true, candidate: null };
 
     const parsed = parseCandidate(candidate);
     if (!parsed) {
       console.warn(
         "[wordpress] Live-candidate response had an unusable candidate; publishing without supersede."
       );
-      return null;
+      return { ok: false };
     }
-    return parsed;
+    return { ok: true, candidate: parsed };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(
       `[wordpress] Live-candidate lookup failed (${message}); publishing without supersede.`
     );
-    return null;
+    return { ok: false };
   }
+}
+
+/** Fail-open wrapper: errors become "no candidate" so publishing continues. */
+export async function findLiveStreamCandidate(
+  wpShowId: number,
+  airDate: string,
+  youtubeId?: string
+): Promise<LiveStreamCandidate | null> {
+  const result = await lookupLiveStreamCandidate(wpShowId, airDate, youtubeId);
+  return result.ok ? result.candidate : null;
 }

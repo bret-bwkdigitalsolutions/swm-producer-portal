@@ -7,6 +7,10 @@ import { toISOWithTimezone } from "@/lib/timezone";
 import { getLatestEpisodeNumbers } from "@/lib/wordpress/client";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { isValidVimeoUrl } from "@/lib/vimeo-url";
+import {
+  lookupLiveStreamCandidate,
+  toAirDate,
+} from "@/lib/wordpress/live-candidate";
 
 interface FormState {
   success?: boolean;
@@ -147,7 +151,12 @@ export async function submitDistribution(
     isPremium,
     ...(existingYoutubeUrl ? { existingYoutubeUrl } : {}),
     ...(existingVimeoUrl ? { existingVimeoUrl } : {}),
-    ...(liveYoutubeVideoId ? { liveYoutubeVideoId } : {}),
+    ...(liveYoutubeVideoId
+      ? {
+          liveYoutubeVideoId,
+          liveStreamUrl: (liveStreamUrl ?? "").trim(),
+        }
+      : {}),
   };
 
   // Verify user has access to this show
@@ -298,8 +307,11 @@ export async function updateDistribution(
           isPremium,
           ...(data.liveStreamUrl !== undefined
             ? liveYoutubeVideoId
-              ? { liveYoutubeVideoId }
-              : { liveYoutubeVideoId: null }
+              ? {
+                  liveYoutubeVideoId,
+                  liveStreamUrl: data.liveStreamUrl.trim(),
+                }
+              : { liveYoutubeVideoId: null, liveStreamUrl: null }
             : {}),
         },
       },
@@ -325,6 +337,62 @@ export async function updateDistribution(
   });
 
   return { success: true, jobId };
+}
+
+export type LiveStreamPreview =
+  | { status: "match"; title: string; date: string }
+  | { status: "none" }
+  | { status: "error" }
+  | { status: "invalid" };
+
+/**
+ * Preview which live-stream post an entered YouTube URL would replace.
+ * Sends show_id, the publish day, and youtube_id. A lookup failure returns
+ * `error` and must not block submit. `none` means the website had no match.
+ */
+export async function previewLiveStreamReplacement(
+  wpShowId: number,
+  liveStreamUrl: string
+): Promise<LiveStreamPreview> {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login");
+  }
+  if (!session.user.hasDistributionAccess && session.user.role !== "admin") {
+    redirect("/dashboard");
+  }
+
+  const youtubeId = extractYoutubeVideoId(liveStreamUrl);
+  if (!youtubeId || !Number.isInteger(wpShowId) || wpShowId <= 0) {
+    return { status: "invalid" };
+  }
+
+  if (session.user.role !== "admin") {
+    const access = await db.userShowAccess.findUnique({
+      where: {
+        userId_wpShowId: { userId: session.user.id, wpShowId },
+      },
+    });
+    if (!access) return { status: "error" };
+  }
+
+  try {
+    const result = await lookupLiveStreamCandidate(
+      wpShowId,
+      toAirDate(),
+      youtubeId
+    );
+    if (!result.ok) return { status: "error" };
+    if (!result.candidate) return { status: "none" };
+    return {
+      status: "match",
+      title: result.candidate.title || "Untitled",
+      date: result.candidate.date,
+    };
+  } catch (error) {
+    console.warn("[distribute] Live-stream preview failed:", error);
+    return { status: "error" };
+  }
 }
 
 /**

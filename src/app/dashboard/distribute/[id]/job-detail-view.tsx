@@ -322,6 +322,17 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const videoFileName = (metadata.videoFileName as string) ?? "";
   const scheduleMode = (metadata.scheduleMode as string) ?? "now";
   const scheduledAt = (metadata.scheduledAt as string) ?? null;
+  const enteredLiveStreamUrl =
+    typeof metadata.liveStreamUrl === "string" ? metadata.liveStreamUrl.trim() : "";
+  const enteredLiveVideoId =
+    typeof metadata.liveYoutubeVideoId === "string"
+      ? metadata.liveYoutubeVideoId.trim()
+      : "";
+  const liveStreamHref =
+    enteredLiveStreamUrl ||
+    (enteredLiveVideoId
+      ? `https://www.youtube.com/watch?v=${enteredLiveVideoId}`
+      : "");
 
   const createdDate = new Date(job.createdAt).toLocaleDateString("en-US", {
     month: "long",
@@ -444,6 +455,21 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
                   hour: "numeric",
                   minute: "2-digit",
                 })}
+              </p>
+            </div>
+          )}
+          {liveStreamHref && (
+            <div>
+              <p className="font-medium text-muted-foreground">Live stream URL</p>
+              <p className="mt-1">
+                <a
+                  href={liveStreamHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all text-primary underline-offset-2 hover:underline"
+                >
+                  {liveStreamHref}
+                </a>
               </p>
             </div>
           )}

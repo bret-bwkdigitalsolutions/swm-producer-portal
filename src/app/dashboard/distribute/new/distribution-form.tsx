@@ -8,7 +8,13 @@ import {
   useCallback,
 } from "react";
 import { useRouter } from "next/navigation";
-import { submitDistribution, updateDistribution, getNextEpisodeNumber } from "./actions";
+import {
+  submitDistribution,
+  updateDistribution,
+  getNextEpisodeNumber,
+  previewLiveStreamReplacement,
+  type LiveStreamPreview,
+} from "./actions";
 import { ShowSelect } from "@/components/forms/show-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +61,16 @@ interface FormState {
   message?: string;
   errors?: Record<string, string[]>;
   jobId?: string;
+}
+
+/** Prefer the live-stream field error over the generic "fix the errors below" line. */
+function distributionFailureMessage(result: FormState): string {
+  const liveError = result.errors?.live_stream_url?.[0];
+  if (liveError) return liveError;
+  const other = result.errors
+    ? Object.values(result.errors).flat().find((message) => message.length > 0)
+    : undefined;
+  return other ?? result.message ?? "Failed to create job";
 }
 
 interface AiSuggestion {
@@ -112,6 +128,11 @@ export function DistributionForm({
   const [videoSource, setVideoSource] = useState<"upload" | "youtube" | "vimeo">("upload");
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
   const [liveStreamUrl, setLiveStreamUrl] = useState("");
+  const [livePreview, setLivePreview] = useState<LiveStreamPreview | null>(null);
+  const [directFieldErrors, setDirectFieldErrors] = useState<Record<
+    string,
+    string[]
+  > | null>(null);
   const [youtubeThumbUrl, setYoutubeThumbUrl] = useState<string | null>(null);
   const [vimeoUrlInput, setVimeoUrlInput] = useState("");
 
@@ -347,8 +368,12 @@ export function DistributionForm({
 
       const result = await submitDistribution({}, fd);
       if (!result.success || !result.jobId) {
-        throw new Error(result.message ?? "Failed to create job");
+        setDirectFieldErrors(result.errors ?? null);
+        // No job was created, so return to the mode choice and let them fix the field.
+        setDescriptionMode(null);
+        throw new Error(distributionFailureMessage(result));
       }
+      setDirectFieldErrors(null);
 
       const jobId = result.jobId;
       setAiUploadedJobId(jobId);
@@ -638,8 +663,10 @@ export function DistributionForm({
       });
 
       if (!updateResult.success) {
-        throw new Error(updateResult.message ?? "Failed to update job");
+        setDirectFieldErrors(updateResult.errors ?? null);
+        throw new Error(distributionFailureMessage(updateResult));
       }
+      setDirectFieldErrors(null);
 
       // Now confirm to trigger processing
       const confirmRes = await fetch("/api/upload/confirm", {
@@ -731,6 +758,35 @@ export function DistributionForm({
   // even with zero suggestions, so a usage/rate-limited AI provider doesn't
   // dead-end the producer on a blank form (the job + upload already exist).
   const aiReady = descriptionMode === "ai" && aiComplete && !analyzing;
+  const fieldErrors =
+    state.errors && Object.keys(state.errors).length > 0
+      ? state.errors
+      : directFieldErrors ?? undefined;
+
+  useEffect(() => {
+    const url = liveStreamUrl.trim();
+    const wpShowId = Number(showId);
+    if (!url || !isValidYoutubeUrl(url) || !Number.isInteger(wpShowId) || wpShowId <= 0) {
+      setLivePreview(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      previewLiveStreamReplacement(wpShowId, url)
+        .then((result) => {
+          if (!cancelled) setLivePreview(result);
+        })
+        .catch(() => {
+          if (!cancelled) setLivePreview({ status: "error" });
+        });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [liveStreamUrl, showId]);
 
   return (
     <Card className="mx-auto w-full max-w-2xl">
@@ -890,9 +946,9 @@ export function DistributionForm({
           )}
 
           {/* Field-level errors */}
-          {state.errors && Object.keys(state.errors).length > 0 && (
+          {fieldErrors && Object.keys(fieldErrors).length > 0 && (
             <div className="space-y-1 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
-              {Object.entries(state.errors).map(([field, messages]) =>
+              {Object.entries(fieldErrors).map(([field, messages]) =>
                 messages.map((msg, i) => (
                   <p key={`${field}-${i}`} className="text-sm text-destructive">
                     <span className="font-medium capitalize">
@@ -1157,12 +1213,35 @@ export function DistributionForm({
               type="url"
               placeholder="https://www.youtube.com/live/..."
               value={liveStreamUrl}
-              onChange={(e) => setLiveStreamUrl(e.target.value)}
+              onChange={(e) => {
+                setLiveStreamUrl(e.target.value);
+                setDirectFieldErrors(null);
+              }}
               disabled={isDisabled}
             />
             <p className="text-xs text-muted-foreground">
-              Paste the YouTube URL of the live stream when this cut was streamed live first. Leave blank if it was not.
+              Paste the YouTube URL of the live stream when this cut was streamed live first. Leave blank if it was not. The live-stream link only applies when the episode is published, not for drafts or scheduled posts.
             </p>
+            {fieldErrors?.live_stream_url?.[0] && (
+              <p className="text-sm text-destructive">
+                {fieldErrors.live_stream_url[0]}
+              </p>
+            )}
+            {livePreview?.status === "match" && (
+              <p className="text-sm">
+                This will replace: {livePreview.title} ({livePreview.date})
+              </p>
+            )}
+            {livePreview?.status === "none" && (
+              <p className="text-sm text-muted-foreground">
+                No matching live post found
+              </p>
+            )}
+            {livePreview?.status === "error" && (
+              <p className="text-sm text-muted-foreground">
+                Could not check for a live post. You can still submit.
+              </p>
+            )}
           </div>
 
           {/* Thumbnail upload + YouTube preview */}
