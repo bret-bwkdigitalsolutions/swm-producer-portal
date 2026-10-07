@@ -9,17 +9,15 @@ import { canTransition } from "./types";
  * "stream ended, replay coming shortly" interstitial.
  *
  * Called from the polling cron once handoff has completed and the
- * Transistor episode ID is populated. After this fires, the LiveRecording
- * is dormant — no further polling, no further action from the portal
- * unless admin intervenes.
+ * Transistor episode ID is populated. The live-state poller stops here.
+ * A mark-that transcription is queued separately and does not change
+ * `state`.
  *
- * v1 scope: writes only the live-state meta + the YouTube embed URL.
- * Transcription, AI-generated blog content, and other pipeline outputs
- * are NOT auto-generated for live recordings in v1 because the existing
- * Transistor → DistributionJob plumbing isn't wired up for scraper-
- * originated episodes. Producers can trigger blog generation manually
- * via the existing /admin/blog-ideas flow once an episode is live on
- * Transistor. See "Deferred Implementation Questions" in the plan.
+ * Writes the live-state meta so the theme drops the "replay coming shortly"
+ * interstitial. Blog generation stays manual — the Transistor pipeline is
+ * not wired for these episodes. Mark-that transcription is queued here
+ * (`transcriptStatus = pending`); the live-transcription cron downloads
+ * the YouTube VOD after that. See src/lib/live-marks/.
  */
 export async function archiveLiveRecording(
   liveRecordingId: string
@@ -71,6 +69,11 @@ export async function archiveLiveRecording(
       state: "archived",
       archivedAt: now,
       errorMessage: null,
+      // Queue once. A retry of an already-archived row returns above, and a
+      // scan that is already running or finished is left alone.
+      ...(row.transcriptStatus == null
+        ? { transcriptStatus: "pending" as const, transcriptNextAttemptAt: null }
+        : {}),
     },
   });
 

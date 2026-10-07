@@ -40,6 +40,11 @@ export interface TranscribeOptions {
   extraKeyterms?: string[];
   /** Comma-separated host names from ShowMetadata. */
   hosts?: string | null;
+  /**
+   * Abort the Deepgram request after this many milliseconds.
+   * Omitted calls (episode distribution) are not given a deadline here.
+   */
+  timeoutMs?: number;
 }
 
 function resolveTranscribeOptions(
@@ -62,7 +67,7 @@ export async function transcribeAudio(
   gcsAudioPath: string,
   options?: string | TranscribeOptions
 ): Promise<TranscriptionResult> {
-  const { forceLanguage, wpShowId, extraKeyterms, hosts } =
+  const { forceLanguage, wpShowId, extraKeyterms, hosts, timeoutMs } =
     resolveTranscribeOptions(options);
 
   const apiKey = process.env.DEEPGRAM_API_KEY;
@@ -97,6 +102,10 @@ export async function transcribeAudio(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ url: downloadUrl }),
+      signal:
+        timeoutMs != null && timeoutMs > 0
+          ? AbortSignal.timeout(timeoutMs)
+          : undefined,
     }
   );
 

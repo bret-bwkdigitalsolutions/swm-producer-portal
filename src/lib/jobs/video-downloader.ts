@@ -1,7 +1,9 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { createReadStream } from "node:fs";
 import { unlink, mkdtemp, readdir, rmdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { createStorageClient } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
@@ -10,6 +12,136 @@ import { getYoutubeCookiesForShow } from "@/lib/youtube-identity";
 import { mediaToolTimeoutMs } from "./processing-runtime";
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * yt-dlp is its own process-group leader (`detached: true`) so a timeout
+ * can SIGKILL the group. That also kills ffmpeg, which yt-dlp spawns for
+ * the audio extract and would otherwise keep running after yt-dlp dies.
+ */
+function runDetachedYtDlp(
+  args: string[],
+  options: { timeoutMs: number; signal?: AbortSignal }
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (options.signal?.aborted) {
+      reject(new Error("yt-dlp aborted"));
+      return;
+    }
+
+    const child = spawn("yt-dlp", args, {
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const pid = child.pid;
+    let stderr = "";
+    let settled = false;
+
+    const killGroup = () => {
+      if (pid == null) {
+        child.kill("SIGKILL");
+        return;
+      }
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // already exited
+        }
+      }
+    };
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve();
+    };
+
+    const onAbort = () => {
+      killGroup();
+      finish(new Error("yt-dlp aborted"));
+    };
+
+    const timer = setTimeout(() => {
+      killGroup();
+      finish(
+        new Error(
+          `yt-dlp timed out after ${Math.round(options.timeoutMs / 1000)} seconds`
+        )
+      );
+    }, options.timeoutMs);
+
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    child.stdout?.resume();
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      if (stderr.length < 8000) stderr += chunk;
+    });
+    child.on("error", (error) => finish(error));
+    child.on("close", (code) => {
+      if (code === 0) {
+        if (stderr) {
+          console.warn(`[video-downloader] yt-dlp stderr: ${stderr}`);
+        }
+        finish();
+        return;
+      }
+      finish(
+        new Error(
+          `yt-dlp exited with code ${code ?? "null"}${stderr ? `: ${stderr}` : ""}`
+        )
+      );
+    });
+  });
+}
+
+async function uploadLocalFile(
+  storage: ReturnType<typeof createStorageClient>,
+  bucketName: string,
+  localPath: string,
+  gcsPath: string,
+  contentType: string,
+  signal?: AbortSignal
+): Promise<void> {
+  if (!signal) {
+    await storage.bucket(bucketName).upload(localPath, {
+      destination: gcsPath,
+      metadata: { contentType },
+    });
+    return;
+  }
+  if (signal.aborted) {
+    throw new Error("GCS upload aborted");
+  }
+
+  const file = storage.bucket(bucketName).file(gcsPath);
+  const readable = createReadStream(localPath);
+  const writable = file.createWriteStream({
+    resumable: false,
+    metadata: { contentType },
+  });
+  const onAbort = () => {
+    const error = new Error("GCS upload aborted");
+    readable.destroy(error);
+    writable.destroy(error);
+  };
+  signal.addEventListener("abort", onAbort);
+  try {
+    await pipeline(readable, writable);
+  } catch (error) {
+    await file.delete({ ignoreNotFound: true }).catch(() => {});
+    if (signal.aborted) {
+      throw new Error("GCS upload aborted");
+    }
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
 
 /**
  * New yt-dlp output goes to the regional bucket when one is configured.
@@ -57,12 +189,18 @@ function deriveSourceLabel(videoUrl: string): string | null {
  * @param jobId - Used only for log context
  * @param wpShowId - Show that owns this download. When supplied, drives the
  *   per-identity cookie lookup; omit for contexts where no show is known.
+ * @param options.timeoutMs - Kill yt-dlp and its process group after this
+ *   many milliseconds. When set, yt-dlp is spawned detached so ffmpeg dies
+ *   with it. Defaults to the runtime media ceiling via execFile.
+ * @param options.signal - Aborts the GCS upload (the live scan's overall
+ *   deadline). A partial object is deleted.
  * @returns GCS path of the downloaded audio
  */
 export async function downloadVideoToGcs(
   videoUrl: string,
   jobId: string,
-  wpShowId?: number
+  wpShowId?: number,
+  options?: { timeoutMs?: number; signal?: AbortSignal }
 ): Promise<string> {
   const sourceLabel = deriveSourceLabel(videoUrl);
   if (!sourceLabel) {
@@ -118,14 +256,20 @@ export async function downloadVideoToGcs(
 
     args.push(videoUrl);
 
-    const { stderr } = await execFileAsync("yt-dlp", args, {
-      timeout: mediaToolTimeoutMs(),  // 30 minutes on Railway; hours on the Cloud Run worker
-      killSignal: "SIGKILL",          // Force-kill hung yt-dlp processes on timeout
-      maxBuffer: 200 * 1024 * 1024,   // 200 MB — yt-dlp's combined stdout+stderr on long episodes can exceed the 1 MB default
-    });
-
-    if (stderr) {
-      console.warn(`[video-downloader] Job ${jobId} stderr: ${stderr}`);
+    if (options?.timeoutMs != null || options?.signal) {
+      await runDetachedYtDlp(args, {
+        timeoutMs: options.timeoutMs ?? mediaToolTimeoutMs(),
+        signal: options.signal,
+      });
+    } else {
+      const { stderr } = await execFileAsync("yt-dlp", args, {
+        timeout: mediaToolTimeoutMs(),  // 30 minutes on Railway; hours on the Cloud Run worker
+        killSignal: "SIGKILL",          // Force-kill hung yt-dlp processes on timeout
+        maxBuffer: 200 * 1024 * 1024,   // 200 MB — yt-dlp's combined stdout+stderr on long episodes can exceed the 1 MB default
+      });
+      if (stderr) {
+        console.warn(`[video-downloader] Job ${jobId} stderr: ${stderr}`);
+      }
     }
 
     // Find the downloaded file
@@ -137,10 +281,14 @@ export async function downloadVideoToGcs(
     const tempVideoPath = join(tempDir, videoFile);
 
     console.log(`[video-downloader] Job ${jobId}: uploading to GCS at ${gcsPath}`);
-    await storage.bucket(bucketName).upload(tempVideoPath, {
-      destination: gcsPath,
-      metadata: { contentType: "audio/mpeg" },
-    });
+    await uploadLocalFile(
+      storage,
+      bucketName,
+      tempVideoPath,
+      gcsPath,
+      "audio/mpeg",
+      options?.signal
+    );
 
     console.log(`[video-downloader] Job ${jobId}: download complete`);
     return gcsPath;

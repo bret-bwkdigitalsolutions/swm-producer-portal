@@ -1,0 +1,101 @@
+/** Phrases Deepgram should boost on a live-recording transcription. */
+export const MARK_CUE_KEYTERMS = ["mark that", "mark it", "mark this"] as const;
+
+/** Cue must be strictly longer than this broadcast length. */
+export const MIN_BROADCAST_SECONDS = 2 * 60;
+
+/** Cue must be strictly shorter than this broadcast length. */
+export const MAX_BROADCAST_SECONDS = 4 * 60 * 60;
+
+/** How far before the cue the YouTube link seeks. */
+export const MARK_LEAD_SECONDS = 10;
+
+/** Drop a later cue when it starts within this many seconds of a kept one. */
+export const MARK_DEDUPE_SECONDS = 30;
+
+export const MARK_QUOTE_MAX_CHARS = 280;
+
+/** Website rejects a cue longer than about 40 characters. */
+export const MARK_CUE_MAX_CHARS = 40;
+
+/** Website accepts an integer second in this inclusive range. */
+export const MARK_SECONDS_MAX = 86400;
+
+export const MARK_QUOTE_UTTERANCES = 2;
+
+/**
+ * Website accepts at most this many marks per POST. Keep the earliest
+ * after the 30-second dedupe.
+ */
+export const MAX_MARKS_PER_POST = 50;
+
+/** Download / Deepgram / non-404 failures before the cron stops retrying. */
+export const MAX_TRANSCRIPT_ATTEMPTS = 10;
+
+/** First retry waits this long. Each later failure doubles it, up to the cap. */
+export const TRANSCRIPT_BACKOFF_BASE_MS = 5 * 60 * 1000;
+
+export const TRANSCRIPT_BACKOFF_CAP_MS = 60 * 60 * 1000;
+
+/**
+ * A claimed row stays out of the queue until this lease expires. The worker
+ * pushes it forward after the download and after transcription.
+ */
+export const TRANSCRIPT_STALE_MS = 90 * 60 * 1000;
+
+/** 404 from the website route. Not a hard failure; the cron tries again. */
+export const WEBSITE_NOT_READY_BACKOFF_MS = 15 * 60 * 1000;
+
+/**
+ * Stop website_not_ready retries after this long and mark the row failed
+ * so an admin can Re-scan once the route exists.
+ */
+export const WEBSITE_NOT_READY_MAX_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * 409 means another POST for this live id holds the website's short lock.
+ * Try again after a minute or two, not as a permanent contract error.
+ */
+export const WEBSITE_OVERLAP_BACKOFF_MS = 2 * 60 * 1000;
+
+/**
+ * Paid claims (each attempt that downloads or calls Deepgram) allowed per
+ * UTC day when LIVE_TRANSCRIPTION_DAILY_CAP is unset. The count resets at
+ * UTC midnight (7 PM CT).
+ */
+export const DEFAULT_DAILY_SCAN_CAP = 10;
+
+/**
+ * Postgres advisory lock for a live-scan claim. Held for the transaction
+ * that checks the lease, the daily cap, and the row update, so two replicas
+ * cannot both start a scan. Released when the transaction ends.
+ */
+export const LIVE_SCAN_LOCK_CLASS = 764001;
+export const LIVE_SCAN_LOCK_KEY = 17;
+
+/**
+ * Hard ceiling for yt-dlp on this path. Shorter than the 90-minute lease
+ * so a hung download dies and the attempt is recorded.
+ */
+export const LIVE_DOWNLOAD_TIMEOUT_MS = 20 * 60 * 1000;
+
+/** Extra room for the GCS upload after yt-dlp returns. */
+export const LIVE_DOWNLOAD_DEADLINE_MS = LIVE_DOWNLOAD_TIMEOUT_MS + 60 * 1000;
+
+/** Hard ceiling for the Deepgram call on this path. */
+export const LIVE_DEEPGRAM_TIMEOUT_MS = 20 * 60 * 1000;
+
+export const LIVE_MARKS_SOURCE = "live_transcript" as const;
+
+export const WEBSITE_NOT_READY_GAVE_UP_ERROR =
+  "Website route was not ready for 14 days. Re-scan after the website is deployed.";
+
+export type TranscriptScanStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "skipped"
+  | "website_not_ready"
+  | "failed"
+  | "config_error"
+  | "contract_error";
