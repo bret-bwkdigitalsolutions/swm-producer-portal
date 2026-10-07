@@ -20,7 +20,7 @@ import {
   createPost,
   wpAuthorizationHeader,
 } from "@/lib/wordpress/client";
-import { WpApiError } from "@/lib/wordpress/types";
+import { WpApiError, WpConfigError } from "@/lib/wordpress/types";
 
 beforeEach(() => {
   mockFetch.mockReset();
@@ -133,7 +133,7 @@ describe("WordPress client", () => {
         () => null,
         (error: unknown) => error
       );
-      expect(thrown).toBeInstanceOf(Error);
+      expect(thrown).toBeInstanceOf(WpConfigError);
       expect((thrown as Error).message).toMatch(/WP API config error/);
       expect((thrown as Error).message).not.toMatch(/network error/);
       expect(mockFetch).not.toHaveBeenCalled();

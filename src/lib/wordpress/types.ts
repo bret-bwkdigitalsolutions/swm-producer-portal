@@ -50,3 +50,11 @@ export class WpApiError extends Error {
     this.name = "WpApiError";
   }
 }
+
+/** Missing WordPress app credentials. Status is 0, and this must not be retried. */
+export class WpConfigError extends WpApiError {
+  constructor(message: string, endpoint: string) {
+    super(message, 0, endpoint);
+    this.name = "WpConfigError";
+  }
+}

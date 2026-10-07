@@ -17,6 +17,7 @@ import {
   readSupersedeDropped,
   readSupersedesLivePostId,
 } from "@/lib/live-stream-note";
+import { extractYoutubeVideoId, youtubeWatchUrl } from "@/lib/youtube-url";
 import {
   ArrowLeftIcon,
   CheckIcon,
@@ -163,7 +164,7 @@ function PlatformStatusRow({
           <a
             href={platform.externalUrl}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noreferrer"
             className="text-muted-foreground transition-colors hover:text-foreground"
           >
             <ExternalLinkIcon className="size-4" />
@@ -322,17 +323,15 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
   const videoFileName = (metadata.videoFileName as string) ?? "";
   const scheduleMode = (metadata.scheduleMode as string) ?? "now";
   const scheduledAt = (metadata.scheduledAt as string) ?? null;
-  const enteredLiveStreamUrl =
-    typeof metadata.liveStreamUrl === "string" ? metadata.liveStreamUrl.trim() : "";
   const enteredLiveVideoId =
     typeof metadata.liveYoutubeVideoId === "string"
       ? metadata.liveYoutubeVideoId.trim()
       : "";
+  const enteredLiveStreamUrl =
+    typeof metadata.liveStreamUrl === "string" ? metadata.liveStreamUrl.trim() : "";
   const liveStreamHref =
-    enteredLiveStreamUrl ||
-    (enteredLiveVideoId
-      ? `https://www.youtube.com/watch?v=${enteredLiveVideoId}`
-      : "");
+    youtubeWatchUrl(enteredLiveVideoId) ??
+    youtubeWatchUrl(extractYoutubeVideoId(enteredLiveStreamUrl) ?? "");
 
   const createdDate = new Date(job.createdAt).toLocaleDateString("en-US", {
     month: "long",
@@ -465,7 +464,7 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
                 <a
                   href={liveStreamHref}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="break-all text-primary underline-offset-2 hover:underline"
                 >
                   {liveStreamHref}

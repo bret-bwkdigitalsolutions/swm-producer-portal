@@ -64,26 +64,45 @@ describe("JobDetailView live-stream replacement", () => {
     expect(screen.queryByText("Replaces live stream post #55")).not.toBeInTheDocument();
   });
 
-  it("shows the live stream URL the producer entered", () => {
+  it("links a normalised watch URL built from the validated video id", () => {
     render(
       <JobDetailView
         job={{
           ...job,
           metadata: {
             description: "Archived cut.",
-            liveStreamUrl: "https://www.youtube.com/live/sLB7STNGACI",
+            liveStreamUrl:
+              "javascript://youtube.com/%0Aalert(1)//?v=AAAAAAAAAAA",
             liveYoutubeVideoId: "sLB7STNGACI",
           },
         }}
       />
     );
     const link = screen.getByRole("link", {
-      name: "https://www.youtube.com/live/sLB7STNGACI",
+      name: "https://www.youtube.com/watch?v=sLB7STNGACI",
     });
     expect(link).toHaveAttribute(
       "href",
-      "https://www.youtube.com/live/sLB7STNGACI"
+      "https://www.youtube.com/watch?v=sLB7STNGACI"
     );
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.queryByRole("link", { name: /javascript/i })).not.toBeInTheDocument();
+  });
+
+  it("does not link a javascript live URL that has no validated video id", () => {
+    render(
+      <JobDetailView
+        job={{
+          ...job,
+          metadata: {
+            description: "Archived cut.",
+            liveStreamUrl:
+              "javascript://youtube.com/%0Aalert(1)//?v=AAAAAAAAAAA",
+          },
+        }}
+      />
+    );
+    expect(screen.queryByRole("link", { name: /youtube|javascript/i })).not.toBeInTheDocument();
   });
 
   it("omits the note when no live post was superseded", () => {

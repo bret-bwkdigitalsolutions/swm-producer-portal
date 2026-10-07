@@ -6,6 +6,7 @@ import {
   WpMediaUploadResponse,
   WpCreatePostPayload,
   WpApiError,
+  WpConfigError,
 } from "./types";
 import { ContentType } from "@/lib/constants";
 import { withRetry } from "./retry";
@@ -15,7 +16,7 @@ import { withRetry } from "./retry";
 const WP_FETCH_TIMEOUT_MS = 15_000;
 
 /** Decode HTML numeric & named entities that WordPress injects into rendered titles. */
-function decodeHtmlEntities(html: string): string {
+export function decodeHtmlEntities(html: string): string {
   return html
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
     .replace(/&amp;/g, "&")
@@ -68,7 +69,7 @@ async function wpFetchOnce<T>(
   } catch (err) {
     clearTimeout(timer);
     const reason = err instanceof Error ? err.message : String(err);
-    throw new WpApiError(`WP API config error: ${reason}`, 0, endpoint);
+    throw new WpConfigError(`WP API config error: ${reason}`, endpoint);
   }
 
   try {
@@ -130,11 +131,11 @@ async function wpFetch<T>(
     },
     // Retry only transient failures: network/timeout (status 0), rate limiting
     // (429), and server errors (5xx). A 4xx (404/401/403) is permanent.
-    // Missing app credentials are a config error (also status 0) and must
+    // Missing app credentials are a WpConfigError (also status 0) and must
     // not be retried.
     shouldRetry: (error) => {
+      if (error instanceof WpConfigError) return false;
       if (!(error instanceof WpApiError)) return true;
-      if (error.message.startsWith("WP API config error:")) return false;
       return error.status === 0 || error.status === 429 || error.status >= 500;
     },
   });

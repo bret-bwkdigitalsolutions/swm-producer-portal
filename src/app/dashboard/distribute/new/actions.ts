@@ -4,8 +4,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { toISOWithTimezone } from "@/lib/timezone";
-import { getLatestEpisodeNumbers } from "@/lib/wordpress/client";
-import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { decodeHtmlEntities, getLatestEpisodeNumbers } from "@/lib/wordpress/client";
+import { extractYoutubeVideoId, youtubeWatchUrl } from "@/lib/youtube-url";
 import { isValidVimeoUrl } from "@/lib/vimeo-url";
 import {
   lookupLiveStreamCandidate,
@@ -154,7 +154,7 @@ export async function submitDistribution(
     ...(liveYoutubeVideoId
       ? {
           liveYoutubeVideoId,
-          liveStreamUrl: (liveStreamUrl ?? "").trim(),
+          liveStreamUrl: youtubeWatchUrl(liveYoutubeVideoId),
         }
       : {}),
   };
@@ -268,6 +268,9 @@ export async function updateDistribution(
     data.liveStreamUrl !== undefined
       ? parsedLiveYoutubeVideoId(data.liveStreamUrl, liveErrors)
       : undefined;
+  const liveWatchUrl = liveYoutubeVideoId
+    ? youtubeWatchUrl(liveYoutubeVideoId)
+    : null;
   if (liveErrors.live_stream_url) {
     return {
       success: false,
@@ -306,10 +309,10 @@ export async function updateDistribution(
           ...(data.explicit !== undefined ? { explicit: data.explicit } : {}),
           isPremium,
           ...(data.liveStreamUrl !== undefined
-            ? liveYoutubeVideoId
+            ? liveWatchUrl
               ? {
                   liveYoutubeVideoId,
-                  liveStreamUrl: data.liveStreamUrl.trim(),
+                  liveStreamUrl: liveWatchUrl,
                 }
               : { liveYoutubeVideoId: null, liveStreamUrl: null }
             : {}),
@@ -348,7 +351,10 @@ export type LiveStreamPreview =
 /**
  * Preview which live-stream post an entered YouTube URL would replace.
  * Sends show_id, the publish day, and youtube_id. A lookup failure returns
- * `error` and must not block submit. `none` means the website had no match.
+ * `error` and must not block submit. `none` means there is no candidate whose
+ * youtube_id equals the entered video. Older website code ignores youtube_id
+ * and returns the closest live post for that date, so a mismatched id is
+ * `none` rather than a match.
  */
 export async function previewLiveStreamReplacement(
   wpShowId: number,
@@ -383,10 +389,13 @@ export async function previewLiveStreamReplacement(
       youtubeId
     );
     if (!result.ok) return { status: "error" };
-    if (!result.candidate) return { status: "none" };
+    if (!result.candidate || result.candidate.youtube_id !== youtubeId) {
+      return { status: "none" };
+    }
+    const title = decodeHtmlEntities(result.candidate.title).trim();
     return {
       status: "match",
-      title: result.candidate.title || "Untitled",
+      title: title || "Untitled",
       date: result.candidate.date,
     };
   } catch (error) {

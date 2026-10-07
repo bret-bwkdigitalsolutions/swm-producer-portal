@@ -162,7 +162,7 @@ describe("submitDistribution", () => {
       "sLB7STNGACI"
     );
     expect(mockCreate.mock.calls[0][0].data.metadata.liveStreamUrl).toBe(
-      "https://www.youtube.com/live/sLB7STNGACI"
+      "https://www.youtube.com/watch?v=sLB7STNGACI"
     );
 
     mockCreate.mockClear();
@@ -174,6 +174,19 @@ describe("submitDistribution", () => {
     const empty = await submitDistribution({}, blank);
     expect(empty.success).toBe(true);
     expect(mockCreate.mock.calls[0][0].data.metadata.liveYoutubeVideoId).toBeUndefined();
+  });
+
+  it("rejects a javascript live stream URL", async () => {
+    const fd = makeFormData({
+      ...BASE_FIELDS,
+      video_file_name: "episode.mp4",
+      live_stream_url:
+        "javascript://youtube.com/%0Aalert(1)//?v=AAAAAAAAAAA",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(false);
+    expect(result.errors?.live_stream_url?.[0]).toMatch(/YouTube URL/);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it("returns a form error for an invalid live stream URL", async () => {
@@ -234,6 +247,45 @@ describe("previewLiveStreamReplacement", () => {
       "2026-10-07",
       "sLB7STNGACI"
     );
+  });
+
+  it("decodes HTML entities in the matched title", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({
+      ok: true,
+      candidate: {
+        id: 4234,
+        title: "Rusty &amp; Greer",
+        youtube_id: "sLB7STNGACI",
+        date: "2026-05-20",
+      },
+    });
+
+    await expect(
+      previewLiveStreamReplacement(22, "https://youtu.be/sLB7STNGACI")
+    ).resolves.toEqual({
+      status: "match",
+      title: "Rusty & Greer",
+      date: "2026-05-20",
+    });
+  });
+
+  it("returns none when the candidate youtube id does not match", async () => {
+    mockLookupLiveStreamCandidate.mockResolvedValue({
+      ok: true,
+      candidate: {
+        id: 99,
+        title: "Some other live",
+        youtube_id: "otherLive11",
+        date: "2026-10-07",
+      },
+    });
+
+    await expect(
+      previewLiveStreamReplacement(
+        22,
+        "https://www.youtube.com/live/sLB7STNGACI"
+      )
+    ).resolves.toEqual({ status: "none" });
   });
 
   it("reports no match without throwing", async () => {
@@ -320,7 +372,7 @@ describe("updateDistribution", () => {
       "sLB7STNGACI"
     );
     expect(mockJobUpdate.mock.calls[0][0].data.metadata.liveStreamUrl).toBe(
-      "https://youtu.be/sLB7STNGACI"
+      "https://www.youtube.com/watch?v=sLB7STNGACI"
     );
   });
 
