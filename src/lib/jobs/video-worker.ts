@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { mergeJobMetadata } from "./job-metadata";
 import type { VideoWorkerMode } from "./processing-runtime";
+import { startWorkerHeartbeat } from "./worker-heartbeat";
 
 /**
  * Cloud Run entry. The Next standalone server loads instrumentation, which
@@ -62,15 +63,7 @@ export async function runVideoWorker(): Promise<void> {
   activeMode = mode;
   process.once("SIGTERM", onSigterm);
 
-  const beat = setInterval(() => {
-    mergeJobMetadata(jobId, { workerHeartbeat: new Date().toISOString() }).catch(
-      (error) => {
-        console.error("[video-worker] heartbeat failed:", error);
-      }
-    );
-  }, 60_000);
-  // Don't keep the process alive just for the heartbeat after the work ends.
-  beat.unref?.();
+  const stopHeartbeat = startWorkerHeartbeat(jobId);
 
   try {
     console.log(`[video-worker] Starting ${mode} for job ${jobId}`);
@@ -86,7 +79,7 @@ export async function runVideoWorker(): Promise<void> {
     finished = true;
     console.log(`[video-worker] Finished ${mode} for job ${jobId}`);
   } finally {
-    clearInterval(beat);
+    stopHeartbeat();
     process.off("SIGTERM", onSigterm);
   }
 }
