@@ -1,4 +1,5 @@
 import { getYouTubeAccessToken } from "@/lib/analytics/credentials";
+import { streamFilePut, uploadFileInChunks } from "@/lib/platforms/bounded-upload";
 
 const YOUTUBE_UPLOAD_URL =
   "https://www.googleapis.com/upload/youtube/v3/videos";
@@ -13,6 +14,8 @@ export interface YouTubeUploadParams {
   categoryId?: string; // YouTube category ID, defaults to "22" (People & Blogs)
   videoFilePath: string; // local temp file path
   scheduledAt?: string; // ISO 8601 date — if set, video is private until this time
+  /** Called as chunks are committed. The processor uses this to heartbeat. */
+  onProgress?: (uploadedBytes: number, totalBytes: number) => void | Promise<void>;
 }
 
 export interface YouTubeUploadResult {
@@ -26,13 +29,22 @@ export interface YouTubeUploadResult {
 export async function uploadToYouTube(
   params: YouTubeUploadParams
 ): Promise<YouTubeUploadResult> {
-  const { wpShowId, title, description, tags, privacy, categoryId, videoFilePath, scheduledAt } = params;
+  const {
+    wpShowId, title, description, tags, privacy, categoryId, videoFilePath,
+    scheduledAt, onProgress,
+  } = params;
 
   const accessToken = await getYouTubeAccessToken(wpShowId);
   if (!accessToken) {
     throw new Error(
       `No valid YouTube credentials found for show ${wpShowId}. Please connect YouTube in Admin > Credentials.`
     );
+  }
+
+  const { statSync } = await import("node:fs");
+  const fileSize = statSync(videoFilePath).size;
+  if (fileSize <= 0) {
+    throw new Error("YouTube upload failed: video file is empty.");
   }
 
   // 1. Initiate resumable upload session
@@ -67,6 +79,7 @@ export async function uploadToYouTube(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json; charset=UTF-8",
         "X-Upload-Content-Type": "video/*",
+        "X-Upload-Content-Length": fileSize.toString(),
       },
       body: JSON.stringify(metadata),
     }
@@ -84,33 +97,39 @@ export async function uploadToYouTube(
     throw new Error("YouTube did not return a resumable upload URL.");
   }
 
-  // 2. Upload video file
-  console.log("[youtube] Uploading video file...");
+  // 2. Upload the file in fixed-size chunks. fetch() would keep every sent
+  // byte resident; the chunked node:http path does not.
+  console.log(`[youtube] Uploading video file (${fileSize} bytes)...`);
 
-  const { createReadStream, statSync } = await import("node:fs");
-  const fileSize = statSync(videoFilePath).size;
-  const fileStream = createReadStream(videoFilePath);
-  const { Readable } = await import("node:stream");
-
-  const uploadResponse = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Length": fileSize.toString(),
-      "Content-Type": "video/*",
-    },
-    body: Readable.toWeb(fileStream) as any,
-    // @ts-expect-error -- Node fetch supports duplex
-    duplex: "half",
-  });
-
-  if (!uploadResponse.ok) {
-    const errorText = await uploadResponse.text();
-    throw new Error(
-      `YouTube video upload failed (${uploadResponse.status}): ${errorText}`
-    );
+  let lastLogged = 0;
+  let uploaded: { body: string };
+  try {
+    uploaded = await uploadFileInChunks({
+      uploadUrl,
+      filePath: videoFilePath,
+      contentType: "video/*",
+      onProgress: async (uploadedBytes, totalBytes) => {
+        if (
+          uploadedBytes === totalBytes ||
+          uploadedBytes - lastLogged >= 64 * 1024 * 1024
+        ) {
+          lastLogged = uploadedBytes;
+          console.log(`[youtube] Uploaded ${uploadedBytes}/${totalBytes} bytes`);
+        }
+        await onProgress?.(uploadedBytes, totalBytes);
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "YouTube video upload failed";
+    throw new Error(`YouTube video upload failed: ${message}`);
   }
 
-  const videoData = await uploadResponse.json();
+  let videoData: { id?: string };
+  try {
+    videoData = JSON.parse(uploaded.body) as { id?: string };
+  } catch {
+    throw new Error("YouTube upload succeeded but the response was not JSON.");
+  }
   const videoId = videoData.id;
 
   if (!videoId) {
@@ -135,32 +154,21 @@ export async function setThumbnail(
   const accessToken = await getYouTubeAccessToken(wpShowId);
   if (!accessToken) return;
 
-  const { createReadStream, statSync } = await import("node:fs");
-  const fileSize = statSync(thumbnailFilePath).size;
-  const fileStream = createReadStream(thumbnailFilePath);
-  const { Readable } = await import("node:stream");
-
-  const response = await fetch(
-    `${YOUTUBE_UPLOAD_URL.replace("/videos", "/thumbnails/set")}?videoId=${videoId}`,
-    {
+  // Thumbnails are small, but the same fetch() stream path retains the body.
+  // Stream the file through node:http instead. Failure stays non-fatal.
+  try {
+    await streamFilePut({
+      url: `${YOUTUBE_UPLOAD_URL.replace("/videos", "/thumbnails/set")}?videoId=${videoId}`,
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": contentType,
-        "Content-Length": fileSize.toString(),
-      },
-      body: Readable.toWeb(fileStream) as any,
-      // @ts-expect-error -- Node fetch supports duplex
-      duplex: "half",
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[youtube] Failed to set thumbnail: ${errorText}`);
-    // Non-fatal — video is already uploaded
-  } else {
+      filePath: thumbnailFilePath,
+      contentType,
+      headers: { Authorization: `Bearer ${accessToken}` },
+      maxAttempts: 3,
+    });
     console.log(`[youtube] Thumbnail set for video ${videoId}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[youtube] Failed to set thumbnail: ${message}`);
   }
 }
 

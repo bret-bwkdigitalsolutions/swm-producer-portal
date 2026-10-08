@@ -22,7 +22,8 @@ import {
   locateProducerVideo,
   recordedDerivedBucket,
 } from "./gcs-location";
-import { formatDuration, jobTimeoutMs } from "./processing-runtime";
+import { formatDuration, isVideoWorker, jobTimeoutMs } from "./processing-runtime";
+import { startWorkerHeartbeat } from "./worker-heartbeat";
 import { createWriteStream } from "node:fs";
 import { unlink, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -30,6 +31,27 @@ import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
+
+/**
+ * Refresh the worker heartbeat while a multi-gigabyte upload is in flight.
+ * The interval in startWorkerHeartbeat covers gaps between chunks; this
+ * also records how far the upload got. Throttled so a fast link does not
+ * open a metadata transaction per chunk.
+ */
+function createUploadHeartbeat(jobId: string) {
+  let last = 0;
+  return async (patch: Record<string, unknown>) => {
+    const now = Date.now();
+    if (last !== 0 && now - last < 30_000) return;
+    last = now;
+    await mergeJobMetadata(jobId, {
+      workerHeartbeat: new Date().toISOString(),
+      ...patch,
+    }).catch((error) => {
+      console.error("[processor] upload heartbeat failed:", error);
+    });
+  };
+}
 
 export interface ProcessingResult {
   jobId: string;
@@ -93,7 +115,11 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
   // and the timer is cleared so a finished worker can exit.
   const timeoutMs = jobTimeoutMs();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Cloud Run already heartbeats from the video worker. Railway does not,
+  // and a long ffmpeg run would otherwise look stale to the watchdog.
+  let stopHeartbeat: (() => void) | undefined;
   try {
+    if (!isVideoWorker()) stopHeartbeat = startWorkerHeartbeat(jobId);
     return await Promise.race([
       processJobInner(job),
       new Promise<never>((_, reject) => {
@@ -162,6 +188,7 @@ export async function processJob(jobId: string): Promise<ProcessingResult> {
     };
   } finally {
     if (timer) clearTimeout(timer);
+    stopHeartbeat?.();
   }
 }
 
@@ -174,6 +201,7 @@ async function processJobInner(
   );
 
   const metadata = job.metadata as Record<string, unknown>;
+  const beatUpload = createUploadHeartbeat(job.id);
   const platformResults: ProcessingResult["platformResults"] = [];
 
   const existingYoutubeUrl = metadata.existingYoutubeUrl as string | undefined;
@@ -548,6 +576,8 @@ async function processJobInner(
         privacy: youtubePrivacy,
         videoFilePath: tempVideoPath,
         scheduledAt,
+        onProgress: (uploaded, total) =>
+          beatUpload({ youtubeUploadBytes: uploaded, youtubeUploadTotal: total }),
       });
 
       youtubeUrl = result.videoUrl;
@@ -799,6 +829,8 @@ async function processJobInner(
           ? (updatedMetadata.scheduledAt as string) ?? undefined
           : undefined,
         transistorShowIdOverride: isPremium ? transistorShowMeta?.transistorPrivateShowId ?? undefined : undefined,
+        onProgress: (uploaded, total) =>
+          beatUpload({ transistorUploadBytes: uploaded, transistorUploadTotal: total }),
       });
 
       await db.distributionJobPlatform.update({
@@ -856,6 +888,11 @@ async function processJobInner(
                 scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
                   ? (updatedMetadata.scheduledAt as string) ?? undefined
                   : undefined,
+                onProgress: (uploaded, total) =>
+                  beatUpload({
+                    networkTransistorUploadBytes: uploaded,
+                    networkTransistorUploadTotal: total,
+                  }),
               });
               rememberTransistorEpisode(networkResult.episodeId, 0);
               await mergeJobMetadata(job.id, {

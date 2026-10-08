@@ -170,7 +170,7 @@ Public list prices as of 6 Oct 2026. September's bill was $82.87: $50.22 interne
 | Multi-region replication of new writes | $0 once new objects land on the regional bucket |
 | Regional Standard storage | $0.020/GiB-month. About 1,260 GiB is **$25/month** if nothing has cooled. Autoclass moves cold objects toward Archive and the bill falls below that. This note does not invent a regional Archive rate. US multi-region Archive at $0.003/GiB-month is only a reference. |
 | mp3 fetches (Deepgram, Transistor, a network cross-post) | About **$2/month**. A rough 40 episodes × ~165 MB × a couple of internet GETs. |
-| Cloud Run, base | About **$8/month**. 40 jobs × 1 hour × 4 vCPU / 8 GiB, after the 240,000 vCPU-s and 450,000 GiB-s free tier. Rates $0.000018/vCPU-s and $0.000002/GiB-s. |
+| Cloud Run, base | About **$8/month** at the old 8 GiB size. The job is now 4 vCPU / 16 GiB (the live setting, matched by `infra/cloudrun/setup.sh`). 40 jobs × 1 hour × 4 vCPU / 8 GiB, after the 240,000 vCPU-s and 450,000 GiB-s free tier. Rates $0.000018/vCPU-s and $0.000002/GiB-s. Memory at 16 GiB costs more than this row. |
 | Cloud Run, pessimistic | About **$45/month**. 40 jobs × 2 hours × 8 vCPU / 16 GiB, same free tier. |
 | One-time Storage Transfer Service copy | About **$25** (1,260 GiB × $0.02/GiB within Google Cloud), plus storage on both buckets until the old one is retired. |
 | Reading an old object from Cloud Run before the copy | About $0.02/GiB within GCP. A 90 GiB file is about $1.80. Not internet egress. |
@@ -179,7 +179,7 @@ Steady state for new uploads is on the order of **$10–$35/month** plus whateve
 
 ## Risks
 
-- The YouTube client still PUTs the file in one request. Retries on the job are 0. A manual retry can duplicate a video if YouTube accepted it and the portal did not record `completed`.
+- YouTube uploads are fixed-size resumable chunks (8 MiB) over node:http. A dropped connection or a 5xx queries the session and resumes from the last committed byte. Retries on the Cloud Run job are still 0. A manual retry can duplicate a video if YouTube accepted it and the portal did not record `completed`.
 - FUSE must mount within Cloud Run's 30 second mount budget. If the processor account cannot read the bucket, the task fails at startup and the portal marks it failed. No Railway fallback.
 - A just-downloaded Vimeo file may be absent from the FUSE stat cache, so that path still copies the file locally. A very large Vimeo source can exceed the 32 GiB memory filesystem. Producer uploads, which already exist before processing, use the mount.
 - Railway no longer caps Cloud Run executions at two. Overlapping jobs are isolated, and they share one Postgres connection budget.

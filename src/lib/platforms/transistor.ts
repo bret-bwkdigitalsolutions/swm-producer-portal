@@ -5,6 +5,7 @@ import {
 } from "@/lib/analytics/credentials";
 import { generateSignedDownloadUrl } from "@/lib/gcs";
 import { prepareTransistorImageUrl } from "@/lib/image";
+import { uploadFromRemote } from "@/lib/platforms/bounded-upload";
 
 const BASE_URL = "https://api.transistor.fm/v1";
 
@@ -69,6 +70,8 @@ export interface TransistorUploadParams {
   isDraft?: boolean;
   scheduledAt?: string; // ISO 8601 date — if set, episode is scheduled for future publish
   transistorShowIdOverride?: string;
+  /** Called as the audio PUT progresses. The processor uses this to heartbeat. */
+  onProgress?: (uploadedBytes: number, totalBytes: number) => void | Promise<void>;
 }
 
 export interface TransistorUploadResult {
@@ -87,6 +90,7 @@ export async function uploadToTransistor(
     gcsAudioPath, chapters, tags, thumbnailGcsPath, author,
     transcript, youtubeVideoUrl, explicit: isExplicit, isDraft, scheduledAt,
   } = params;
+  const onProgress = params.onProgress;
 
   const apiKey = await getTransistorApiKey(wpShowId);
   if (!apiKey) {
@@ -140,41 +144,25 @@ export async function uploadToTransistor(
     );
   }
 
-  // 2. Upload audio file to Transistor's S3
+  // 2. Upload audio file to Transistor's S3.
+  // fetch(PUT, { body: stream }) retains every sent byte. Pipe the GCS
+  // response through node:http instead, and retry the PUT on 5xx / network
+  // errors. S3 presigned URLs are not byte-range resumable, so a retry sends
+  // the object again rather than resuming mid-file. A missing Content-Length
+  // spills to a temp file (still not a single Buffer).
   console.log("[transistor] Uploading audio file...");
 
   const downloadUrl = await generateSignedDownloadUrl(gcsAudioPath);
-  const audioResponse = await fetch(downloadUrl);
-  if (!audioResponse.ok || !audioResponse.body) {
-    throw new Error("Failed to download audio from GCS.");
-  }
-
-  // Stream GCS -> Transistor's S3 instead of buffering the whole episode in
-  // memory. A multi-hour MP3 is hundreds of MB; buffering it per job (jobs run
-  // concurrently, fire-and-forget) was a primary OOM contributor on Railway.
-  // S3 presigned PUTs require a Content-Length, which GCS returns on the GET.
-  const contentLength = audioResponse.headers.get("content-length");
-  let uploadRes: Response;
-  if (contentLength) {
-    uploadRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "audio/mpeg", "Content-Length": contentLength },
-      body: audioResponse.body as unknown as BodyInit,
-      // @ts-expect-error -- Node fetch supports duplex for streaming request bodies
-      duplex: "half",
+  try {
+    await uploadFromRemote({
+      sourceUrl: downloadUrl,
+      destinationUrl: uploadUrl,
+      contentType: "audio/mpeg",
+      onProgress,
     });
-  } else {
-    // Fallback (GCS normally returns Content-Length): buffer so S3 has a length.
-    const audioBuffer = await audioResponse.arrayBuffer();
-    uploadRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "audio/mpeg" },
-      body: audioBuffer,
-    });
-  }
-
-  if (!uploadRes.ok) {
-    throw new Error(`Transistor audio upload failed (${uploadRes.status})`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Transistor audio upload failed";
+    throw new Error(`Transistor audio upload failed: ${message}`);
   }
 
   // 3. Create the episode with the uploaded audio URL

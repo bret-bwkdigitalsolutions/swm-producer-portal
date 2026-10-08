@@ -26,8 +26,16 @@ export async function register() {
   await sweepStuckProcessingJobs();
   await sweepStuckAnalyses();
 
+  // The sweeps above run once per boot. A Cloud Run worker that is SIGKILLed
+  // for memory does not restart this process, so also check on a timer and
+  // expose the same check at /api/cron/sweep-stale-jobs.
+  const { startStaleJobWatchdog } = await import("@/lib/jobs/stale-job-watchdog");
+  startStaleJobWatchdog();
+
   // Re-schedule post-distribution verification tiers that were pending when
   // the previous container died (their setTimeout timers don't survive).
+  // Startup only. resumeVerificationSchedules arms a new timer per pending
+  // tier on every call, so the stale-job cron must not call it.
   try {
     const { resumeVerificationSchedules } = await import("@/lib/jobs/processor");
     await resumeVerificationSchedules();
