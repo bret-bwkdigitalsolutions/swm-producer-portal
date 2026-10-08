@@ -21,6 +21,7 @@ const SHARED_KEYTERMS = [
   "Mac Engel",
   "Engel Angle",
   "Rhyner",
+  "Mike Rhyner",
   "Gruber",
   "Grubes",
   "Jesse Hawila",

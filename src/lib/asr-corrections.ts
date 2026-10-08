@@ -58,8 +58,8 @@ export const ASR_RULES: readonly AsrRule[] = [
   },
   {
     find: "the angle angle",
-    replace: "Engel Angle",
-    note: "Sunset Ep.12: 'the angle angle' is the Engel Angle show.",
+    replace: "The Engel Angle",
+    note: "Sunset Ep.12: 'the angle angle' is The Engel Angle. Keep the article and the show's title case.",
   },
   {
     find: "Jesse Hoelho",
@@ -190,6 +190,41 @@ export const ASR_RULES: readonly AsrRule[] = [
     find: "Masletov",
     replace: "mazel tov",
     note: "Clubhouse S11E2/E4: 'Masletov to those kids' is mazel tov. Not a person.",
+  },
+  {
+    find: "Mike Reiner",
+    replace: "Mike Rhyner",
+    note: "SWM-190: 64 website transcript hits across 9 shows ('Hello, it's Mike Reiner of Your Dark Companion'). Rob/Carl Reiner untouched (full phrase only).",
+  },
+  {
+    find: "Engle Angle",
+    replace: "Engel Angle",
+    note: "SWM-190: Mac Engel's show name ('Fort Worth Star-Telegram, Engle Angle podcast').",
+  },
+  {
+    find: "Ingle Angle",
+    replace: "Engel Angle",
+    note: "SWM-190: same show name, second Deepgram spelling ('The Ingle Angle, Signal 51 Chronicles').",
+  },
+  {
+    find: "Mack Engle",
+    replace: "Mac Engel",
+    note: "SWM-190: host name ('Mack Engle, sports columnist extraordinaire').",
+  },
+  {
+    find: "Mac Engle",
+    replace: "Mac Engel",
+    note: "SWM-190: host name, surname only misspelled ('Mac Engle, Fort Worth Star Telegram').",
+  },
+  {
+    find: "Mike Rhiner",
+    replace: "Mike Rhyner",
+    note: "SWM-190: Deepgram spelling of Mike Rhyner ('Hello, it's Mike Rhiner'). Full phrase only, so Rob/Carl Reiner stay.",
+  },
+  {
+    find: "Mack Engel",
+    replace: "Mac Engel",
+    note: "SWM-190: first name misspelled, surname already Engel ('Mack Engel, Fort Worth Star-Telegram').",
   },
 ];
 

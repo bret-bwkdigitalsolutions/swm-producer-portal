@@ -51,7 +51,7 @@ describe("applyAsrCorrections", () => {
     expect(out).toContain("Pete Delkus");
     expect(out).not.toMatch(/\bDelkes\b|\bDelkis\b/);
     expect(out).toContain("Norm Hitzges");
-    expect(out).toContain("Engel Angle");
+    expect(out).toContain("The Engel Angle");
     expect(out).toContain("Youri Tielemans'");
     expect(out).toContain("Aston Villa");
     expect(out).toContain("Pochettino");
@@ -72,7 +72,7 @@ describe("applyAsrCorrections", () => {
 
   it("matches case-insensitively and curly apostrophes", () => {
     expect(applyAsrCorrections("on The Angle Angle today")).toBe(
-      "on Engel Angle today"
+      "on The Engel Angle today"
     );
     expect(applyAsrCorrections("Yuri Telemann’s plays")).toBe(
       "Youri Tielemans' plays"
@@ -117,5 +117,59 @@ describe("applyAsrCorrections", () => {
   it("does not replace inside a larger word", () => {
     expect(applyAsrCorrections("Scalia met Hoelahol.")).toBe("Scalia met Hoelahol.");
     expect(applyAsrCorrections("Tim Weah already")).toBe("Tim Weah already");
+  });
+
+  it("keeps the article when correcting the angle angle", () => {
+    expect(applyAsrCorrections("called it the angle angle.")).toBe(
+      "called it The Engel Angle."
+    );
+    expect(applyAsrCorrections("on The Angle Angle today")).toBe(
+      "on The Engel Angle today"
+    );
+    expect(applyAsrCorrections("THE ANGLE ANGLE podcast")).toBe(
+      "The Engel Angle podcast"
+    );
+    const fixed = applyAsrCorrections("the angle angle");
+    expect(fixed).toBe("The Engel Angle");
+    expect(applyAsrCorrections(fixed)).toBe(fixed);
+  });
+
+  it("fixes the SWM-190 Rhyner and Engel spellings on every show", () => {
+    const raw =
+      "Hello, it's Mike Reiner of Your Dark Companion. Mack Engle and Mac Engle host the Engle Angle, also heard as The Ingle Angle.";
+    const want =
+      "Hello, it's Mike Rhyner of Your Dark Companion. Mac Engel and Mac Engel host the Engel Angle, also heard as The Engel Angle.";
+    expect(applyAsrCorrections(raw)).toBe(want);
+    expect(applyAsrCorrections(raw, 25)).toBe(want);
+    expect(applyAsrCorrections(want)).toBe(want);
+    expect(applyAsrCorrections("MIKE REINER on the ingle angle")).toBe("Mike Rhyner on the Engel Angle");
+    expect(applyAsrCorrections("Mike Reiner\u2019s show")).toBe("Mike Rhyner\u2019s show");
+  });
+
+  it("fixes Mike Rhiner and Mack Engel on every show", () => {
+    const raw = "Mike Rhiner sat with Mack Engel on The Engel Angle.";
+    const want = "Mike Rhyner sat with Mac Engel on The Engel Angle.";
+    expect(applyAsrCorrections(raw)).toBe(want);
+    expect(applyAsrCorrections(raw, 25)).toBe(want);
+    expect(applyAsrCorrections(want)).toBe(want);
+    expect(applyAsrCorrections("MIKE RHINER and MACK ENGEL")).toBe("Mike Rhyner and Mac Engel");
+    expect(applyAsrCorrections("Mike Rhiner\u2019s column")).toBe("Mike Rhyner\u2019s column");
+  });
+
+  it("leaves Rob Reiner and Carl Reiner unchanged", () => {
+    const raw = "directed by Rob Reiner and Carl Reiner, unlike Mike Rhiner or Mack Engel";
+    expect(applyAsrCorrections(raw)).toBe(
+      "directed by Rob Reiner and Carl Reiner, unlike Mike Rhyner or Mac Engel"
+    );
+    expect(applyAsrCorrections("ROB REINER and CARL REINER")).toBe(
+      "ROB REINER and CARL REINER"
+    );
+  });
+
+  it("leaves other Reiners and partial words alone", () => {
+    expect(applyAsrCorrections("directed by Rob Reiner and Carl Reiner")).toBe(
+      "directed by Rob Reiner and Carl Reiner"
+    );
+    expect(applyAsrCorrections("Smike Reinert met Engleton")).toBe("Smike Reinert met Engleton");
   });
 });
