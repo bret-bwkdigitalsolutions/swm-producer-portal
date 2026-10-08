@@ -202,8 +202,8 @@ function requestUrl(
       },
       (res) => {
         const parts: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => {
-          parts.push(chunk);
+        res.on("data", (chunk) => {
+          parts.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
         res.on("end", () => {
           succeed({
@@ -445,8 +445,8 @@ export async function streamFilePut(
   while (attempt < maxAttempts) {
     const stream = createReadStream(options.filePath);
     let sent = 0;
-    stream.on("data", (chunk: Buffer) => {
-      sent += chunk.length;
+    stream.on("data", (chunk) => {
+      sent += Buffer.byteLength(chunk);
       void report(sent);
     });
     try {
@@ -607,8 +607,8 @@ export async function uploadFromRemote(
 
     const report = createProgressReporter(options.onProgress, total);
     let sent = 0;
-    got.stream.on("data", (chunk: Buffer) => {
-      sent += chunk.length;
+    got.stream.on("data", (chunk) => {
+      sent += Buffer.byteLength(chunk);
       void report(Math.min(sent, total));
     });
 

@@ -15,6 +15,14 @@ import {
   uploadFromRemote,
 } from "@/lib/platforms/bounded-upload";
 
+function logRss(label: string, fileSize: number, baseline: number, after: number, ceiling: number): number {
+  const growth = after - baseline;
+  console.info(
+    `[rss] ${label} file=${fileSize} baseline=${baseline} after=${after} growth=${growth} ceiling=${ceiling}`
+  );
+  return growth;
+}
+
 const servers: http.Server[] = [];
 const dirs: string[] = [];
 
@@ -22,7 +30,11 @@ afterEach(async () => {
   await Promise.all(
     servers.splice(0).map(
       (server) =>
-        new Promise<void>((resolve) => server.close(() => resolve()))
+        new Promise<void>((resolve) => {
+          // Drop sockets left open by a 4xx or a redirect, or server.close waits.
+          server.closeAllConnections();
+          server.close(() => resolve());
+        })
     )
   );
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -164,17 +176,45 @@ describe("uploadFileInChunks", () => {
 
       if (global.gc) global.gc();
       const after = process.memoryUsage().rss;
-      const growth = after - baseline;
       const ceiling = Math.min(150 * 1024 * 1024, Math.floor(fileSize / 2));
-      console.info(
-        `[rss] chunked file=${fileSize} baseline=${baseline} after=${after} growth=${growth} ceiling=${ceiling}`
-      );
+      const growth = logRss("chunked", fileSize, baseline, after, ceiling);
 
       expect(result.statusCode).toBe(200);
       expect(result.body).toContain("vid-memory");
       expect(received).toBe(fileSize);
-      expect(hash.digest("hex")).toBe(await hashFile(filePath));
+      const fileHash = await hashFile(filePath);
+      expect(hash.digest("hex")).toBe(fileHash);
       expect(growth).toBeLessThan(ceiling);
+
+      // Transistor's media PUT is one streamed request, not YouTube's chunks.
+      const putHash = createHash("sha256");
+      let putReceived = 0;
+      const putServer = http.createServer((req, res) => {
+        req.on("data", (part: Buffer) => {
+          putReceived += part.length;
+          putHash.update(part);
+        });
+        req.on("end", () => {
+          res.writeHead(200);
+          res.end("ok");
+        });
+      });
+      const putPort = await listen(putServer);
+      if (global.gc) global.gc();
+      const putBaseline = process.memoryUsage().rss;
+      const putResult = await streamFilePut({
+        url: `http://127.0.0.1:${putPort}/audio`,
+        filePath,
+        contentType: "audio/mpeg",
+        backoffMs: () => 0,
+      });
+      if (global.gc) global.gc();
+      const putAfter = process.memoryUsage().rss;
+      const putGrowth = logRss("stream-put", fileSize, putBaseline, putAfter, ceiling);
+      expect(putResult.statusCode).toBe(200);
+      expect(putReceived).toBe(fileSize);
+      expect(putHash.digest("hex")).toBe(fileHash);
+      expect(putGrowth).toBeLessThan(ceiling);
     },
     180_000
   );

@@ -34,6 +34,8 @@ export async function register() {
 
   // Re-schedule post-distribution verification tiers that were pending when
   // the previous container died (their setTimeout timers don't survive).
+  // Startup only. resumeVerificationSchedules arms a new timer per pending
+  // tier on every call, so the stale-job cron must not call it.
   try {
     const { resumeVerificationSchedules } = await import("@/lib/jobs/processor");
     await resumeVerificationSchedules();

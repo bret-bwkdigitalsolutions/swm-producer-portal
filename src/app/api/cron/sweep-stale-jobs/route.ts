@@ -11,6 +11,11 @@ import { failStaleProcessingJobs } from "@/lib/jobs/stale-job-watchdog";
  *
  *   Authorization: Bearer ${CRON_SECRET}
  *   Schedule: every 5 minutes (cron: every 5th minute)
+ *
+ * Post-distribution verification is not resumed here. Those checks are
+ * setTimeouts armed at startup by resumeVerificationSchedules, and that
+ * function schedules another timer per pending tier on every call. A
+ * 5-minute tick would run the same tiers again.
  */
 export async function POST(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
