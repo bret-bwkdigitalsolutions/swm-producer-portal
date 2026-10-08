@@ -358,6 +358,93 @@ describe("uploadFileInChunks", () => {
     ).rejects.toThrow(/401/);
     expect(puts).toBe(1);
   });
+
+  it("restarts at byte 0 when a 308 has no Range header", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "swm-upload-no-range-"));
+    dirs.push(dir);
+    const filePath = join(dir, "video.mp4");
+    const chunkSize = UPLOAD_CHUNK_ALIGNMENT_BYTES;
+    const fileSize = chunkSize * 2;
+    const bytes = Buffer.alloc(fileSize);
+    for (let i = 0; i < fileSize; i++) bytes[i] = i % 251;
+    await writeFile(filePath, bytes);
+
+    const stored = await open(join(dir, "received.bin"), "w+");
+    await stored.truncate(fileSize);
+    let committed = 0;
+    let omittedRange = false;
+    const events: string[] = [];
+
+    const server = http.createServer((req, res) => {
+      const header = req.headers["content-range"];
+      const range = Array.isArray(header) ? header[0] : header ?? "";
+      if (/bytes \*\//i.test(range)) {
+        // Still reports the bytes accepted before the empty 308. The client
+        // must not trust this after a chunk response that omitted Range.
+        events.push("query");
+        res.writeHead(308, { Range: `bytes=0-${Math.max(committed, 1) - 1}` });
+        res.end();
+        return;
+      }
+
+      const match = /bytes (\d+)-(\d+)\/(\d+)/i.exec(range);
+      if (!match) {
+        res.writeHead(400);
+        res.end("bad range");
+        return;
+      }
+      const start = Number(match[1]);
+      const end = Number(match[2]);
+      const parts: Buffer[] = [];
+      req.on("data", (part: Buffer) => parts.push(part));
+      req.on("end", () => {
+        void (async () => {
+          const body = Buffer.concat(parts);
+          if (!omittedRange && start === chunkSize) {
+            omittedRange = true;
+            events.push(`chunk:${start}:no-range`);
+            res.writeHead(308);
+            res.end();
+            return;
+          }
+          await stored.write(body, 0, body.length, start);
+          committed = Math.max(committed, end + 1);
+          events.push(`chunk:${start}`);
+          if (committed >= fileSize) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ id: "vid-restart" }));
+            return;
+          }
+          res.writeHead(308, { Range: `bytes=0-${committed - 1}` });
+          res.end();
+        })().catch((error) => {
+          res.destroy(error instanceof Error ? error : undefined);
+        });
+      });
+    });
+
+    const port = await listen(server);
+    const result = await uploadFileInChunks({
+      uploadUrl: `http://127.0.0.1:${port}/upload?upload_id=abc`,
+      filePath,
+      contentType: "video/mp4",
+      chunkSizeBytes: chunkSize,
+      maxAttempts: 6,
+      backoffMs: () => 0,
+    });
+
+    expect(result.body).toContain("vid-restart");
+    expect(events).toEqual([
+      "chunk:0",
+      `chunk:${chunkSize}:no-range`,
+      "chunk:0",
+      `chunk:${chunkSize}`,
+    ]);
+    const received = Buffer.alloc(fileSize);
+    await stored.read(received, 0, fileSize, 0);
+    expect(Buffer.compare(received, bytes)).toBe(0);
+    await stored.close();
+  });
 });
 
 describe("streamFilePut and uploadFromRemote", () => {
@@ -450,6 +537,46 @@ describe("streamFilePut and uploadFromRemote", () => {
     });
     expect(result.statusCode).toBe(204);
     expect(putAttempts).toBe(2);
+    expect(received).not.toBeNull();
+    expect(Buffer.compare(received!, payload)).toBe(0);
+  });
+
+  it("retries when the source GET connection drops", async () => {
+    const payload = Buffer.from("episode-audio-bytes-0123456789");
+    let gets = 0;
+    let received: Buffer | null = null;
+    const server = http.createServer((req, res) => {
+      if (req.method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          req.socket.destroy();
+          return;
+        }
+        res.writeHead(200, {
+          "Content-Type": "audio/mpeg",
+          "Content-Length": String(payload.length),
+        });
+        res.end(payload);
+        return;
+      }
+      const parts: Buffer[] = [];
+      req.on("data", (part: Buffer) => parts.push(part));
+      req.on("end", () => {
+        received = Buffer.concat(parts);
+        res.writeHead(204);
+        res.end();
+      });
+    });
+    const port = await listen(server);
+    const result = await uploadFromRemote({
+      sourceUrl: `http://127.0.0.1:${port}/audio.mp3`,
+      destinationUrl: `http://127.0.0.1:${port}/upload`,
+      contentType: "audio/mpeg",
+      maxAttempts: 3,
+      backoffMs: () => 0,
+    });
+    expect(result.statusCode).toBe(204);
+    expect(gets).toBe(2);
     expect(received).not.toBeNull();
     expect(Buffer.compare(received!, payload)).toBe(0);
   });

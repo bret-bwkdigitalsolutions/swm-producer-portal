@@ -34,10 +34,10 @@ function heartbeatMs(metadata: unknown): number | null {
 }
 
 /**
- * Latest sign of life: a worker heartbeat, or the row's updatedAt when the
- * worker has never written one (in-process Railway jobs). The job is stale
- * only when that timestamp is older than {@link CLOUD_RUN_HEARTBEAT_STALE_MS}.
- * A live heartbeat keeps the job even if updatedAt is older.
+ * Latest sign of life for a Cloud Run job: a worker heartbeat, or updatedAt
+ * when that heartbeat is missing. The periodic sweep never considers a job
+ * whose metadata.processingRuntime is not "cloudrun". A live heartbeat keeps
+ * the job even if updatedAt is older.
  */
 export function lastWorkerSignalMs(job: {
   updatedAt: Date;
@@ -62,9 +62,21 @@ export function isWorkerSignalStale(
   return now - signal > CLOUD_RUN_HEARTBEAT_STALE_MS;
 }
 
+function isCloudRunProcessingJob(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object") return false;
+  return (metadata as Record<string, unknown>).processingRuntime === "cloudrun";
+}
+
 /**
- * Mark processing jobs failed when their worker heartbeat and updatedAt are
- * both older than the shared 20-minute threshold.
+ * Fail Cloud Run jobs that are still processing when their worker heartbeat
+ * and updatedAt are both older than the shared 20-minute threshold.
+ *
+ * Railway sets a job to processing and then parks it on the in-process queue.
+ * The heartbeat starts only inside processJob, so a queue wait longer than
+ * 20 minutes has no heartbeat. Failing that row lets the queued task run
+ * anyway, and a Retry can start a second pipeline. The startup sweep and the
+ * Railway job timeout already cover those jobs, so this sweep only considers
+ * metadata.processingRuntime === "cloudrun".
  *
  * The status update is conditional on the updatedAt we just read. A heartbeat
  * that lands after the read bumps updatedAt, the update matches nothing, and
@@ -93,6 +105,7 @@ export async function failStaleProcessingJobs(
 
   for (const job of processing) {
     if (job.status !== "processing") continue;
+    if (!isCloudRunProcessingJob(job.metadata)) continue;
     if (!isWorkerSignalStale(job, now)) continue;
 
     try {

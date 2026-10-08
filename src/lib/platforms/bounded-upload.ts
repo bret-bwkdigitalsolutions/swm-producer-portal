@@ -175,6 +175,7 @@ function requestUrl(
   const lib = requestLib(target.protocol);
   return new Promise((resolve, reject) => {
     let settled = false;
+    let req: http.ClientRequest;
     const fail = (error: Error) => {
       if (settled) return;
       settled = true;
@@ -185,13 +186,19 @@ function requestUrl(
       if (settled) return;
       settled = true;
       // Stop sending if the server answered before the file stream finished
-      // (redirect, 5xx, or a short read). A finished stream is left alone so
-      // destroy() does not surface a premature-close error after success.
-      if (stream && !stream.readableEnded) stream.destroy();
+      // (redirect, 5xx, or a short read). Destroy the request too so the
+      // socket does not keep the rest of the body in flight. A finished
+      // stream is left alone so destroy() does not surface a premature-close
+      // error after success. settled is set first so the error from
+      // req.destroy() does not reject the completed response.
+      if (stream && !stream.readableEnded) {
+        stream.destroy();
+        req.destroy();
+      }
       resolve(value);
     };
 
-    const req = lib.request(
+    req = lib.request(
       {
         protocol: target.protocol,
         hostname: target.hostname,
@@ -354,7 +361,27 @@ export async function uploadFileInChunks(
       }
 
       if (res.statusCode === 308) {
-        const next = nextOffsetFromRange(headerValue(res.headers, "range"), total);
+        const range = headerValue(res.headers, "range");
+        // YouTube: a 308 with no Range means nothing is committed. Restart
+        // at byte 0. A follow-up status query can still report an older
+        // Range, which would resume past bytes the server just discarded.
+        if (!range) {
+          if (offset > 0) {
+            offset = 0;
+            attempt = 0;
+          } else {
+            attempt += 1;
+          }
+          if (attempt >= maxAttempts) {
+            throw new Error(
+              `Upload failed after ${maxAttempts} retries at byte ${offset}.`
+            );
+          }
+          await sleep(backoffMs(Math.max(attempt, 1)));
+          await report(offset);
+          continue;
+        }
+        const next = nextOffsetFromRange(range, total);
         if (next > offset) {
           noteProgress(next);
           await report(offset);
@@ -566,7 +593,19 @@ export async function uploadFromRemote(
   let redirects = 0;
 
   while (attempt < maxAttempts) {
-    const got = await openGet(options.sourceUrl, timeoutMs);
+    let got: { statusCode: number; headers: http.IncomingHttpHeaders; stream: http.IncomingMessage };
+    try {
+      got = await openGet(options.sourceUrl, timeoutMs);
+    } catch (error) {
+      if (isFatalUploadError(error)) throw error;
+      attempt += 1;
+      if (attempt >= maxAttempts) {
+        const message = error instanceof Error ? error.message : "Upload failed";
+        throw new Error(`Upload failed after ${maxAttempts} retries: ${message}`);
+      }
+      await sleep(backoffMs(attempt));
+      continue;
+    }
     if (got.statusCode < 200 || got.statusCode >= 300) {
       got.stream.resume();
       if (!isRetryableStatus(got.statusCode) && got.statusCode !== 408) {

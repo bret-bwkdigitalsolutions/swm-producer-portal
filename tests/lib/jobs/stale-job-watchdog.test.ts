@@ -39,6 +39,7 @@ function job(overrides: Record<string, unknown> = {}) {
     status: "processing",
     updatedAt: ago(CLOUD_RUN_HEARTBEAT_STALE_MS + 60_000),
     metadata: {
+      processingRuntime: "cloudrun",
       workerHeartbeat: ago(CLOUD_RUN_HEARTBEAT_STALE_MS + 60_000).toISOString(),
     },
     ...overrides,
@@ -80,12 +81,15 @@ describe("stale worker signal", () => {
 });
 
 describe("failStaleProcessingJobs", () => {
-  it("fails a stale processing job with the retry message and leaves a fresh heartbeat alone", async () => {
+  it("fails a stale Cloud Run job with the retry message and leaves a fresh heartbeat alone", async () => {
     const stale = job({ id: "job-stale" });
     const fresh = job({
       id: "job-fresh",
       updatedAt: ago(CLOUD_RUN_HEARTBEAT_STALE_MS + 60_000),
-      metadata: { workerHeartbeat: ago(30_000).toISOString() },
+      metadata: {
+        processingRuntime: "cloudrun",
+        workerHeartbeat: ago(30_000).toISOString(),
+      },
     });
     findMany.mockResolvedValue([stale, fresh]);
 
@@ -114,12 +118,12 @@ describe("failStaleProcessingJobs", () => {
     });
   });
 
-  it("does not fail a job with a recent updatedAt and no heartbeat", async () => {
+  it("does not fail a Cloud Run job with a recent updatedAt and no heartbeat", async () => {
     findMany.mockResolvedValue([
       job({
-        id: "job-railway",
+        id: "job-fresh-updated",
         updatedAt: ago(60_000),
-        metadata: {},
+        metadata: { processingRuntime: "cloudrun" },
       }),
     ]);
 
@@ -130,18 +134,25 @@ describe("failStaleProcessingJobs", () => {
     expect(platformUpdateMany).not.toHaveBeenCalled();
   });
 
-  it("fails a processing job that never heartbeated once updatedAt is stale", async () => {
-    const stale = job({
-      id: "job-silent",
-      updatedAt: ago(CLOUD_RUN_HEARTBEAT_STALE_MS + 5_000),
-      metadata: {},
-    });
-    findMany.mockResolvedValue([stale]);
+  it("leaves a Railway job with an old updatedAt and no heartbeat untouched", async () => {
+    findMany.mockResolvedValue([
+      job({
+        id: "job-queued",
+        updatedAt: ago(CLOUD_RUN_HEARTBEAT_STALE_MS + 5_000),
+        metadata: {},
+      }),
+      job({
+        id: "job-railway-runtime",
+        updatedAt: ago(CLOUD_RUN_HEARTBEAT_STALE_MS * 2),
+        metadata: { processingRuntime: "railway" },
+      }),
+    ]);
 
     const result = await failStaleProcessingJobs(now);
 
-    expect(result.failedIds).toEqual(["job-silent"]);
-    expect(jobUpdateMany).toHaveBeenCalledTimes(1);
+    expect(result.failedIds).toEqual([]);
+    expect(jobUpdateMany).not.toHaveBeenCalled();
+    expect(platformUpdateMany).not.toHaveBeenCalled();
   });
 
   it("leaves non-processing jobs untouched", async () => {
