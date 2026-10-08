@@ -111,3 +111,16 @@ describe("buildDeepgramListenQuery", () => {
     expect(query.toString()).toContain("keyterm=Norm+Hitzges");
   });
 });
+
+describe("SWM-190 host and show names", () => {
+  it("sends Rhyner and Engel keyterms on every show", () => {
+    for (const showId of [21, 22, 23, 24, 25, 26, 27, 28, 4218, undefined]) {
+      const terms = keytermsForShow(showId);
+      expect(terms).toContain("Rhyner");
+      expect(terms).toContain("Mike Rhyner");
+      expect(terms).toContain("Mac Engel");
+      expect(terms).toContain("Engel Angle");
+      expect(terms.length).toBeLessThanOrEqual(MAX_KEYTERMS);
+    }
+  });
+});
