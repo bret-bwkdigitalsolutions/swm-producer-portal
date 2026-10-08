@@ -410,6 +410,8 @@ else
 
   echo "Deploying Cloud Run job ${JOB_NAME} from ${IMAGE}"
   echo "Command override is 'node server.js' so the container does not run migrations."
+  # 16Gi matches the live job. An 8Gi limit OOM-killed an 8.5 GiB upload
+  # (Oct 7 2026). 4 CPU was already the live setting.
   # ^|^ makes '|' the env delimiter so the FUSE value can contain commas.
   gcloud run jobs deploy "$JOB_NAME" \
     --project="$PROJECT" \
@@ -419,7 +421,7 @@ else
     --command=node \
     --args=server.js \
     --cpu=4 \
-    --memory=8Gi \
+    --memory=16Gi \
     --task-timeout=24h \
     --max-retries=0 \
     --tasks=1 \

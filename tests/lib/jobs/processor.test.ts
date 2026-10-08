@@ -116,6 +116,10 @@ vi.mock("@/lib/jobs/video-downloader", () => ({
   downloadFullVideoToGcs: vi.fn(),
 }));
 
+vi.mock("@/lib/jobs/worker-heartbeat", () => ({
+  startWorkerHeartbeat: () => () => {},
+}));
+
 // Mock AI processor (unused in new processor but imported)
 vi.mock("@/lib/jobs/ai-processor", () => ({
   generateAiSuggestions: vi.fn(),
