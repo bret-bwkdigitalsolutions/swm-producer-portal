@@ -58,8 +58,8 @@ export const ASR_RULES: readonly AsrRule[] = [
   },
   {
     find: "the angle angle",
-    replace: "Engel Angle",
-    note: "Sunset Ep.12: 'the angle angle' is the Engel Angle show.",
+    replace: "The Engel Angle",
+    note: "Sunset Ep.12: 'the angle angle' is The Engel Angle. Keep the article and the show's title case.",
   },
   {
     find: "Jesse Hoelho",

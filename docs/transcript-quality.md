@@ -14,7 +14,7 @@ No new environment variables. Transcription still needs `DEEPGRAM_API_KEY`. Tran
 
 Nova-3 ignores a comma-joined `keyterm` value and does not accept `:weight` suffixes. The query builder repeats the param instead.
 
-After Deepgram returns, `applyAsrCorrections` (`src/lib/asr-corrections.ts`) rewrites known misspellings in the full text and in each segment **before** the transcript is stored on the job or pushed to WordPress / Transistor / WebVTT. The dictionary is the reviewed list (Hoelho/Hoila → Hawila, Pachitino → Pochettino, Norm Hitzkiss → Norm Hitzges, "the angle angle" → Engel Angle, Yuri Telemann → Youri Tielemans, Delkes/Delkis → Delkus, and the other rows in that file). Each row has a `note` citing where it was seen. Adding a row means adding a test.
+After Deepgram returns, `applyAsrCorrections` (`src/lib/asr-corrections.ts`) rewrites known misspellings in the full text and in each segment **before** the transcript is stored on the job or pushed to WordPress / Transistor / WebVTT. The dictionary is the reviewed list (Hoelho/Hoila → Hawila, Pachitino → Pochettino, Norm Hitzkiss → Norm Hitzges, "the angle angle" → The Engel Angle, Yuri Telemann → Youri Tielemans, Delkes/Delkis → Delkus, and the other rows in that file). Each row has a `note` citing where it was seen. Adding a row means adding a test.
 
 ### Existing catalog
 

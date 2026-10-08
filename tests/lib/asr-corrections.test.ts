@@ -51,7 +51,7 @@ describe("applyAsrCorrections", () => {
     expect(out).toContain("Pete Delkus");
     expect(out).not.toMatch(/\bDelkes\b|\bDelkis\b/);
     expect(out).toContain("Norm Hitzges");
-    expect(out).toContain("Engel Angle");
+    expect(out).toContain("The Engel Angle");
     expect(out).toContain("Youri Tielemans'");
     expect(out).toContain("Aston Villa");
     expect(out).toContain("Pochettino");
@@ -72,7 +72,7 @@ describe("applyAsrCorrections", () => {
 
   it("matches case-insensitively and curly apostrophes", () => {
     expect(applyAsrCorrections("on The Angle Angle today")).toBe(
-      "on Engel Angle today"
+      "on The Engel Angle today"
     );
     expect(applyAsrCorrections("Yuri Telemann’s plays")).toBe(
       "Youri Tielemans' plays"
@@ -117,6 +117,21 @@ describe("applyAsrCorrections", () => {
   it("does not replace inside a larger word", () => {
     expect(applyAsrCorrections("Scalia met Hoelahol.")).toBe("Scalia met Hoelahol.");
     expect(applyAsrCorrections("Tim Weah already")).toBe("Tim Weah already");
+  });
+
+  it("keeps the article when correcting the angle angle", () => {
+    expect(applyAsrCorrections("called it the angle angle.")).toBe(
+      "called it The Engel Angle."
+    );
+    expect(applyAsrCorrections("on The Angle Angle today")).toBe(
+      "on The Engel Angle today"
+    );
+    expect(applyAsrCorrections("THE ANGLE ANGLE podcast")).toBe(
+      "The Engel Angle podcast"
+    );
+    const fixed = applyAsrCorrections("the angle angle");
+    expect(fixed).toBe("The Engel Angle");
+    expect(applyAsrCorrections(fixed)).toBe(fixed);
   });
 
   it("fixes the SWM-190 Rhyner and Engel spellings on every show", () => {
