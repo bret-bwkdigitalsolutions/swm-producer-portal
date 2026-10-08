@@ -216,6 +216,16 @@ export const ASR_RULES: readonly AsrRule[] = [
     replace: "Mac Engel",
     note: "SWM-190: host name, surname only misspelled ('Mac Engle, Fort Worth Star Telegram').",
   },
+  {
+    find: "Mike Rhiner",
+    replace: "Mike Rhyner",
+    note: "SWM-190: Deepgram spelling of Mike Rhyner ('Hello, it's Mike Rhiner'). Full phrase only, so Rob/Carl Reiner stay.",
+  },
+  {
+    find: "Mack Engel",
+    replace: "Mac Engel",
+    note: "SWM-190: first name misspelled, surname already Engel ('Mack Engel, Fort Worth Star-Telegram').",
+  },
 ];
 
 function escapeRegExp(value: string): string {

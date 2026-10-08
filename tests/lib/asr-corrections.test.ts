@@ -131,6 +131,26 @@ describe("applyAsrCorrections", () => {
     expect(applyAsrCorrections("Mike Reiner\u2019s show")).toBe("Mike Rhyner\u2019s show");
   });
 
+  it("fixes Mike Rhiner and Mack Engel on every show", () => {
+    const raw = "Mike Rhiner sat with Mack Engel on The Engel Angle.";
+    const want = "Mike Rhyner sat with Mac Engel on The Engel Angle.";
+    expect(applyAsrCorrections(raw)).toBe(want);
+    expect(applyAsrCorrections(raw, 25)).toBe(want);
+    expect(applyAsrCorrections(want)).toBe(want);
+    expect(applyAsrCorrections("MIKE RHINER and MACK ENGEL")).toBe("Mike Rhyner and Mac Engel");
+    expect(applyAsrCorrections("Mike Rhiner\u2019s column")).toBe("Mike Rhyner\u2019s column");
+  });
+
+  it("leaves Rob Reiner and Carl Reiner unchanged", () => {
+    const raw = "directed by Rob Reiner and Carl Reiner, unlike Mike Rhiner or Mack Engel";
+    expect(applyAsrCorrections(raw)).toBe(
+      "directed by Rob Reiner and Carl Reiner, unlike Mike Rhyner or Mac Engel"
+    );
+    expect(applyAsrCorrections("ROB REINER and CARL REINER")).toBe(
+      "ROB REINER and CARL REINER"
+    );
+  });
+
   it("leaves other Reiners and partial words alone", () => {
     expect(applyAsrCorrections("directed by Rob Reiner and Carl Reiner")).toBe(
       "directed by Rob Reiner and Carl Reiner"
