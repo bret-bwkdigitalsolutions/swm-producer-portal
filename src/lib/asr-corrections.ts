@@ -191,6 +191,31 @@ export const ASR_RULES: readonly AsrRule[] = [
     replace: "mazel tov",
     note: "Clubhouse S11E2/E4: 'Masletov to those kids' is mazel tov. Not a person.",
   },
+  {
+    find: "Mike Reiner",
+    replace: "Mike Rhyner",
+    note: "SWM-190: 64 website transcript hits across 9 shows ('Hello, it's Mike Reiner of Your Dark Companion'). Rob/Carl Reiner untouched (full phrase only).",
+  },
+  {
+    find: "Engle Angle",
+    replace: "Engel Angle",
+    note: "SWM-190: Mac Engel's show name ('Fort Worth Star-Telegram, Engle Angle podcast').",
+  },
+  {
+    find: "Ingle Angle",
+    replace: "Engel Angle",
+    note: "SWM-190: same show name, second Deepgram spelling ('The Ingle Angle, Signal 51 Chronicles').",
+  },
+  {
+    find: "Mack Engle",
+    replace: "Mac Engel",
+    note: "SWM-190: host name ('Mack Engle, sports columnist extraordinaire').",
+  },
+  {
+    find: "Mac Engle",
+    replace: "Mac Engel",
+    note: "SWM-190: host name, surname only misspelled ('Mac Engle, Fort Worth Star Telegram').",
+  },
 ];
 
 function escapeRegExp(value: string): string {

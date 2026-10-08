@@ -118,4 +118,23 @@ describe("applyAsrCorrections", () => {
     expect(applyAsrCorrections("Scalia met Hoelahol.")).toBe("Scalia met Hoelahol.");
     expect(applyAsrCorrections("Tim Weah already")).toBe("Tim Weah already");
   });
+
+  it("fixes the SWM-190 Rhyner and Engel spellings on every show", () => {
+    const raw =
+      "Hello, it's Mike Reiner of Your Dark Companion. Mack Engle and Mac Engle host the Engle Angle, also heard as The Ingle Angle.";
+    const want =
+      "Hello, it's Mike Rhyner of Your Dark Companion. Mac Engel and Mac Engel host the Engel Angle, also heard as The Engel Angle.";
+    expect(applyAsrCorrections(raw)).toBe(want);
+    expect(applyAsrCorrections(raw, 25)).toBe(want);
+    expect(applyAsrCorrections(want)).toBe(want);
+    expect(applyAsrCorrections("MIKE REINER on the ingle angle")).toBe("Mike Rhyner on the Engel Angle");
+    expect(applyAsrCorrections("Mike Reiner\u2019s show")).toBe("Mike Rhyner\u2019s show");
+  });
+
+  it("leaves other Reiners and partial words alone", () => {
+    expect(applyAsrCorrections("directed by Rob Reiner and Carl Reiner")).toBe(
+      "directed by Rob Reiner and Carl Reiner"
+    );
+    expect(applyAsrCorrections("Smike Reinert met Engleton")).toBe("Smike Reinert met Engleton");
+  });
 });
