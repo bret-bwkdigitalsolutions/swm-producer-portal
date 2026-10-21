@@ -10,6 +10,7 @@ import {
   WordPressBlockedError,
 } from "./types";
 import { ContentType } from "@/lib/constants";
+import { callPortalWordPress, shouldProxyWordPress } from "@/lib/wordpress/portal-proxy";
 import { withRetry } from "./retry";
 
 // Fail fast instead of hanging if the WP host is unreachable from the server
@@ -204,6 +205,9 @@ export async function getShows(): Promise<WpShow[]> {
 }
 
 export async function getShow(id: number): Promise<WpShow> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<WpShow>({ op: "getShow", id });
+  }
   const show = await wpFetch<WpShow>(`/swm_show/${id}`);
   show.title.rendered = decodeHtmlEntities(show.title.rendered);
   return show;
@@ -337,6 +341,13 @@ export async function findEpisodeByTitleOrSlug(
   title: string,
   wpShowId: number
 ): Promise<WordPressEpisodeMatch | null> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<WordPressEpisodeMatch | null>({
+      op: "findEpisode",
+      title,
+      wpShowId,
+    });
+  }
   const slug = toWordPressSlug(title);
   const fields = "id,title,slug,link,meta";
   const show = `meta_key=parent_show_id&meta_value=${encodeURIComponent(String(wpShowId))}`;
@@ -366,6 +377,12 @@ export async function getLatestEpisodeNumbers(
   wpShowId: number
 ): Promise<{ episodeNumber: number | null; seasonNumber: number | null }> {
   try {
+    if (shouldProxyWordPress()) {
+      return await callPortalWordPress<{
+        episodeNumber: number | null;
+        seasonNumber: number | null;
+      }>({ op: "latestEpisodeNumbers", wpShowId });
+    }
     const posts = await wpFetch<WpPost[]>(
       `/swm_episode?per_page=1&orderby=date&order=desc&status=publish&_fields=id,meta&meta_key=parent_show_id&meta_value=${wpShowId}`
     );
@@ -392,6 +409,13 @@ export async function getRecentEpisodeTitles(
   count: number = 10
 ): Promise<string[]> {
   try {
+    if (shouldProxyWordPress()) {
+      return await callPortalWordPress<string[]>({
+        op: "recentEpisodeTitles",
+        wpShowId,
+        count,
+      });
+    }
     const posts = await wpFetch<WpPost[]>(
       `/swm_episode?per_page=${count}&orderby=date&order=desc&status=publish&_fields=id,title&meta_key=parent_show_id&meta_value=${wpShowId}`
     );
@@ -405,6 +429,15 @@ export async function uploadMedia(
   file: File,
   filename?: string
 ): Promise<WpMediaUploadResponse> {
+  if (shouldProxyWordPress()) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    return callPortalWordPress<WpMediaUploadResponse>({
+      op: "uploadMedia",
+      filename: filename ?? file.name,
+      contentType: file.type || "application/octet-stream",
+      dataBase64: bytes.toString("base64"),
+    });
+  }
   const formData = new FormData();
   formData.append("file", file, filename ?? file.name);
 
@@ -451,6 +484,9 @@ export async function createPost(
   contentType: string,
   payload: WpCreatePostPayload
 ): Promise<WpPost> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<WpPost>({ op: "createPost", contentType, payload });
+  }
   const postType = POST_TYPE_MAP[contentType];
   if (!postType) {
     throw new Error(`Unknown content type: ${contentType}`);
@@ -481,6 +517,14 @@ export async function updatePost(
   postId: number,
   payload: Partial<WpCreatePostPayload>
 ): Promise<WpPost> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<WpPost>({
+      op: "updatePost",
+      contentType,
+      postId,
+      payload,
+    });
+  }
   const postType = POST_TYPE_MAP[contentType];
   if (!postType) {
     throw new Error(`Unknown content type: ${contentType}`);

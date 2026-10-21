@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getTransistorApiKey, getYouTubeAccessToken } from "@/lib/analytics/credentials";
+import { callPortalWordPress, shouldProxyWordPress } from "@/lib/wordpress/portal-proxy";
 
 const YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3";
 const TRANSISTOR_API_URL = "https://api.transistor.fm/v1";
@@ -190,6 +191,39 @@ async function transistorTier(
 }
 
 async function wpTier(
+  tier: 1 | 2 | 3 | 4,
+  postId: string,
+  ctx: CheckCtx,
+): Promise<VerificationIssue[]> {
+  return websiteVerificationIssues(tier, postId, ctx);
+}
+
+/**
+ * Website verification. On a Cloud Run worker this is executed by the portal
+ * so the firewall sees the portal's fixed IP. The public page check is
+ * included: that host blocks the worker too.
+ */
+export async function websiteVerificationIssues(
+  tier: 1 | 2 | 3 | 4,
+  postId: string,
+  ctx: CheckCtx,
+): Promise<VerificationIssue[]> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<VerificationIssue[]>({
+      op: "verifyEpisode",
+      tier,
+      postId,
+      wpShowId: ctx.wpShowId,
+      expectedTitle: ctx.expectedTitle,
+      isLiveRecording: ctx.isLiveRecording,
+      isPremium: ctx.isPremium,
+    });
+  }
+  return websiteVerificationIssuesFromWordPress(tier, postId, ctx);
+}
+
+/** Direct WordPress read. The portal route calls this, not the worker proxy. */
+export async function websiteVerificationIssuesFromWordPress(
   tier: 1 | 2 | 3 | 4,
   postId: string,
   ctx: CheckCtx,

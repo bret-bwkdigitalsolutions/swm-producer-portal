@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock server-only to avoid import error in test env
 vi.mock("server-only", () => ({}));
@@ -18,6 +18,7 @@ import {
   getTaxonomyTerms,
   uploadMedia,
   createPost,
+  updatePost,
   findEpisodeByTitleOrSlug,
   wpAuthorizationHeader,
   WP_BLOCKED_RETRY_DELAY_MS,
@@ -462,5 +463,131 @@ describe("findEpisodeByTitleOrSlug", () => {
       );
 
     await expect(findEpisodeByTitleOrSlug("Tom & Jerry", 42)).resolves.toBeNull();
+  });
+});
+
+describe("video worker WordPress proxy", () => {
+  const previousWorker = process.env.VIDEO_WORKER;
+  const previousUrl = process.env.NEXTAUTH_URL;
+  const previousSecret = process.env.JOB_PROCESSING_SECRET;
+
+  function enableWorker() {
+    process.env.VIDEO_WORKER = "1";
+    process.env.NEXTAUTH_URL = "https://portal.example.com";
+    process.env.JOB_PROCESSING_SECRET = "job-secret";
+  }
+
+  function restoreWorkerEnv() {
+    if (previousWorker === undefined) delete process.env.VIDEO_WORKER;
+    else process.env.VIDEO_WORKER = previousWorker;
+    if (previousUrl === undefined) delete process.env.NEXTAUTH_URL;
+    else process.env.NEXTAUTH_URL = previousUrl;
+    if (previousSecret === undefined) delete process.env.JOB_PROCESSING_SECRET;
+    else process.env.JOB_PROCESSING_SECRET = previousSecret;
+  }
+
+  function portalResponse(result: unknown, status = 200) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve(JSON.stringify({ ok: true, result })),
+    };
+  }
+
+  afterEach(() => {
+    restoreWorkerEnv();
+  });
+
+  it("sends show lookup to the portal with the job secret and does not call WordPress", async () => {
+    enableWorker();
+    mockFetch.mockResolvedValueOnce(
+      portalResponse({ id: 21, title: { rendered: "Your Dark Companion" }, slug: "ydc" })
+    );
+
+    const show = await getShow(21);
+
+    expect(show.id).toBe(21);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("https://portal.example.com/api/jobs/wordpress");
+    expect(String(mockFetch.mock.calls[0][0])).not.toContain("/wp-json/");
+    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer job-secret");
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ op: "getShow", id: 21 });
+  });
+
+  it("sends episode create and update through the portal", async () => {
+    enableWorker();
+    mockFetch
+      .mockResolvedValueOnce(portalResponse({ id: 10, title: { rendered: "Test" }, link: "/test" }))
+      .mockResolvedValueOnce(portalResponse({ id: 10, title: { rendered: "Test" }, link: "/test" }));
+
+    await createPost("episode", { title: "Episode 1", status: "publish" });
+    await updatePost("episode", 10, { title: "Episode 1 (updated)" });
+
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({
+      op: "createPost",
+      contentType: "episode",
+      payload: { title: "Episode 1", status: "publish" },
+    });
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toMatchObject({
+      op: "updatePost",
+      contentType: "episode",
+      postId: 10,
+    });
+    expect(mockFetch.mock.calls[0][0]).toBe("https://portal.example.com/api/jobs/wordpress");
+    expect(mockFetch.mock.calls[1][0]).toBe("https://portal.example.com/api/jobs/wordpress");
+  });
+
+  it("sends the featured image as base64 instead of posting it to WordPress", async () => {
+    enableWorker();
+    mockFetch.mockResolvedValueOnce(
+      portalResponse({ id: 42, source_url: "https://example.com/img.jpg", title: { rendered: "img" } })
+    );
+    const file = new File(["image-bytes"], "thumb.jpg", { type: "image/jpeg" });
+
+    const result = await uploadMedia(file, "thumb.jpg");
+
+    expect(result.id).toBe(42);
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(sent.op).toBe("uploadMedia");
+    expect(sent.filename).toBe("thumb.jpg");
+    expect(Buffer.from(sent.dataBase64, "base64").toString()).toBe("image-bytes");
+    expect(mockFetch.mock.calls[0][1].body).not.toBeInstanceOf(FormData);
+  });
+
+  it("rebuilds a WordPressBlockedError from the portal response", async () => {
+    enableWorker();
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            ok: false,
+            error: {
+              name: "WordPressBlockedError",
+              message: "WordPress blocked the request (HTTP 200): <html>",
+              status: 200,
+              endpoint: "/swm_show/21",
+              body: "<html>",
+            },
+          })
+        ),
+    });
+
+    const error = await getShow(21).then(
+      () => null,
+      (caught: unknown) => caught
+    );
+    expect(error).toBeInstanceOf(WordPressBlockedError);
+    expect((error as WordPressBlockedError).status).toBe(200);
+    expect((error as WordPressBlockedError).body).toBe("<html>");
+  });
+
+  it("does not call WordPress when the worker is missing the portal secret", async () => {
+    enableWorker();
+    delete process.env.JOB_PROCESSING_SECRET;
+
+    await expect(getShow(21)).rejects.toThrow(/JOB_PROCESSING_SECRET/);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
