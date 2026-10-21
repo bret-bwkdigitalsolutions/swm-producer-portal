@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getTransistorApiKey, getYouTubeAccessToken } from "@/lib/analytics/credentials";
+import { callPortalWordPress, shouldProxyWordPress } from "@/lib/wordpress/portal-proxy";
 
 const YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3";
 const TRANSISTOR_API_URL = "https://api.transistor.fm/v1";
@@ -7,6 +8,20 @@ const TRANSISTOR_API_URL = "https://api.transistor.fm/v1";
 /** Abort signal with a 30-second timeout for platform API calls. */
 function fetchTimeout(): AbortSignal {
   return AbortSignal.timeout(30_000);
+}
+
+/**
+ * verifyEpisode runs inside the worker's 90s portal abort. The WordPress
+ * read and the public HEAD share this budget so the two calls cannot add
+ * up to that abort.
+ */
+export const VERIFY_EPISODE_BUDGET_MS = 60_000;
+const VERIFY_FETCH_CAP_MS = 30_000;
+
+export function verificationSignal(startedAt: number): AbortSignal {
+  const remaining = VERIFY_EPISODE_BUDGET_MS - (Date.now() - startedAt);
+  const ms = Math.max(1, Math.min(VERIFY_FETCH_CAP_MS, remaining));
+  return AbortSignal.timeout(ms);
 }
 
 function normalizeTitle(title: string): string {
@@ -53,9 +68,12 @@ export const TIER_LABELS: Record<1 | 2 | 3 | 4, string> = {
 /**
  * HEAD-check a URL. Considers 2xx and 3xx as reachable. Used for tier 3 & 4.
  */
-async function checkUrlReachable(url: string): Promise<{ ok: boolean; status: number | null }> {
+async function checkUrlReachable(
+  url: string,
+  signal: AbortSignal = fetchTimeout(),
+): Promise<{ ok: boolean; status: number | null }> {
   try {
-    const res = await fetch(url, { method: "HEAD", redirect: "follow", signal: fetchTimeout() });
+    const res = await fetch(url, { method: "HEAD", redirect: "follow", signal });
     return { ok: res.ok, status: res.status };
   } catch {
     return { ok: false, status: null };
@@ -194,14 +212,48 @@ async function wpTier(
   postId: string,
   ctx: CheckCtx,
 ): Promise<VerificationIssue[]> {
+  return websiteVerificationIssues(tier, postId, ctx);
+}
+
+/**
+ * Website verification. On a Cloud Run worker this is executed by the portal
+ * so the firewall sees the portal's fixed IP. The public page check is
+ * included: that host blocks the worker too.
+ */
+export async function websiteVerificationIssues(
+  tier: 1 | 2 | 3 | 4,
+  postId: string,
+  ctx: CheckCtx,
+): Promise<VerificationIssue[]> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<VerificationIssue[]>({
+      op: "verifyEpisode",
+      tier,
+      postId,
+      wpShowId: ctx.wpShowId,
+      expectedTitle: ctx.expectedTitle,
+      isLiveRecording: ctx.isLiveRecording,
+      isPremium: ctx.isPremium,
+    });
+  }
+  return websiteVerificationIssuesFromWordPress(tier, postId, ctx);
+}
+
+/** Direct WordPress read. The portal route calls this, not the worker proxy. */
+export async function websiteVerificationIssuesFromWordPress(
+  tier: 1 | 2 | 3 | 4,
+  postId: string,
+  ctx: CheckCtx,
+): Promise<VerificationIssue[]> {
   const wpApiUrl = process.env.WP_API_URL;
   if (!wpApiUrl) {
     return [{ platform: "website", field: "api_check", expected: "accessible", actual: "WP_API_URL not configured" }];
   }
+  const startedAt = Date.now();
   const wpAuth = "Basic " + Buffer.from(`${process.env.WP_APP_USER}:${process.env.WP_APP_PASSWORD}`).toString("base64");
   const res = await fetch(
     `${wpApiUrl}/swm_episode/${postId}?_fields=id,title,featured_media,status,link`,
-    { headers: { Authorization: wpAuth }, signal: fetchTimeout() }
+    { headers: { Authorization: wpAuth }, signal: verificationSignal(startedAt) }
   );
   if (!res.ok) {
     return [{ platform: "website", field: "api_check", expected: "accessible", actual: `API ${res.status}` }];
@@ -227,7 +279,7 @@ async function wpTier(
   if (tier === 4 && post.link) {
     // Skip public URL check for future-dated posts — they 404 by design
     if (post.status !== "future") {
-      const reach = await checkUrlReachable(post.link);
+      const reach = await checkUrlReachable(post.link, verificationSignal(startedAt));
       if (!reach.ok) {
         issues.push({ platform: "website", field: "public_url", expected: "200", actual: `${reach.status ?? "unreachable"}` });
       }

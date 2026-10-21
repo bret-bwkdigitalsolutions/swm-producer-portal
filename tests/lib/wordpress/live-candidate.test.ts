@@ -326,6 +326,57 @@ describe("findLiveStreamCandidate", () => {
     await expect(findLiveStreamCandidate(21, "2026-05-20")).resolves.toBeNull();
     expect(console.warn).toHaveBeenCalled();
   });
+
+  it("asks the portal for the live candidate when running as the video worker", async () => {
+    const previousWorker = process.env.VIDEO_WORKER;
+    const previousUrl = process.env.NEXTAUTH_URL;
+    const previousSecret = process.env.JOB_PROCESSING_SECRET;
+    process.env.VIDEO_WORKER = "1";
+    process.env.NEXTAUTH_URL = "https://portal.example.com";
+    process.env.JOB_PROCESSING_SECRET = "job-secret";
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          ok: true,
+          result: {
+            ok: true,
+            candidate: {
+              id: 55,
+              title: "Live",
+              youtube_id: "vid",
+              date: "2026-05-20",
+            },
+          },
+        }),
+    });
+
+    try {
+      await expect(findLiveStreamCandidate(21, "2026-05-20", "vid")).resolves.toMatchObject({
+        id: 55,
+        youtube_id: "vid",
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        "https://portal.example.com/api/jobs/wordpress"
+      );
+      expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer job-secret");
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({
+        op: "liveCandidate",
+        wpShowId: 21,
+        airDate: "2026-05-20",
+        youtubeId: "vid",
+      });
+    } finally {
+      if (previousWorker === undefined) delete process.env.VIDEO_WORKER;
+      else process.env.VIDEO_WORKER = previousWorker;
+      if (previousUrl === undefined) delete process.env.NEXTAUTH_URL;
+      else process.env.NEXTAUTH_URL = previousUrl;
+      if (previousSecret === undefined) delete process.env.JOB_PROCESSING_SECRET;
+      else process.env.JOB_PROCESSING_SECRET = previousSecret;
+    }
+  });
 });
 
 describe("live stream replacement note", () => {

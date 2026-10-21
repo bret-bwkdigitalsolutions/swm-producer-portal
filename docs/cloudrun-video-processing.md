@@ -20,6 +20,8 @@ Still true: do not start work from a GCS finalize event. Analyze and distribute 
 
 The worker is the same Next.js standalone image. Cloud Run overrides the command to `node server.js` so `scripts/migrate.mjs` does not run on every task. `instrumentation.ts` sees `VIDEO_WORKER=1`, runs the one job, and exits. It does not run the stuck-job sweep.
 
+The worker does not call WordPress itself. Cloud Run's egress address changes every execution, and the site firewall blocks it. The Railway portal's address does not change. Show lookup, live-candidate dedup, episode create and update (including the featured image), the post-failure episode search, analyze's recent-title and episode-number reads, and website verification are sent to `POST /api/jobs/wordpress` on `NEXTAUTH_URL` with `Authorization: Bearer $JOB_PROCESSING_SECRET` — the same secret as `/api/jobs/process`. The portal makes the WordPress request.
+
 Status is the same Postgres rows the portal already polls. The worker writes `metadata.workerHeartbeat` every minute. Railway's startup sweep and the analyze poller leave a Cloud Run job alone while that heartbeat is under 20 minutes old. A dead task is marked failed after that. The job task timeout is 24 hours (the platform allows up to 168). The worker stops itself at 23 hours so it can record the failure before the platform kills the container. Task retries are 0, so a lost YouTube response cannot create a second video by itself. A manual retry still skips platforms already marked completed. If YouTube accepted the upload and the row was not updated, a manual retry can still duplicate that video. That race exists on Railway today. This change does not rewrite the YouTube upload to use `Content-Range` resume.
 
 Auth is two service accounts:
@@ -50,7 +52,7 @@ Then add secret versions (the script creates the secrets empty and never reads t
 printf '%s' "$DATABASE_URL" | gcloud secrets versions add swm-video-database-url --data-file=- --project=swm-producer-portal
 ```
 
-Repeat for `swm-video-google-client-id`, `swm-video-google-client-secret`, `swm-video-deepgram-api-key`, `swm-video-anthropic-api-key`, `swm-video-resend-api-key`, `swm-video-wp-api-url`, `swm-video-wp-app-user`, and `swm-video-wp-app-password`. Add `swm-video-youtube-cookies` only if yt-dlp needs it.
+Repeat for `swm-video-google-client-id`, `swm-video-google-client-secret`, `swm-video-deepgram-api-key`, `swm-video-anthropic-api-key`, `swm-video-resend-api-key`, `swm-video-wp-api-url`, `swm-video-wp-app-user`, `swm-video-wp-app-password`, and `swm-video-job-processing-secret` (the portal's `JOB_PROCESSING_SECRET`, so the worker can call `/api/jobs/wordpress`). Add `swm-video-youtube-cookies` only if yt-dlp needs it.
 
 Build and push the image after this commit is on `main` (or from the commit you intend to run). The script does not build.
 
@@ -115,7 +117,7 @@ The staging job cannot be reused. Create a second job and a second secret set wi
   --signer-sa "THE_CLIENT_EMAIL_INSIDE_GCS_CREDENTIALS_JSON"
 ```
 
-3. Add versions of `swm-video-prod-database-url`, `swm-video-prod-google-client-id`, `swm-video-prod-google-client-secret`, `swm-video-prod-deepgram-api-key`, `swm-video-prod-anthropic-api-key`, `swm-video-prod-resend-api-key`, `swm-video-prod-wp-api-url`, `swm-video-prod-wp-app-user`, and `swm-video-prod-wp-app-password`. Add `swm-video-prod-youtube-cookies` only if yt-dlp needs it. The database URL is the production Railway URL plus `?sslmode=no-verify`.
+3. Add versions of `swm-video-prod-database-url`, `swm-video-prod-google-client-id`, `swm-video-prod-google-client-secret`, `swm-video-prod-deepgram-api-key`, `swm-video-prod-anthropic-api-key`, `swm-video-prod-resend-api-key`, `swm-video-prod-wp-api-url`, `swm-video-prod-wp-app-user`, `swm-video-prod-wp-app-password`, and `swm-video-prod-job-processing-secret` (the production portal's `JOB_PROCESSING_SECRET`). Add `swm-video-prod-youtube-cookies` only if yt-dlp needs it. The database URL is the production Railway URL plus `?sslmode=no-verify`.
 4. Push the image you intend to run, then create the job. The same invoker key can run both jobs; pass `--create-invoker-key` only if production does not already have `CLOUD_RUN_INVOKER_CREDENTIALS_JSON`.
 
 ```bash

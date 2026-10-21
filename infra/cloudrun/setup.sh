@@ -329,6 +329,7 @@ REQUIRED_SECRETS=(
   "${SECRET_PREFIX}-wp-api-url:WP_API_URL"
   "${SECRET_PREFIX}-wp-app-user:WP_APP_USER"
   "${SECRET_PREFIX}-wp-app-password:WP_APP_PASSWORD"
+  "${SECRET_PREFIX}-job-processing-secret:JOB_PROCESSING_SECRET"
 )
 OPTIONAL_SECRET="${SECRET_PREFIX}-youtube-cookies:YOUTUBE_COOKIES"
 

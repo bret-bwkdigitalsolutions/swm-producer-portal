@@ -58,3 +58,24 @@ export class WpConfigError extends WpApiError {
     this.name = "WpConfigError";
   }
 }
+
+/**
+ * A 2xx response whose body is an HTML bot-check (or other interstitial)
+ * instead of JSON. `status` is the HTTP status. `body` is the first 200
+ * characters of the response, so logs and failure emails show the page
+ * without storing the whole document.
+ */
+export class WordPressBlockedError extends Error {
+  readonly status: number;
+  readonly body: string;
+  readonly endpoint: string;
+
+  constructor(status: number, body: string, endpoint: string) {
+    const snippet = body.slice(0, 200);
+    super(`WordPress blocked the request (HTTP ${status}): ${snippet}`);
+    this.name = "WordPressBlockedError";
+    this.status = status;
+    this.body = snippet;
+    this.endpoint = endpoint;
+  }
+}
