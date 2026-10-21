@@ -7,6 +7,7 @@ import {
   WpCreatePostPayload,
   WpApiError,
   WpConfigError,
+  WordPressBlockedError,
 } from "./types";
 import { ContentType } from "@/lib/constants";
 import { withRetry } from "./retry";
@@ -14,6 +15,12 @@ import { withRetry } from "./retry";
 // Fail fast instead of hanging if the WP host is unreachable from the server
 // (e.g. an egress/WAF block that only affects the Railway host, not a browser).
 const WP_FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * A bot-check page is not a blip. Quick back-to-back retries hit the same
+ * challenge. Wait once, then try the request a single extra time.
+ */
+export const WP_BLOCKED_RETRY_DELAY_MS = 5_000;
 
 /** Decode HTML numeric & named entities that WordPress injects into rendered titles. */
 export function decodeHtmlEntities(html: string): string {
@@ -105,40 +112,71 @@ async function wpFetchOnce<T>(
     );
   }
 
-  return response.json();
+  const body = await response.text();
+  const contentType = response.headers?.get?.("content-type") ?? "";
+  // A bot check answers 200 with an HTML interstitial. response.json() then
+  // throws "Unexpected token <", which looks like a transient parse error.
+  if (isHtmlBlockedBody(contentType, body)) {
+    throw new WordPressBlockedError(response.status, body, endpoint);
+  }
+
+  return JSON.parse(body) as T;
 }
+
+function isHtmlBlockedBody(contentType: string, body: string): boolean {
+  if (/html/i.test(contentType)) return true;
+  const leading = body.replace(/^\uFEFF/, "").trimStart();
+  return leading.startsWith("<");
+}
+
+const sleep = (ms: number) =>
+  ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 async function wpFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const method = (options.method ?? "GET").toUpperCase();
+  const execute = () => wpFetchOnce<T>(endpoint, options);
 
-  // Only retry idempotent reads. Writes (uploads, post creation) must never be
-  // auto-retried, or a "failed" request that actually landed could double-post.
-  if (method !== "GET") {
-    return wpFetchOnce<T>(endpoint, options);
+  try {
+    // Only retry idempotent reads. Writes (uploads, post creation) must not
+    // be auto-retried, or a request that actually landed could double-post.
+    // HTML bot-check pages are handled below for every method: the edge
+    // answered, so WordPress did not apply the write.
+    if (method !== "GET") {
+      return await execute();
+    }
+
+    return await withRetry<T>(execute, {
+      retries: 2,
+      delayMs: 500,
+      onError: (error, attempt) => {
+        if (error instanceof WordPressBlockedError) return;
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(
+          `[wp] GET ${endpoint} failed (attempt ${attempt}/3): ${msg}`
+        );
+      },
+      // Retry only transient failures: network/timeout (status 0), rate limiting
+      // (429), and server errors (5xx). A 4xx (404/401/403) is permanent.
+      // Missing app credentials are a WpConfigError (also status 0) and must
+      // not be retried. A bot-check page is not one of these quick retries.
+      shouldRetry: (error) => {
+        if (error instanceof WordPressBlockedError) return false;
+        if (error instanceof WpConfigError) return false;
+        if (!(error instanceof WpApiError)) return true;
+        return error.status === 0 || error.status === 429 || error.status >= 500;
+      },
+    });
+  } catch (error) {
+    if (!(error instanceof WordPressBlockedError)) throw error;
+    console.error(
+      `[wp] ${method} ${endpoint} returned an HTML block page (HTTP ${error.status}); retrying once in ${WP_BLOCKED_RETRY_DELAY_MS}ms`
+    );
+    await sleep(WP_BLOCKED_RETRY_DELAY_MS);
+    return execute();
   }
-
-  return withRetry<T>(() => wpFetchOnce<T>(endpoint, options), {
-    retries: 2,
-    delayMs: 500,
-    onError: (error, attempt) => {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error(
-        `[wp] GET ${endpoint} failed (attempt ${attempt}/3): ${msg}`
-      );
-    },
-    // Retry only transient failures: network/timeout (status 0), rate limiting
-    // (429), and server errors (5xx). A 4xx (404/401/403) is permanent.
-    // Missing app credentials are a WpConfigError (also status 0) and must
-    // not be retried.
-    shouldRetry: (error) => {
-      if (error instanceof WpConfigError) return false;
-      if (!(error instanceof WpApiError)) return true;
-      return error.status === 0 || error.status === 429 || error.status >= 500;
-    },
-  });
 }
 
 export async function getShows(): Promise<WpShow[]> {
@@ -228,6 +266,97 @@ export async function searchEpisodesByTitle(
   } catch {
     return [];
   }
+}
+
+export interface WordPressEpisodeMatch {
+  id: number;
+  link: string;
+  slug: string;
+  title: string;
+}
+
+interface WpEpisodeLookupHit {
+  id: number;
+  link?: string;
+  slug?: string;
+  title?: { rendered?: string };
+  meta?: { parent_show_id?: number | string };
+}
+
+/** WordPress `sanitize_title` approximation: lowercase, punctuation to hyphens. */
+function toWordPressSlug(title: string): string {
+  return title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 200);
+}
+
+function episodeBelongsToShow(post: WpEpisodeLookupHit, wpShowId: number): boolean {
+  const raw = post.meta?.parent_show_id;
+  if (raw == null || raw === "") return true;
+  const id = Number(raw);
+  return Number.isFinite(id) && id === wpShowId;
+}
+
+function episodeMatchesQuery(
+  post: WpEpisodeLookupHit,
+  title: string,
+  slug: string,
+  wpShowId: number
+): boolean {
+  if (!post.id || !episodeBelongsToShow(post, wpShowId)) return false;
+  const wanted = title.trim().toLowerCase();
+  const rendered = decodeHtmlEntities(post.title?.rendered ?? "")
+    .trim()
+    .toLowerCase();
+  if (wanted && rendered === wanted) return true;
+  return slug.length > 0 && post.slug === slug;
+}
+
+function toEpisodeMatch(
+  post: WpEpisodeLookupHit,
+  fallbackTitle: string
+): WordPressEpisodeMatch {
+  return {
+    id: post.id,
+    link: post.link ?? "",
+    slug: post.slug ?? "",
+    title: decodeHtmlEntities(post.title?.rendered ?? fallbackTitle),
+  };
+}
+
+/**
+ * Find an episode on this show by its title or the slug WordPress would
+ * assign from that title. Drafts and scheduled posts count: a publish that
+ * looked like it failed may already be stored.
+ */
+export async function findEpisodeByTitleOrSlug(
+  title: string,
+  wpShowId: number
+): Promise<WordPressEpisodeMatch | null> {
+  const slug = toWordPressSlug(title);
+  const fields = "id,title,slug,link,meta";
+  const show = `meta_key=parent_show_id&meta_value=${encodeURIComponent(String(wpShowId))}`;
+
+  const pick = (posts: WpEpisodeLookupHit[]) =>
+    posts.find((post) => episodeMatchesQuery(post, title, slug, wpShowId));
+
+  if (slug) {
+    const bySlug = await wpFetch<WpEpisodeLookupHit[]>(
+      `/swm_episode?slug=${encodeURIComponent(slug)}&status=any&per_page=5&_fields=${fields}&${show}`
+    );
+    const slugMatch = Array.isArray(bySlug) ? pick(bySlug) : undefined;
+    if (slugMatch) return toEpisodeMatch(slugMatch, title);
+  }
+
+  const byTitle = await wpFetch<WpEpisodeLookupHit[]>(
+    `/swm_episode?search=${encodeURIComponent(title.trim().slice(0, 100))}&status=any&per_page=20&_fields=${fields}&${show}`
+  );
+  const titleMatch = Array.isArray(byTitle) ? pick(byTitle) : undefined;
+  return titleMatch ? toEpisodeMatch(titleMatch, title) : null;
 }
 
 /**

@@ -14,6 +14,7 @@ import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { gcsObjectExists, generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
 import { toAirDate } from "@/lib/wordpress/live-candidate";
+import { findEpisodeByTitleOrSlug } from "@/lib/wordpress/client";
 import { downloadVideoToGcs, downloadFullVideoToGcs } from "./video-downloader";
 import { downloadGcsObjectToFile } from "./gcs-download";
 import {
@@ -977,26 +978,52 @@ async function processJobInner(
         ? (await liveRecordingAirDateForVideo(enteredLiveId, job.wpShowId)) ??
           toAirDate()
         : undefined;
-      const result = await publishToWordPress({
-        wpShowId: job.wpShowId,
-        title: job.title,
-        description,
-        chapters: chapters || undefined,
-        audioDurationSeconds:
-          typeof audioDuration === "number" ? audioDuration : undefined,
-        youtubeUrl,
-        thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
-        transcript: (updatedMetadata.transcriptDisplay as string) || (updatedMetadata.transcript as string) || undefined,
-        transcriptVtt: (updatedMetadata.transcriptVtt as string) || undefined,
-        status: wpStatus,
-        scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
-        airDate: enteredLiveId ? enteredLiveAirDate : liveRecording?.airDate,
-        liveRecordingYoutubeId: enteredLiveId
-          ? enteredLiveId
-          : liveRecording?.youtubeVideoId,
-        portalUserId: job.userId,
-        isPremiumOnly: isPremium,
-      });
+      let result: Awaited<ReturnType<typeof publishToWordPress>>;
+      try {
+        result = await publishToWordPress({
+          wpShowId: job.wpShowId,
+          title: job.title,
+          description,
+          chapters: chapters || undefined,
+          audioDurationSeconds:
+            typeof audioDuration === "number" ? audioDuration : undefined,
+          youtubeUrl,
+          thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
+          transcript: (updatedMetadata.transcriptDisplay as string) || (updatedMetadata.transcript as string) || undefined,
+          transcriptVtt: (updatedMetadata.transcriptVtt as string) || undefined,
+          status: wpStatus,
+          scheduledDate: wpStatus === "future" ? scheduledAt : undefined,
+          airDate: enteredLiveId ? enteredLiveAirDate : liveRecording?.airDate,
+          liveRecordingYoutubeId: enteredLiveId
+            ? enteredLiveId
+            : liveRecording?.youtubeVideoId,
+          portalUserId: job.userId,
+          isPremiumOnly: isPremium,
+        });
+      } catch (error) {
+        // The create may have landed and the response was a bot-check page.
+        // A matching post means the website step succeeded; skip the alert.
+        const existing = await findEpisodeByTitleOrSlug(job.title, job.wpShowId).catch(
+          (searchError) => {
+            console.error(
+              "[processor] Could not verify whether the WordPress episode exists:",
+              searchError
+            );
+            return null;
+          }
+        );
+        if (!existing) throw error;
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error(
+          `[processor] WordPress publish failed (${reason}); post ${existing.id} matches this episode, marking website succeeded.`
+        );
+        result = {
+          postId: existing.id,
+          postUrl: existing.link,
+          supersedesLivePostId: null,
+          supersedeDropped: false,
+        };
+      }
 
       if (result.postUrl) {
         await applyTransistorWebsiteLinks(result.postUrl);
@@ -1052,6 +1079,7 @@ async function processJobInner(
           status: "completed",
           externalId: String(result.postId),
           externalUrl: result.postUrl,
+          error: null,
           completedAt: new Date(),
         },
       });
