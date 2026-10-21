@@ -111,7 +111,31 @@ describe("POST /api/jobs/wordpress", () => {
       request({ op: "findEpisode", title: "Episode 1", wpShowId: 21 }, `Bearer ${SECRET}`)
     );
     expect((await found.json()).result.id).toBe(9);
-    expect(mockFindEpisode).toHaveBeenCalledWith("Episode 1", 21);
+    expect(mockFindEpisode).toHaveBeenCalledWith("Episode 1", 21, {
+      jobStartedAt: null,
+      youtubeVideoId: null,
+      youtubeVideoUrl: null,
+    });
+
+    const foundWithIdentity = await POST(
+      request(
+        {
+          op: "findEpisode",
+          title: "Episode 1",
+          wpShowId: 21,
+          jobStartedAt: "2026-10-21T18:00:00.000Z",
+          youtubeVideoId: "abcdefghijk",
+          youtubeVideoUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+        },
+        `Bearer ${SECRET}`
+      )
+    );
+    expect((await foundWithIdentity.json()).result.id).toBe(9);
+    expect(mockFindEpisode).toHaveBeenLastCalledWith("Episode 1", 21, {
+      jobStartedAt: "2026-10-21T18:00:00.000Z",
+      youtubeVideoId: "abcdefghijk",
+      youtubeVideoUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
   });
 
   it("reads recent titles and the latest episode numbers for analysis", async () => {

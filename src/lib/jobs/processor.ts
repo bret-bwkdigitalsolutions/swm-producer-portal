@@ -1003,7 +1003,11 @@ async function processJobInner(
       } catch (error) {
         // The create may have landed and the response was a bot-check page.
         // A matching post means the website step succeeded; skip the alert.
-        const existing = await findEpisodeByTitleOrSlug(job.title, job.wpShowId).catch(
+        const existing = await findEpisodeByTitleOrSlug(job.title, job.wpShowId, {
+          jobStartedAt: job.createdAt,
+          youtubeVideoId,
+          youtubeVideoUrl: youtubeUrl,
+        }).catch(
           (searchError) => {
             console.error(
               "[processor] Could not verify whether the WordPress episode exists:",
@@ -1016,6 +1020,9 @@ async function processJobInner(
         const reason = error instanceof Error ? error.message : String(error);
         console.error(
           `[processor] WordPress publish failed (${reason}); post ${existing.id} matches this episode, marking website succeeded.`
+        );
+        console.error(
+          `[processor] Skipping live-post supersede for post ${existing.id}; the fallback match is an existing episode, not the create response.`
         );
         result = {
           postId: existing.id,

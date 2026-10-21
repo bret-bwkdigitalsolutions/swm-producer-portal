@@ -94,7 +94,11 @@ export async function dispatchPortalWordPress(body: unknown): Promise<unknown> {
       if (!title || wpShowId == null) {
         throw new PortalWordPressRequestError("findEpisode requires title and wpShowId");
       }
-      return findEpisodeByTitleOrSlug(title, wpShowId);
+      return findEpisodeByTitleOrSlug(title, wpShowId, {
+        jobStartedAt: typeof record.jobStartedAt === "string" ? record.jobStartedAt : null,
+        youtubeVideoId: typeof record.youtubeVideoId === "string" ? record.youtubeVideoId : null,
+        youtubeVideoUrl: typeof record.youtubeVideoUrl === "string" ? record.youtubeVideoUrl : null,
+      });
     }
     case "recentEpisodeTitles": {
       const wpShowId = positiveInt(record.wpShowId);

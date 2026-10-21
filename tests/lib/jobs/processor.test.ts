@@ -651,7 +651,11 @@ describe("processJob", () => {
 
     // Job should still be completed because YouTube succeeded
     expect(result.status).toBe("completed");
-    expect(mockFindEpisodeByTitleOrSlug).toHaveBeenCalledWith("Episode 1", 42);
+    expect(mockFindEpisodeByTitleOrSlug).toHaveBeenCalledWith("Episode 1", 42, {
+      jobStartedAt: undefined,
+      youtubeVideoId: "yt-abc",
+      youtubeVideoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
     expect(mockSendDistributionErrorNotification).toHaveBeenCalledTimes(1);
     expect(mockSendDistributionErrorNotification).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -686,7 +690,14 @@ describe("processJob", () => {
     expect(result.platformResults).toEqual([
       { platform: "website", status: "completed" },
     ]);
-    expect(mockFindEpisodeByTitleOrSlug).toHaveBeenCalledWith("Episode 1", 42);
+    expect(mockFindEpisodeByTitleOrSlug).toHaveBeenCalledWith("Episode 1", 42, {
+      jobStartedAt: undefined,
+      youtubeVideoId: "abcdefghijk",
+      youtubeVideoUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("Skipping live-post supersede for post 777")
+    );
     expect(mockPlatformUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "plat-web" },

@@ -14,12 +14,22 @@ import {
  */
 export const PORTAL_WORDPRESS_PATH = "/api/jobs/wordpress";
 
-/** Long enough for the portal's own WordPress timeout plus one blocked retry. */
-const PORTAL_WORDPRESS_TIMEOUT_MS = 90_000;
+/**
+ * The worker aborts the portal call at 90s. verifyEpisode keeps its own
+ * WordPress read and public HEAD inside a 60s budget so this abort wins
+ * only when the portal itself is stuck.
+ */
+export const PORTAL_WORDPRESS_TIMEOUT_MS = 90_000;
 
+/**
+ * Process-global count of `/api/jobs/wordpress` dispatches on this Node
+ * process. That is safe because the Railway portal never sets VIDEO_WORKER,
+ * so `shouldProxyWordPress()` stays false there. The Cloud Run worker calls
+ * the portal over HTTP and keeps its own counter in a different process.
+ */
 let portalDispatchDepth = 0;
 
-/** True while the portal is handling `/api/jobs/wordpress`. Prevents a loop. */
+/** True while this process is handling `/api/jobs/wordpress`. Prevents a loop. */
 export function isPortalDispatching(): boolean {
   return portalDispatchDepth > 0;
 }

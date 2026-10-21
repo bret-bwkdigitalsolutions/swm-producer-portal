@@ -10,7 +10,12 @@ vi.mock("@/lib/analytics/credentials", () => ({
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-import { websiteVerificationIssues } from "@/lib/jobs/verify-distribution";
+import { PORTAL_WORDPRESS_TIMEOUT_MS } from "@/lib/wordpress/portal-proxy";
+import {
+  VERIFY_EPISODE_BUDGET_MS,
+  verificationSignal,
+  websiteVerificationIssues,
+} from "@/lib/jobs/verify-distribution";
 
 const ctx = {
   jobId: "job-1",
@@ -86,5 +91,34 @@ describe("website verification", () => {
       wpShowId: 21,
       expectedTitle: "Episode 1",
     });
+    expect(mockFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("keeps verifyEpisode inside the worker's portal timeout", () => {
+    expect(VERIFY_EPISODE_BUDGET_MS).toBeLessThan(PORTAL_WORDPRESS_TIMEOUT_MS);
+    expect(PORTAL_WORDPRESS_TIMEOUT_MS).toBe(90_000);
+
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const controller = new AbortController();
+      return controller.signal;
+    });
+    try {
+      vi.setSystemTime(new Date("2026-10-21T00:00:00.000Z"));
+      const startedAt = Date.now();
+      verificationSignal(startedAt);
+      expect(timeout).toHaveBeenLastCalledWith(30_000);
+
+      vi.setSystemTime(new Date("2026-10-21T00:00:50.000Z"));
+      verificationSignal(startedAt);
+      expect(timeout).toHaveBeenLastCalledWith(10_000);
+
+      vi.setSystemTime(new Date("2026-10-21T00:01:05.000Z"));
+      verificationSignal(startedAt);
+      expect(timeout).toHaveBeenLastCalledWith(1);
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

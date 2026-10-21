@@ -298,27 +298,62 @@ describe("HTML bot-check responses", () => {
     }
   });
 
-  it("retries a blocked write once and does not quick-retry it", async () => {
+  it("does not send an HTML-prefixed 200 on POST again", async () => {
     vi.useFakeTimers();
-    mockFetch
-      .mockResolvedValueOnce(htmlResponse("<html>challenge</html>", 200))
-      .mockResolvedValueOnce(
-        jsonResponse({ id: 10, title: { rendered: "Test" }, link: "/test" })
-      );
+    mockFetch.mockResolvedValue(
+      htmlResponse(
+        '<br />\n<b>Notice</b>: Undefined index\n{"id":10,"title":{"rendered":"Movie Review"}}',
+        200,
+        "application/json"
+      )
+    );
 
     try {
-      const pending = createPost("review", {
+      const pending = createPost("episode", {
         title: "Movie Review",
         status: "publish",
       });
+      const settled = expect(pending).rejects.toMatchObject({
+        name: "WordPressBlockedError",
+        status: 200,
+      });
       await vi.advanceTimersByTimeAsync(0);
       expect(mockFetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(WP_BLOCKED_RETRY_DELAY_MS + 1_000);
+      await settled;
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls[0][1].method).toBe("POST");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a non-2xx HTML challenge once on GET and not on POST", async () => {
+    vi.useFakeTimers();
+    mockFetch.mockResolvedValue(htmlResponse("<html>challenge</html>", 403));
+
+    try {
+      const read = getShows().then(
+        () => null,
+        (error: unknown) => error
+      );
       await vi.advanceTimersByTimeAsync(500);
       expect(mockFetch).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(WP_BLOCKED_RETRY_DELAY_MS);
-      const result = await pending;
-      expect(result.id).toBe(10);
+      const readError = await read;
+      expect(readError).toBeInstanceOf(WordPressBlockedError);
+      expect((readError as WordPressBlockedError).status).toBe(403);
       expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      mockFetch.mockClear();
+      const write = createPost("episode", {
+        title: "Movie Review",
+        status: "publish",
+      });
+      const writeSettled = expect(write).rejects.toBeInstanceOf(WordPressBlockedError);
+      await vi.advanceTimersByTimeAsync(WP_BLOCKED_RETRY_DELAY_MS + 1_000);
+      await writeSettled;
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -356,20 +391,41 @@ describe("HTML bot-check responses", () => {
 });
 
 describe("findEpisodeByTitleOrSlug", () => {
+  const jobStartedAt = "2026-10-21T18:00:00.000Z";
+  const onThisJob = "2026-10-21T18:00:05";
+  const olderEpisode = "2020-01-01T00:00:00";
+
+  function episode(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 9,
+      slug: "tom-jerry",
+      link: "https://example.com/tom-jerry",
+      date_gmt: onThisJob,
+      title: { rendered: "Tom & Jerry" },
+      meta: { parent_show_id: 42 },
+      ...overrides,
+    };
+  }
+
+  function expectNoMetaQuery() {
+    for (const call of mockFetch.mock.calls) {
+      const url = String(call[0]);
+      expect(url).not.toContain("meta_key=");
+      expect(url).not.toContain("meta_value=");
+      expect(url).toContain("date_gmt");
+    }
+  }
+
   it("matches a same-show episode by slug without a title search", async () => {
     mockFetch.mockResolvedValueOnce(
       jsonResponse([
-        {
-          id: 9,
-          slug: "tom-jerry",
-          link: "https://example.com/tom-jerry",
+        episode({
           title: { rendered: "Something Else" },
-          meta: { parent_show_id: 42 },
-        },
+        }),
       ])
     );
 
-    const found = await findEpisodeByTitleOrSlug("Tom & Jerry", 42);
+    const found = await findEpisodeByTitleOrSlug("Tom & Jerry", 42, { jobStartedAt });
 
     expect(found).toEqual({
       id: 9,
@@ -381,7 +437,7 @@ describe("findEpisodeByTitleOrSlug", () => {
     const url = String(mockFetch.mock.calls[0][0]);
     expect(url).toContain("slug=tom-jerry");
     expect(url).toContain("status=any");
-    expect(url).toContain("meta_value=42");
+    expectNoMetaQuery();
   });
 
   it("falls through to an exact title match, including HTML entities", async () => {
@@ -389,17 +445,17 @@ describe("findEpisodeByTitleOrSlug", () => {
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(
         jsonResponse([
-          {
+          episode({
             id: 3,
             slug: "other",
             link: "https://example.com/other",
             title: { rendered: "Tom &amp; Jerry" },
             meta: { parent_show_id: "42" },
-          },
+          }),
         ])
       );
 
-    const found = await findEpisodeByTitleOrSlug("tom & jerry", 42);
+    const found = await findEpisodeByTitleOrSlug("tom & jerry", 42, { jobStartedAt });
 
     expect(found).toMatchObject({
       id: 3,
@@ -407,41 +463,45 @@ describe("findEpisodeByTitleOrSlug", () => {
       link: "https://example.com/other",
     });
     expect(String(mockFetch.mock.calls[1][0])).toContain("search=tom%20%26%20jerry");
+    expectNoMetaQuery();
   });
 
-  it("skips another show and ignores a partial title", async () => {
+  it("skips another show, a partial title, and an older same-title episode", async () => {
     mockFetch
       .mockResolvedValueOnce(
         jsonResponse([
-          {
+          episode({
             id: 1,
-            slug: "tom-jerry",
             link: "https://example.com/a",
-            title: { rendered: "Tom & Jerry" },
             meta: { parent_show_id: 99 },
-          },
+          }),
         ])
       )
       .mockResolvedValueOnce(
         jsonResponse([
-          {
+          episode({
             id: 2,
             slug: "tom-jerry-live",
             link: "https://example.com/b",
             title: { rendered: "Tom &amp; Jerry Live" },
-            meta: { parent_show_id: 42 },
-          },
-          {
+          }),
+          episode({
+            id: 8,
+            slug: "tom-jerry-old",
+            link: "https://example.com/old",
+            date_gmt: olderEpisode,
+          }),
+          episode({
             id: 4,
             slug: "tom-jerry-3",
             link: "https://example.com/c",
-            title: { rendered: "Tom & Jerry" },
-            meta: { parent_show_id: 42 },
-          },
+          }),
         ])
       );
 
-    await expect(findEpisodeByTitleOrSlug("Tom & Jerry", 42)).resolves.toMatchObject({
+    await expect(
+      findEpisodeByTitleOrSlug("Tom & Jerry", 42, { jobStartedAt })
+    ).resolves.toMatchObject({
       id: 4,
       link: "https://example.com/c",
     });
@@ -452,17 +512,91 @@ describe("findEpisodeByTitleOrSlug", () => {
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(
         jsonResponse([
-          {
+          episode({
             id: 2,
             slug: "unrelated",
             link: "https://example.com/b",
             title: { rendered: "A different episode" },
-            meta: { parent_show_id: 42 },
-          },
+          }),
         ])
       );
 
-    await expect(findEpisodeByTitleOrSlug("Tom & Jerry", 42)).resolves.toBeNull();
+    await expect(
+      findEpisodeByTitleOrSlug("Tom & Jerry", 42, { jobStartedAt })
+    ).resolves.toBeNull();
+  });
+
+  it("treats a missing parent_show_id as no match", async () => {
+    mockFetch.mockResolvedValue(jsonResponse([episode({ meta: {} })]));
+
+    await expect(
+      findEpisodeByTitleOrSlug("Tom & Jerry", 42, { jobStartedAt })
+    ).resolves.toBeNull();
+  });
+
+  it("rejects an older episode unless the YouTube id or URL matches", async () => {
+    const old = episode({ date_gmt: olderEpisode, date: olderEpisode });
+    mockFetch.mockResolvedValue(jsonResponse([old]));
+
+    await expect(
+      findEpisodeByTitleOrSlug("Tom & Jerry", 42, { jobStartedAt })
+    ).resolves.toBeNull();
+
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse([
+        episode({
+          date_gmt: olderEpisode,
+          meta: { parent_show_id: 42, youtube_video_id: "abcdefghijk" },
+        }),
+      ])
+    );
+    await expect(
+      findEpisodeByTitleOrSlug("Tom & Jerry", 42, {
+        jobStartedAt,
+        youtubeVideoId: "abcdefghijk",
+      })
+    ).resolves.toMatchObject({ id: 9 });
+
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse([
+        episode({
+          id: 11,
+          date_gmt: olderEpisode,
+          meta: {
+            parent_show_id: 42,
+            youtube_video_url: "https://youtu.be/abcdefghijk",
+          },
+        }),
+      ])
+    );
+    await expect(
+      findEpisodeByTitleOrSlug("Tom & Jerry", 42, {
+        jobStartedAt,
+        youtubeVideoUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+      })
+    ).resolves.toMatchObject({ id: 11 });
+  });
+
+  it("accepts a post dated exactly when the job started", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse([episode({ date_gmt: "2026-10-21T18:00:00" })])
+    );
+
+    await expect(
+      findEpisodeByTitleOrSlug("Tom & Jerry", 42, { jobStartedAt })
+    ).resolves.toMatchObject({ id: 9 });
+  });
+
+  it("does not match a same-title post that has no date and no YouTube identity", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse([episode({ date_gmt: undefined, date: undefined })])
+    );
+
+    await expect(
+      findEpisodeByTitleOrSlug("Tom & Jerry", 42, { jobStartedAt })
+    ).resolves.toBeNull();
   });
 });
 
@@ -496,6 +630,36 @@ describe("video worker WordPress proxy", () => {
 
   afterEach(() => {
     restoreWorkerEnv();
+  });
+
+  it("forwards the job start and YouTube identity when looking up an episode", async () => {
+    enableWorker();
+    const started = new Date("2026-10-21T18:00:00.000Z");
+    mockFetch.mockResolvedValueOnce(
+      portalResponse({
+        id: 9,
+        link: "https://example.com/ep",
+        slug: "episode-1",
+        title: "Episode 1",
+      })
+    );
+
+    const found = await findEpisodeByTitleOrSlug("Episode 1", 21, {
+      jobStartedAt: started,
+      youtubeVideoId: "abcdefghijk",
+      youtubeVideoUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
+
+    expect(found?.id).toBe(9);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      op: "findEpisode",
+      title: "Episode 1",
+      wpShowId: 21,
+      jobStartedAt: "2026-10-21T18:00:00.000Z",
+      youtubeVideoId: "abcdefghijk",
+      youtubeVideoUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
+    expect(mockFetch.mock.calls[0][0]).toBe("https://portal.example.com/api/jobs/wordpress");
   });
 
   it("sends show lookup to the portal with the job secret and does not call WordPress", async () => {
