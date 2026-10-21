@@ -7,13 +7,22 @@ import {
   WpCreatePostPayload,
   WpApiError,
   WpConfigError,
+  WordPressBlockedError,
 } from "./types";
 import { ContentType } from "@/lib/constants";
+import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { callPortalWordPress, shouldProxyWordPress } from "@/lib/wordpress/portal-proxy";
 import { withRetry } from "./retry";
 
 // Fail fast instead of hanging if the WP host is unreachable from the server
 // (e.g. an egress/WAF block that only affects the Railway host, not a browser).
 const WP_FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * A bot-check page is not a blip. Quick back-to-back retries hit the same
+ * challenge. Wait once, then try the request a single extra time.
+ */
+export const WP_BLOCKED_RETRY_DELAY_MS = 5_000;
 
 /** Decode HTML numeric & named entities that WordPress injects into rendered titles. */
 export function decodeHtmlEntities(html: string): string {
@@ -96,8 +105,17 @@ async function wpFetchOnce<T>(
     clearTimeout(timer);
   }
 
+  const body = await response.text().catch(() => "");
+  const contentType = response.headers?.get?.("content-type") ?? "";
+  // A bot check can answer 200 or a non-2xx status with an HTML interstitial.
+  // response.json() then throws "Unexpected token <", which looks like a
+  // transient parse error. A 200 that starts with "<" can also be a PHP
+  // notice glued in front of a successful JSON body.
+  if (isHtmlBlockedBody(contentType, body)) {
+    throw new WordPressBlockedError(response.status, body, endpoint);
+  }
+
   if (!response.ok) {
-    const body = await response.text().catch(() => "Unknown error");
     throw new WpApiError(
       `WP API error: ${response.status} — ${body.slice(0, 500)}`,
       response.status,
@@ -105,40 +123,67 @@ async function wpFetchOnce<T>(
     );
   }
 
-  return response.json();
+  return JSON.parse(body) as T;
 }
+
+function isHtmlBlockedBody(contentType: string, body: string): boolean {
+  if (/html/i.test(contentType)) return true;
+  const leading = body.replace(/^\uFEFF/, "").trimStart();
+  return leading.startsWith("<");
+}
+
+const sleep = (ms: number) =>
+  ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 async function wpFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const method = (options.method ?? "GET").toUpperCase();
+  const execute = () => wpFetchOnce<T>(endpoint, options);
 
-  // Only retry idempotent reads. Writes (uploads, post creation) must never be
-  // auto-retried, or a "failed" request that actually landed could double-post.
-  if (method !== "GET") {
-    return wpFetchOnce<T>(endpoint, options);
+  try {
+    // Only retry idempotent reads. Writes (createPost, updatePost, media
+    // attach) are not retried, including when the body is HTML. A 200 that
+    // starts with "<" can be a successful write with a PHP notice in front
+    // of the JSON. The processor reconciles that with findEpisodeByTitleOrSlug
+    // instead of sending the write again.
+    if (method !== "GET") {
+      return await execute();
+    }
+
+    return await withRetry<T>(execute, {
+      retries: 2,
+      delayMs: 500,
+      onError: (error, attempt) => {
+        if (error instanceof WordPressBlockedError) return;
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(
+          `[wp] GET ${endpoint} failed (attempt ${attempt}/3): ${msg}`
+        );
+      },
+      // Retry only transient failures: network/timeout (status 0), rate limiting
+      // (429), and server errors (5xx). A 4xx (404/401/403) is permanent.
+      // Missing app credentials are a WpConfigError (also status 0) and must
+      // not be retried. A bot-check page is not one of these quick retries.
+      shouldRetry: (error) => {
+        if (error instanceof WordPressBlockedError) return false;
+        if (error instanceof WpConfigError) return false;
+        if (!(error instanceof WpApiError)) return true;
+        return error.status === 0 || error.status === 429 || error.status >= 500;
+      },
+    });
+  } catch (error) {
+    // One slow retry for a blocked read. Writes throw immediately: repeating
+    // POST/PUT can create a second episode, and the HTML may already hide a
+    // successful response.
+    if (!(error instanceof WordPressBlockedError) || method !== "GET") throw error;
+    console.error(
+      `[wp] GET ${endpoint} returned an HTML block page (HTTP ${error.status}); retrying once in ${WP_BLOCKED_RETRY_DELAY_MS}ms`
+    );
+    await sleep(WP_BLOCKED_RETRY_DELAY_MS);
+    return execute();
   }
-
-  return withRetry<T>(() => wpFetchOnce<T>(endpoint, options), {
-    retries: 2,
-    delayMs: 500,
-    onError: (error, attempt) => {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error(
-        `[wp] GET ${endpoint} failed (attempt ${attempt}/3): ${msg}`
-      );
-    },
-    // Retry only transient failures: network/timeout (status 0), rate limiting
-    // (429), and server errors (5xx). A 4xx (404/401/403) is permanent.
-    // Missing app credentials are a WpConfigError (also status 0) and must
-    // not be retried.
-    shouldRetry: (error) => {
-      if (error instanceof WpConfigError) return false;
-      if (!(error instanceof WpApiError)) return true;
-      return error.status === 0 || error.status === 429 || error.status >= 500;
-    },
-  });
 }
 
 export async function getShows(): Promise<WpShow[]> {
@@ -166,6 +211,9 @@ export async function getShows(): Promise<WpShow[]> {
 }
 
 export async function getShow(id: number): Promise<WpShow> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<WpShow>({ op: "getShow", id });
+  }
   const show = await wpFetch<WpShow>(`/swm_show/${id}`);
   show.title.rendered = decodeHtmlEntities(show.title.rendered);
   return show;
@@ -230,6 +278,183 @@ export async function searchEpisodesByTitle(
   }
 }
 
+export interface WordPressEpisodeMatch {
+  id: number;
+  link: string;
+  slug: string;
+  title: string;
+}
+
+export interface FindEpisodeOptions {
+  /** Distribution job `createdAt`. A title or slug hit counts when the post is at least this new. */
+  jobStartedAt?: Date | string | null;
+  youtubeVideoId?: string | null;
+  youtubeVideoUrl?: string | null;
+}
+
+interface WpEpisodeLookupHit {
+  id: number;
+  link?: string;
+  slug?: string;
+  date?: string;
+  date_gmt?: string;
+  title?: { rendered?: string };
+  meta?: {
+    parent_show_id?: number | string;
+    youtube_video_id?: string;
+    youtube_video_url?: string;
+  };
+}
+
+/** WordPress `sanitize_title` approximation: lowercase, punctuation to hyphens. */
+function toWordPressSlug(title: string): string {
+  return title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 200);
+}
+
+function episodeBelongsToShow(post: WpEpisodeLookupHit, wpShowId: number): boolean {
+  const raw = post.meta?.parent_show_id;
+  // A missing show id is not "this show". An unscoped post must not confirm a publish.
+  if (raw == null || raw === "") return false;
+  const id = Number(raw);
+  return Number.isFinite(id) && id === wpShowId;
+}
+
+/** WordPress `date` / `date_gmt` have no zone suffix. `date_gmt` is UTC. */
+function parseWordPressDate(raw: string | undefined): number | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(trimmed);
+  const normalized = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
+  const parsed = new Date(hasZone ? normalized : `${normalized}Z`);
+  const ms = parsed.getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function jobStartMs(jobStartedAt: Date | string | null | undefined): number | null {
+  if (jobStartedAt == null || jobStartedAt === "") return null;
+  const parsed = jobStartedAt instanceof Date ? jobStartedAt : new Date(jobStartedAt);
+  const ms = parsed.getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function wantedYoutubeId(options: FindEpisodeOptions): string | null {
+  const explicit = options.youtubeVideoId?.trim();
+  if (explicit) return explicit;
+  const url = options.youtubeVideoUrl?.trim();
+  return url ? extractYoutubeVideoId(url) : null;
+}
+
+function episodeMatchesYoutube(post: WpEpisodeLookupHit, options: FindEpisodeOptions): boolean {
+  const wantedId = wantedYoutubeId(options);
+  const wantedUrl = options.youtubeVideoUrl?.trim() || null;
+  const postId = post.meta?.youtube_video_id?.trim() || null;
+  const postUrl = post.meta?.youtube_video_url?.trim() || null;
+  if (wantedId && postId && postId === wantedId) return true;
+  if (wantedUrl && postUrl && postUrl === wantedUrl) return true;
+  if (!wantedId || !postUrl) return false;
+  return extractYoutubeVideoId(postUrl) === wantedId;
+}
+
+function episodeMatchesQuery(
+  post: WpEpisodeLookupHit,
+  title: string,
+  slug: string,
+  wpShowId: number,
+  options: FindEpisodeOptions
+): boolean {
+  if (!post.id || !episodeBelongsToShow(post, wpShowId)) return false;
+  const wanted = title.trim().toLowerCase();
+  const rendered = decodeHtmlEntities(post.title?.rendered ?? "")
+    .trim()
+    .toLowerCase();
+  const titleOrSlug =
+    (wanted.length > 0 && rendered === wanted) ||
+    (slug.length > 0 && post.slug === slug);
+  if (!titleOrSlug) return false;
+  // Title and slug alone collide with older episodes. Accept the post when it
+  // belongs to this upload's video, or when it was published for this job.
+  if (episodeMatchesYoutube(post, options)) return true;
+  const start = jobStartMs(options.jobStartedAt);
+  const posted = parseWordPressDate(post.date_gmt) ?? parseWordPressDate(post.date);
+  if (start == null || posted == null) return false;
+  return posted >= start;
+}
+
+function toEpisodeMatch(
+  post: WpEpisodeLookupHit,
+  fallbackTitle: string
+): WordPressEpisodeMatch {
+  return {
+    id: post.id,
+    link: post.link ?? "",
+    slug: post.slug ?? "",
+    title: decodeHtmlEntities(post.title?.rendered ?? fallbackTitle),
+  };
+}
+
+function serializeJobStartedAt(
+  jobStartedAt: Date | string | null | undefined
+): string | null {
+  if (jobStartedAt == null || jobStartedAt === "") return null;
+  if (jobStartedAt instanceof Date) {
+    return Number.isNaN(jobStartedAt.getTime()) ? null : jobStartedAt.toISOString();
+  }
+  return jobStartedAt;
+}
+
+/**
+ * Find an episode on this show by its title or the slug WordPress would
+ * assign from that title. Drafts and scheduled posts count: a publish that
+ * looked like it failed may already be stored.
+ *
+ * A title or slug hit is not enough. The post must be dated on or after the
+ * job started, or carry this upload's YouTube id or URL. Show membership is
+ * filtered here. `meta_key` / `meta_value` REST queries are not used; that
+ * filter is unreliable across WordPress installs and can hide the post we
+ * just created.
+ */
+export async function findEpisodeByTitleOrSlug(
+  title: string,
+  wpShowId: number,
+  options: FindEpisodeOptions = {}
+): Promise<WordPressEpisodeMatch | null> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<WordPressEpisodeMatch | null>({
+      op: "findEpisode",
+      title,
+      wpShowId,
+      jobStartedAt: serializeJobStartedAt(options.jobStartedAt),
+      youtubeVideoId: options.youtubeVideoId?.trim() || null,
+      youtubeVideoUrl: options.youtubeVideoUrl?.trim() || null,
+    });
+  }
+  const slug = toWordPressSlug(title);
+  const fields = "id,title,slug,link,date,date_gmt,meta";
+
+  const pick = (posts: WpEpisodeLookupHit[]) =>
+    posts.find((post) => episodeMatchesQuery(post, title, slug, wpShowId, options));
+
+  if (slug) {
+    const bySlug = await wpFetch<WpEpisodeLookupHit[]>(
+      `/swm_episode?slug=${encodeURIComponent(slug)}&status=any&per_page=5&_fields=${fields}`
+    );
+    const slugMatch = Array.isArray(bySlug) ? pick(bySlug) : undefined;
+    if (slugMatch) return toEpisodeMatch(slugMatch, title);
+  }
+
+  const byTitle = await wpFetch<WpEpisodeLookupHit[]>(
+    `/swm_episode?search=${encodeURIComponent(title.trim().slice(0, 100))}&status=any&per_page=20&_fields=${fields}`
+  );
+  const titleMatch = Array.isArray(byTitle) ? pick(byTitle) : undefined;
+  return titleMatch ? toEpisodeMatch(titleMatch, title) : null;
+}
+
 /**
  * Get the latest published episode for a show, returning its episode and season numbers.
  */
@@ -237,6 +462,12 @@ export async function getLatestEpisodeNumbers(
   wpShowId: number
 ): Promise<{ episodeNumber: number | null; seasonNumber: number | null }> {
   try {
+    if (shouldProxyWordPress()) {
+      return await callPortalWordPress<{
+        episodeNumber: number | null;
+        seasonNumber: number | null;
+      }>({ op: "latestEpisodeNumbers", wpShowId });
+    }
     const posts = await wpFetch<WpPost[]>(
       `/swm_episode?per_page=1&orderby=date&order=desc&status=publish&_fields=id,meta&meta_key=parent_show_id&meta_value=${wpShowId}`
     );
@@ -263,6 +494,13 @@ export async function getRecentEpisodeTitles(
   count: number = 10
 ): Promise<string[]> {
   try {
+    if (shouldProxyWordPress()) {
+      return await callPortalWordPress<string[]>({
+        op: "recentEpisodeTitles",
+        wpShowId,
+        count,
+      });
+    }
     const posts = await wpFetch<WpPost[]>(
       `/swm_episode?per_page=${count}&orderby=date&order=desc&status=publish&_fields=id,title&meta_key=parent_show_id&meta_value=${wpShowId}`
     );
@@ -276,6 +514,15 @@ export async function uploadMedia(
   file: File,
   filename?: string
 ): Promise<WpMediaUploadResponse> {
+  if (shouldProxyWordPress()) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    return callPortalWordPress<WpMediaUploadResponse>({
+      op: "uploadMedia",
+      filename: filename ?? file.name,
+      contentType: file.type || "application/octet-stream",
+      dataBase64: bytes.toString("base64"),
+    });
+  }
   const formData = new FormData();
   formData.append("file", file, filename ?? file.name);
 
@@ -322,6 +569,9 @@ export async function createPost(
   contentType: string,
   payload: WpCreatePostPayload
 ): Promise<WpPost> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<WpPost>({ op: "createPost", contentType, payload });
+  }
   const postType = POST_TYPE_MAP[contentType];
   if (!postType) {
     throw new Error(`Unknown content type: ${contentType}`);
@@ -352,6 +602,14 @@ export async function updatePost(
   postId: number,
   payload: Partial<WpCreatePostPayload>
 ): Promise<WpPost> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<WpPost>({
+      op: "updatePost",
+      contentType,
+      postId,
+      payload,
+    });
+  }
   const postType = POST_TYPE_MAP[contentType];
   if (!postType) {
     throw new Error(`Unknown content type: ${contentType}`);

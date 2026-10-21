@@ -62,6 +62,8 @@ const mockUploadToYouTube = vi.fn();
 const mockAddToPlaylist = vi.fn();
 const mockUploadToTransistor = vi.fn();
 const mockPublishToWordPress = vi.fn();
+const mockFindEpisodeByTitleOrSlug = vi.fn();
+const mockGetShow = vi.fn();
 const mockSendDistributionErrorNotification = vi.fn();
 const mockResolvePlatformId = vi.fn();
 const mockExtractAudio = vi.fn();
@@ -81,6 +83,13 @@ vi.mock("@/lib/platforms/transistor", () => ({
 
 vi.mock("@/lib/platforms/wordpress", () => ({
   publishToWordPress: (...args: unknown[]) => mockPublishToWordPress(...args),
+}));
+
+vi.mock("@/lib/wordpress/client", () => ({
+  findEpisodeByTitleOrSlug: (...args: unknown[]) =>
+    mockFindEpisodeByTitleOrSlug(...args),
+  getShow: (...args: unknown[]) => mockGetShow(...args),
+  wpAuthorizationHeader: () => "Basic dGVzdA==",
 }));
 
 vi.mock("@/lib/notifications", () => ({
@@ -196,6 +205,8 @@ describe("processJob", () => {
     mockGcsObjectExists.mockResolvedValue(true);
     mockGenerateSignedDownloadUrl.mockResolvedValue(SIGNED_URL);
     mockSendDistributionErrorNotification.mockResolvedValue(undefined);
+    mockFindEpisodeByTitleOrSlug.mockResolvedValue(null);
+    mockGetShow.mockResolvedValue({ title: { rendered: "Test Show" } });
     mockShowMetadataFindUnique.mockResolvedValue(null);
     mockPlatformCredentialFindUnique.mockResolvedValue(null);
     mockShowPlatformLinkFindUnique.mockResolvedValue(null);
@@ -640,7 +651,105 @@ describe("processJob", () => {
 
     // Job should still be completed because YouTube succeeded
     expect(result.status).toBe("completed");
+    expect(mockFindEpisodeByTitleOrSlug).toHaveBeenCalledWith("Episode 1", 42, {
+      jobStartedAt: undefined,
+      youtubeVideoId: "yt-abc",
+      youtubeVideoUrl: "https://youtube.com/watch?v=yt-abc",
+    });
     expect(mockSendDistributionErrorNotification).toHaveBeenCalledTimes(1);
+    expect(mockSendDistributionErrorNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failures: [expect.objectContaining({ platform: "website" })],
+      })
+    );
+  });
+
+  it("marks website succeeded and skips the failure alert when the episode is already on WordPress", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        existingYoutubeUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+      },
+      platforms: [{ id: "plat-web", platform: "website" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockPublishToWordPress.mockRejectedValue(
+      new Error("WordPress blocked the request (HTTP 200): <html>bot</html>")
+    );
+    mockFindEpisodeByTitleOrSlug.mockResolvedValue({
+      id: 777,
+      link: "https://example.com/ep/episode-1",
+      slug: "episode-1",
+      title: "Episode 1",
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("completed");
+    expect(result.platformResults).toEqual([
+      { platform: "website", status: "completed" },
+    ]);
+    expect(mockFindEpisodeByTitleOrSlug).toHaveBeenCalledWith("Episode 1", 42, {
+      jobStartedAt: undefined,
+      youtubeVideoId: "abcdefghijk",
+      youtubeVideoUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("Skipping live-post supersede for post 777")
+    );
+    expect(mockPlatformUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "plat-web" },
+        data: expect.objectContaining({
+          status: "completed",
+          externalId: "777",
+          externalUrl: "https://example.com/ep/episode-1",
+          error: null,
+        }),
+      })
+    );
+    expect(mockSendDistributionErrorNotification).not.toHaveBeenCalled();
+  });
+
+  it("omits website from the failure alert when the post exists and another platform failed", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        existingYoutubeUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+      },
+      platforms: [
+        { id: "plat-web", platform: "website" },
+        { id: "plat-tt", platform: "tiktok" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockPublishToWordPress.mockRejectedValue(new Error("WP API unreachable"));
+    mockFindEpisodeByTitleOrSlug.mockResolvedValue({
+      id: 778,
+      link: "https://example.com/ep/episode-1",
+      slug: "episode-1",
+      title: "Episode 1",
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("completed");
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(mockSendDistributionErrorNotification).toHaveBeenCalledTimes(1);
+    expect(mockSendDistributionErrorNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failures: [
+          expect.objectContaining({
+            platform: "tiktok",
+            error: expect.stringContaining("not yet supported"),
+          }),
+        ],
+      })
+    );
   });
 
   it("marks job as failed when all platforms fail", async () => {

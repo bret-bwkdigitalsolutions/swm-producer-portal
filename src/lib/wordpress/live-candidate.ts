@@ -1,5 +1,6 @@
 import "server-only";
 import { wpAuthorizationHeader } from "@/lib/wordpress/client";
+import { callPortalWordPress, shouldProxyWordPress } from "@/lib/wordpress/portal-proxy";
 
 /**
  * Look up a live-stream `swm_episode` that a newly published episode should
@@ -115,6 +116,15 @@ export async function lookupLiveStreamCandidate(
   airDate: string,
   youtubeId?: string
 ): Promise<LiveCandidateLookup> {
+  if (shouldProxyWordPress()) {
+    return callPortalWordPress<LiveCandidateLookup>({
+      op: "liveCandidate",
+      wpShowId,
+      airDate,
+      youtubeId,
+    });
+  }
+
   const base = swmApiBase();
   if (!base) {
     console.warn(
