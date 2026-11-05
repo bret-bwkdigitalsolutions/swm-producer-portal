@@ -13,6 +13,7 @@ import { mergeJobMetadata } from "./job-metadata";
 import { resolvePlatformId } from "@/lib/analytics/credentials";
 import { gcsObjectExists, generateSignedDownloadUrl, uploadBuffer } from "@/lib/gcs";
 import { extractYoutubeVideoId } from "@/lib/youtube-url";
+import { reusedLiveYoutubeUrl } from "./live-youtube-reuse";
 import { toAirDate } from "@/lib/wordpress/live-candidate";
 import { findEpisodeByTitleOrSlug } from "@/lib/wordpress/client";
 import { downloadVideoToGcs, downloadFullVideoToGcs } from "./video-downloader";
@@ -205,8 +206,21 @@ async function processJobInner(
   const beatUpload = createUploadHeartbeat(job.id);
   const platformResults: ProcessingResult["platformResults"] = [];
 
-  const existingYoutubeUrl = metadata.existingYoutubeUrl as string | undefined;
+  // `existingYoutubeUrl` is the "Recorded live on YouTube" source and skips
+  // a new upload. A separate live URL only names the post to replace, unless
+  // the job has no producer file and no Vimeo source — then that live video
+  // is the one to embed.
+  let existingYoutubeUrl = metadata.existingYoutubeUrl as string | undefined;
   const existingVimeoUrl = metadata.existingVimeoUrl as string | undefined;
+  if (!existingYoutubeUrl) {
+    const reusedLiveUrl = reusedLiveYoutubeUrl(metadata, job.gcsPath);
+    if (reusedLiveUrl) {
+      existingYoutubeUrl = reusedLiveUrl;
+      console.log(
+        `[processor] Reusing live YouTube video (no producer upload): ${reusedLiveUrl}`
+      );
+    }
+  }
   // A URL-sourced job (YouTube or Vimeo) yields audio only — no uploadable
   // video — so YouTube distribution is skipped for these (see guard below).
   const sourceUrl = existingVimeoUrl ?? existingYoutubeUrl;

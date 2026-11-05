@@ -280,6 +280,93 @@ describe("processJob", () => {
     ).toBe("completed");
   });
 
+  it("reuses a live video when no producer file was uploaded", async () => {
+    const job = makeJob({
+      gcsPath: "uploads/2026/11/live-audio.mp3",
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        liveYoutubeVideoId: "bi_EF_FhjOk",
+        liveStreamUrl: "https://www.youtube.com/watch?v=bi_EF_FhjOk",
+      },
+      platforms: [
+        { id: "plat-yt", platform: "youtube" },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 900,
+      postUrl: "https://example.com/episode/beer-30",
+      supersedesLivePostId: null,
+    });
+
+    const result = await processJob("job-1");
+
+    expect(mockUploadToYouTube).not.toHaveBeenCalled();
+    expect(mockPlatformUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "plat-yt" },
+        data: expect.objectContaining({
+          status: "completed",
+          externalId: "bi_EF_FhjOk",
+          externalUrl: "https://www.youtube.com/watch?v=bi_EF_FhjOk",
+        }),
+      })
+    );
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        youtubeUrl: "https://www.youtube.com/watch?v=bi_EF_FhjOk",
+        liveRecordingYoutubeId: "bi_EF_FhjOk",
+      })
+    );
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(result.platformResults.find((r) => r.platform === "youtube")?.status).toBe(
+      "completed"
+    );
+  });
+
+  it("uploads a producer file even when a live URL is set", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A test episode",
+        transcript: "already transcribed",
+        videoFileName: "finished-cut.mp4",
+        liveYoutubeVideoId: "bi_EF_FhjOk",
+        liveStreamUrl: "https://www.youtube.com/watch?v=bi_EF_FhjOk",
+        tags: ["beer thirty sports o'clock"],
+      },
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "newVid12345",
+      videoUrl: "https://www.youtube.com/watch?v=newVid12345",
+    });
+    installVideoFetch();
+
+    const result = await processJob("job-1");
+
+    expect(mockUploadToYouTube).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tags: ["beer thirty sports o'clock"],
+        videoFilePath: expect.any(String),
+      })
+    );
+    expect(result.platformResults.find((r) => r.platform === "youtube")?.status).toBe(
+      "completed"
+    );
+    expect(mockPlatformUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          externalId: "newVid12345",
+          externalUrl: "https://www.youtube.com/watch?v=newVid12345",
+        }),
+      })
+    );
+  });
+
   it("marks unsupported platforms as failed", async () => {
     const job = makeJob({
       platforms: [{ id: "plat-future", platform: "tiktok" }],
