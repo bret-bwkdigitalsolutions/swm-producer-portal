@@ -1,5 +1,6 @@
 import { getYouTubeAccessToken } from "@/lib/analytics/credentials";
 import { streamFilePut, uploadFileInChunks } from "@/lib/platforms/bounded-upload";
+import { sanitizeYouTubeTags } from "@/lib/platforms/youtube-tags";
 
 const YOUTUBE_UPLOAD_URL =
   "https://www.googleapis.com/upload/youtube/v3/videos";
@@ -61,11 +62,21 @@ export async function uploadToYouTube(
     console.log(`[youtube] Scheduling publish at ${scheduledAt}`);
   }
 
+  const safeTags = sanitizeYouTubeTags(tags);
+  if (
+    safeTags.length !== tags.length ||
+    safeTags.some((tag, index) => tag !== tags[index])
+  ) {
+    console.log(
+      `[youtube] Sanitized tags for "${safeTitle}" (${tags.length} -> ${safeTags.length})`
+    );
+  }
+
   const metadata = {
     snippet: {
       title: safeTitle,
       description,
-      tags,
+      tags: safeTags,
       categoryId: categoryId ?? "22",
     },
     status,
