@@ -57,6 +57,30 @@ describe("Vimeo live mark payload", () => {
     expect(payload).not.toHaveProperty("live_youtube_id");
   });
 
+  it("sends vimeo ids as JSON strings and offset_seconds as an integer", () => {
+    const payload = buildVimeoLiveMarkPayload({
+      showId: 21,
+      eventId: 6344608,
+      videoId: 1245272985,
+      mark: { seconds: 2594, quote: "A porch.", cue: "mark that" },
+    });
+    const body = JSON.parse(JSON.stringify(payload)) as {
+      vimeo_event_id: unknown;
+      vimeo_video_id: unknown;
+      offset_seconds: unknown;
+    };
+
+    expect(payload.vimeo_event_id).toBe("6344608");
+    expect(payload.vimeo_video_id).toBe("1245272985");
+    expect(typeof body.vimeo_event_id).toBe("string");
+    expect(typeof body.vimeo_video_id).toBe("string");
+    expect(body.vimeo_event_id).toBe("6344608");
+    expect(body.vimeo_video_id).toBe("1245272985");
+    expect(typeof body.offset_seconds).toBe("number");
+    expect(body.offset_seconds).toBe(2594);
+    expect(Number.isInteger(body.offset_seconds)).toBe(true);
+  });
+
   it("omits vimeo_video_id when the broadcast id is not known yet", () => {
     const payload = buildVimeoLiveMarkPayload({
       showId: 21,

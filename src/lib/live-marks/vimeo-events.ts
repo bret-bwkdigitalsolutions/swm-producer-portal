@@ -263,8 +263,8 @@ export function vimeoCueText(mark: LiveMark): string {
  */
 export function buildVimeoLiveMarkPayload(input: {
   showId: number;
-  eventId: string;
-  videoId?: string | null;
+  eventId: string | number;
+  videoId?: string | number | null;
   mark: LiveMark;
 }): VimeoLiveMarkPayload {
   const cueText = vimeoCueText(input.mark);
@@ -279,13 +279,14 @@ export function buildVimeoLiveMarkPayload(input: {
   const payload: VimeoLiveMarkPayload = {
     show_id: input.showId,
     platform: "vimeo",
-    vimeo_event_id: input.eventId,
+    vimeo_event_id: String(input.eventId).trim(),
     offset_seconds: offset,
     cue_text: cueText,
     source: "live_transcript",
     marks: [mark],
   };
-  const videoId = input.videoId?.trim();
-  if (videoId) payload.vimeo_video_id = videoId;
+  if (input.videoId != null && String(input.videoId).trim() !== "") {
+    payload.vimeo_video_id = String(input.videoId).trim();
+  }
   return payload;
 }
