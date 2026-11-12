@@ -12,7 +12,13 @@ import {
 
 /**
  * Off unless the variable is an explicit on-value (`1`, `true`, `yes`, `on`).
- * Unset or blank does not scan. An admin Re-scan still runs.
+ * Unset or blank does not scan. An admin Re-scan of one YouTube recording
+ * still runs.
+ *
+ * The same flag gates the Vimeo live watcher and its post-show archive
+ * rescan (`queueVimeoLiveMarks`). While it is off, that cron path does not
+ * call Vimeo and does not post Vimeo marks. Turning it on also lets the
+ * YouTube archive cron claim rows. There is no separate Vimeo flag.
  */
 export function isLiveTranscriptionEnabled(
   raw: string | undefined = process.env.LIVE_TRANSCRIPTION_ENABLED
