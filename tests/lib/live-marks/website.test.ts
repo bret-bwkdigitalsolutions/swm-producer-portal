@@ -11,7 +11,7 @@ import {
   planOverlapRetry,
   planWebsiteNotReady,
 } from "@/lib/live-marks/retry";
-import { postLiveMarks } from "@/lib/live-marks/website";
+import { postLiveMarks, postLiveMarksJson } from "@/lib/live-marks/website";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -174,6 +174,46 @@ describe("postLiveMarks 500", () => {
     });
     const result = await postLiveMarks(payload);
     expect(result).toMatchObject({ ok: false, kind: "retryable" });
+  });
+});
+
+describe("postLiveMarksJson vimeo", () => {
+  it("posts the vimeo fields with the same Basic header and no YouTube id", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ stored: 1, posted_to: 12, live_post_id: 12 }),
+    });
+
+    const result = await postLiveMarksJson({
+      show_id: 21,
+      platform: "vimeo",
+      vimeo_event_id: "6344608",
+      vimeo_video_id: "1245272985",
+      offset_seconds: 2594,
+      cue_text: "Nobody looked under the porch. Mark that",
+      source: "live_transcript",
+      marks: [
+        {
+          seconds: 2594,
+          offset_seconds: 2594,
+          quote: "Nobody looked under the porch.",
+          cue: "Mark that",
+          cue_text: "Nobody looked under the porch. Mark that",
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    const init = mockFetch.mock.calls[0][1] as RequestInit;
+    expect(init.headers).toMatchObject({
+      Authorization: "Basic " + Buffer.from("testuser:testpass").toString("base64"),
+    });
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body.platform).toBe("vimeo");
+    expect(body.vimeo_event_id).toBe("6344608");
+    expect(body.offset_seconds).toBe(2594);
+    expect(body).not.toHaveProperty("live_youtube_id");
   });
 });
 

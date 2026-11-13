@@ -115,6 +115,87 @@ export async function transcribeAudio(
   }
 
   const data = await response.json();
+  return transcriptionFromDeepgram(data, forceLanguage, wpShowId);
+}
+
+/**
+ * Transcribe audio bytes with the same Nova-3 query as {@link transcribeAudio}.
+ * Used for a short live-HLS capture so the mark scan does not round-trip GCS.
+ */
+export async function transcribeAudioBytes(
+  audio: Uint8Array,
+  contentType: string,
+  options?: string | TranscribeOptions
+): Promise<TranscriptionResult> {
+  const { forceLanguage, wpShowId, extraKeyterms, hosts, timeoutMs } =
+    resolveTranscribeOptions(options);
+
+  const apiKey = process.env.DEEPGRAM_API_KEY;
+  if (!apiKey) {
+    throw new Error("DEEPGRAM_API_KEY is not set.");
+  }
+
+  const keyterms = keytermsForShow(wpShowId, [
+    ...keytermsFromHosts(hosts),
+    ...(extraKeyterms ?? []),
+  ]);
+  const query = buildDeepgramListenQuery({ forceLanguage, keyterms });
+  console.log(
+    `[transcription] Transcribing ${audio.byteLength} audio bytes` +
+      (forceLanguage ? ` (forced language: ${forceLanguage})` : " (auto-detect)") +
+      ` (${keyterms.length} keyterms` +
+      (wpShowId != null ? `, show ${wpShowId}` : "") +
+      ")"
+  );
+
+  const response = await fetch(
+    "https://api.deepgram.com/v1/listen?" + query.toString(),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${apiKey}`,
+        "Content-Type": contentType,
+      },
+      body: Buffer.from(audio),
+      signal:
+        timeoutMs != null && timeoutMs > 0
+          ? AbortSignal.timeout(timeoutMs)
+          : undefined,
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Deepgram API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  return transcriptionFromDeepgram(data, forceLanguage, wpShowId);
+}
+
+function transcriptionFromDeepgram(
+  data: {
+    results?: {
+      channels?: Array<{
+        detected_language?: string;
+        alternatives?: Array<{
+          transcript?: string;
+          paragraphs?: {
+            paragraphs?: Array<{
+              start: number;
+              end: number;
+              speaker?: number;
+              sentences?: Array<{ text?: string }>;
+            }>;
+          };
+        }>;
+      }>;
+    };
+    metadata?: { duration?: number };
+  },
+  forceLanguage: string | undefined,
+  wpShowId: number | undefined
+): TranscriptionResult {
   const result = data.results?.channels?.[0]?.alternatives?.[0];
 
   if (!result) {
@@ -122,12 +203,12 @@ export async function transcribeAudio(
   }
 
   const segments: TranscriptSegment[] = (result.paragraphs?.paragraphs ?? []).map(
-    (p: any) => ({
+    (p) => ({
       start: p.start,
       end: p.end,
       // Correct names before anything persists this text.
       text: applyAsrCorrections(
-        p.sentences?.map((s: any) => s.text).join(" ") ?? "",
+        p.sentences?.map((s) => s.text).join(" ") ?? "",
         wpShowId
       ),
       speaker: p.speaker,

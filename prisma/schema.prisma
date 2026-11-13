@@ -544,3 +544,41 @@ model LiveScanPaidClaim {
   @@index([claimedAt])
   @@map("live_scan_paid_claims")
 }
+
+// One row per configured Vimeo live event. The lease keeps a single watcher
+// running across cron ticks. archiveVideoId is the broadcast already rescanned,
+// so the next show on a recurring event is scanned again.
+model VimeoLiveWatch {
+  eventId          String    @id
+  showId           Int
+  activeVideoId    String?
+  archiveVideoId   String?
+  streamStartedAt  DateTime?
+  leaseToken       String?
+  leaseUntil       DateTime?
+  archiveScannedAt DateTime?
+  lastError        String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("vimeo_live_watches")
+}
+
+// One spoken cue per 30-second bucket. status stays pending until the website
+// accepts the POST, so a restart does not send it twice and does not drop it.
+model VimeoLiveMarkPost {
+  id            String   @id @default(cuid())
+  eventId       String
+  videoId       String
+  dedupeBucket  Int
+  offsetSeconds Int
+  cueText       String   @db.Text
+  payload       Json
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([eventId, videoId, dedupeBucket])
+  @@index([eventId, status])
+  @@map("vimeo_live_mark_posts")
+}

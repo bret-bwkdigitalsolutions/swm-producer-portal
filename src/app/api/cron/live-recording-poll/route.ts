@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bearerTokenMatches } from "@/lib/secure-compare";
 import { queueDueLiveTranscriptions } from "@/lib/live-marks/queue";
+import { queueVimeoLiveMarks } from "@/lib/live-marks/vimeo-watch";
 import { pollLiveRecordings } from "@/lib/live-recording/poll";
 
 /**
@@ -36,10 +37,21 @@ export async function POST(request: NextRequest) {
       console.error("[live-recording-poll] Live transcription queue failed:", error);
       liveTranscription = { error: message };
     }
+    let vimeoMarks: Awaited<ReturnType<typeof queueVimeoLiveMarks>> | {
+      error: string;
+    };
+    try {
+      vimeoMarks = await queueVimeoLiveMarks();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Vimeo live marks failed";
+      console.error("[live-recording-poll] Vimeo live marks failed:", error);
+      vimeoMarks = { error: message };
+    }
     console.log(
-      `[live-recording-poll] checked=${summary.totalChecked} transitions=${summary.transitions.length} handoffs=${summary.handoffsTriggered.length} archived=${summary.archived.length} failures=${summary.failures.length} transcripts=${"queued" in liveTranscription ? liveTranscription.queued.length : "error"}`
+      `[live-recording-poll] checked=${summary.totalChecked} transitions=${summary.transitions.length} handoffs=${summary.handoffsTriggered.length} archived=${summary.archived.length} failures=${summary.failures.length} transcripts=${"queued" in liveTranscription ? liveTranscription.queued.length : "error"} vimeo=${"watching" in vimeoMarks ? vimeoMarks.watching.length : "error"}`
     );
-    return NextResponse.json({ ...summary, liveTranscription });
+    return NextResponse.json({ ...summary, liveTranscription, vimeoMarks });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown poll worker error";
