@@ -9,8 +9,15 @@ import {
   parseVimeoLiveEvents,
   redactSecrets,
   utterancesAtStreamEdge,
+  vimeoFailureDisposition,
   vimeoLiveReferrer,
+  vimeoLiveWatchRestartAllowed,
   vimeoMarkBucket,
+  vimeoMarkIdentity,
+  nextUtcCapReset,
+  vimeoCapRestartAllowed,
+  vimeoSharedCapUsage,
+  youtubeScanFitsSharedCap,
 } from "@/lib/live-marks/vimeo-events";
 import { buildLiveMarksPayload } from "@/lib/live-marks/payload";
 
@@ -227,5 +234,81 @@ describe("Vimeo event config", () => {
     expect(redactSecrets("Vimeo API 401 bearer abc.def for https://api.vimeo.com/x?sig=1")).toBe(
       "Vimeo API 401 bearer [redacted] for [url]"
     );
+  });
+});
+
+describe("Vimeo mark follow-ups", () => {
+  it("treats a 400 or 422 as terminal and other failures as retryable", () => {
+    expect(vimeoFailureDisposition("contract")).toBe("terminal");
+    expect(vimeoFailureDisposition("retryable")).toBe("retry");
+    expect(vimeoFailureDisposition("website_not_ready")).toBe("retry");
+    expect(vimeoFailureDisposition("overlap")).toBe("retry");
+    expect(vimeoFailureDisposition("config")).toBe("stop");
+  });
+
+  it("dedupes a cue on the event and time bucket, ignoring the video id", () => {
+    const livePass = vimeoMarkIdentity("6344608", 2594);
+    const archivePass = vimeoMarkIdentity("6344608", 2600);
+    expect(livePass).toEqual(archivePass);
+    expect(livePass).toEqual({ eventId: "6344608", dedupeBucket: 86 });
+    expect(livePass).not.toHaveProperty("videoId");
+    expect(vimeoMarkIdentity("6344608", 90)).not.toEqual(
+      vimeoMarkIdentity("6344608", 130)
+    );
+  });
+
+  it("charges one shared claim for a 60+ minute live session so YouTube scans still fit", () => {
+    const hourOfWindows = (60 * 60) / 30;
+    expect(hourOfWindows).toBeGreaterThanOrEqual(120);
+    const usage = vimeoSharedCapUsage({
+      liveWindows: hourOfWindows,
+      archivePasses: 1,
+    });
+    expect(usage).toEqual({ liveClaims: 1, archiveClaims: 1, total: 2 });
+    expect(
+      youtubeScanFitsSharedCap({
+        cap: 10,
+        youtubeClaims: 0,
+        vimeoClaims: usage.total,
+      })
+    ).toBe(true);
+    expect(
+      youtubeScanFitsSharedCap({
+        cap: 10,
+        youtubeClaims: 7,
+        vimeoClaims: usage.total,
+      })
+    ).toBe(true);
+    expect(hourOfWindows + 1 < 10).toBe(false);
+  });
+
+  it("stops restarting a capped watcher until the daily cap resets", () => {
+    const during = new Date("2026-11-13T18:00:00.000Z");
+    const reset = nextUtcCapReset(during);
+    expect(reset.toISOString()).toBe("2026-11-14T00:00:00.000Z");
+    expect(vimeoCapRestartAllowed(reset, during)).toBe(false);
+    expect(vimeoCapRestartAllowed(reset, reset)).toBe(true);
+    expect(vimeoCapRestartAllowed(null, during)).toBe(true);
+  });
+
+  it("does not restart a live watch that already finished for this video", () => {
+    expect(
+      vimeoLiveWatchRestartAllowed({ videoId: "1245272985", exhaustedVideoId: null })
+    ).toBe(true);
+    expect(
+      vimeoLiveWatchRestartAllowed({
+        videoId: "1245272985",
+        exhaustedVideoId: "1245272985",
+      })
+    ).toBe(false);
+    expect(
+      vimeoLiveWatchRestartAllowed({ videoId: null, exhaustedVideoId: "" })
+    ).toBe(false);
+    expect(
+      vimeoLiveWatchRestartAllowed({
+        videoId: "999",
+        exhaustedVideoId: "1245272985",
+      })
+    ).toBe(true);
   });
 });
