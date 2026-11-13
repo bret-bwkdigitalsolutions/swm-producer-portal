@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { enqueueJob } from "../job-queue";
+import { enqueueJob, enqueueSideJob } from "../job-queue";
 
 /** Run `count` tasks through the queue and return the peak observed concurrency. */
 async function runBatch(count: number): Promise<number> {
@@ -49,5 +49,33 @@ describe("enqueueJob concurrency cap", () => {
     });
     await Promise.all(done);
     expect(ran).toBe(2);
+  });
+
+  it("runs a side job while the distribution queue is full", async () => {
+    process.env.MAX_CONCURRENT_JOBS = "1";
+    let releaseMain!: () => void;
+    const holding = new Promise<void>((resolve) => {
+      releaseMain = resolve;
+    });
+    let mainStarted = false;
+    enqueueJob("distribution", async () => {
+      mainStarted = true;
+      await holding;
+    });
+    await Promise.resolve();
+    expect(mainStarted).toBe(true);
+
+    let sideDone!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      sideDone = resolve;
+    });
+    let sideRan = false;
+    enqueueSideJob("vimeo-live", async () => {
+      sideRan = true;
+      sideDone();
+    });
+    await finished;
+    expect(sideRan).toBe(true);
+    releaseMain();
   });
 });

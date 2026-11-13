@@ -3,15 +3,21 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { enqueueJob } from "@/lib/jobs/job-queue";
+import { enqueueSideJob } from "@/lib/jobs/job-queue";
 import { transcribeAudioBytes } from "@/lib/transcription";
 import {
   LIVE_DEEPGRAM_TIMEOUT_MS,
+  LIVE_SCAN_LOCK_CLASS,
+  LIVE_SCAN_LOCK_KEY,
   MARK_CUE_KEYTERMS,
   MAX_BROADCAST_SECONDS,
 } from "./constants";
 import { detectMarks } from "./matcher";
-import { isLiveTranscriptionEnabled } from "./retry";
+import {
+  isLiveTranscriptionEnabled,
+  liveTranscriptionDailyCap,
+  startOfUtcDay,
+} from "./retry";
 import { captureHlsAudio, probeHlsEdgeSeconds } from "./vimeo-audio";
 import { readVimeoLiveEvent, type VimeoLiveReading } from "./vimeo-client";
 import {
@@ -19,8 +25,11 @@ import {
   parseVimeoLiveEvents,
   redactSecrets,
   utterancesAtStreamEdge,
+  vimeoFailureDisposition,
   vimeoLiveReferrer,
-  vimeoMarkBucket,
+  vimeoMarkIdentity,
+  nextUtcCapReset,
+  vimeoVideoKey,
   type VimeoLiveEventConfig,
   type VimeoLiveMarkPayload,
 } from "./vimeo-events";
@@ -87,7 +96,7 @@ export async function queueVimeoLiveMarks(): Promise<VimeoScanSummary> {
           continue;
         }
         summary.watching.push(event.eventId);
-        enqueueJob(`vimeo-live:${event.eventId}`, () =>
+        enqueueSideJob(`vimeo-live:${event.eventId}`, () =>
           withLease(event.eventId, token, () => watchLive(event, token))
         );
       } else if (reading.snapshot.status === "done" && reading.snapshot.videoId) {
@@ -95,27 +104,32 @@ export async function queueVimeoLiveMarks(): Promise<VimeoScanSummary> {
         const token = await claim(event, videoId, "archive");
         if (token) {
           summary.archived.push(event.eventId);
-          enqueueJob(`vimeo-archive:${event.eventId}`, () =>
+          enqueueSideJob(`vimeo-archive:${event.eventId}`, () =>
             withLease(event.eventId, token, () => scanArchive(event, token))
           );
           continue;
         }
         const pending = await db.vimeoLiveMarkPost.count({
-          where: { eventId: event.eventId, videoId, status: "pending" },
+          where: { eventId: event.eventId, status: "pending" },
         });
         if (pending > 0) {
           const flushToken = await claim(event, videoId, "flush");
           if (flushToken) {
             summary.archived.push(event.eventId);
-            enqueueJob(`vimeo-flush:${event.eventId}`, () =>
+            enqueueSideJob(`vimeo-flush:${event.eventId}`, () =>
               withLease(event.eventId, flushToken, async () => {
-                if (await flushPending(event, videoId, () =>
+                const flushed = await flushPending(event, () =>
                   renew(event.eventId, flushToken, LEASE_MS)
-                )) {
+                );
+                if (flushed === "stop" || flushed === "terminal") {
                   await recordError(
                     event.eventId,
                     flushToken,
-                    new Error("Website rejected the Vimeo mark with a configuration error.")
+                    new Error(
+                      flushed === "terminal"
+                        ? "Website rejected the Vimeo mark payload (HTTP 400 or 422). Not retrying."
+                        : "Website rejected the Vimeo mark with a configuration error."
+                    )
                   );
                 }
               })
@@ -170,6 +184,26 @@ async function claim(
               },
             ]
           : []),
+        ...(mode === "live"
+          ? [
+              {
+                OR: [
+                  { liveExhaustedVideoId: null },
+                  { NOT: { liveExhaustedVideoId: vimeoVideoKey(videoId) } },
+                ],
+              },
+              {
+                OR: [{ capBlockedUntil: null }, { capBlockedUntil: { lte: now } }],
+              },
+            ]
+          : []),
+        ...(mode === "archive"
+          ? [
+              {
+                OR: [{ capBlockedUntil: null }, { capBlockedUntil: { lte: now } }],
+              },
+            ]
+          : []),
       ],
     },
     data: {
@@ -178,6 +212,7 @@ async function claim(
       leaseToken: token,
       leaseUntil: new Date(now.getTime() + leaseMs),
       lastError: null,
+      ...(mode === "live" ? { liveExhaustedVideoId: null } : {}),
     },
   });
   return result.count === 1 ? token : null;
@@ -228,15 +263,29 @@ async function watchLive(
   event: VimeoLiveEventConfig,
   token: string
 ): Promise<void> {
+  if (!(await reservePaidSession(event.eventId, "live"))) {
+    await markCapBlocked(event.eventId, token);
+    return;
+  }
   const started = Date.now();
+  let videoId: string | null = null;
+  let stopReason: "timeout" | "stop" = "timeout";
   while (Date.now() - started < MAX_WATCH_MS) {
-    if (!isLiveTranscriptionEnabled()) return;
-    if (!(await renew(event.eventId, token, LEASE_MS))) return;
+    if (!isLiveTranscriptionEnabled()) {
+      stopReason = "stop";
+      break;
+    }
+    if (!(await renew(event.eventId, token, LEASE_MS))) {
+      stopReason = "stop";
+      break;
+    }
     const reading = await readVimeoLiveEvent(event);
+    videoId = reading.snapshot.videoId;
     await rememberReading(event.eventId, token, reading);
     if (reading.snapshot.status === "done") {
+      stopReason = "stop";
       await scanArchive(event, token);
-      return;
+      break;
     }
     if (reading.snapshot.status !== "streaming" || !reading.hls) {
       await sleep(10_000);
@@ -251,7 +300,15 @@ async function watchLive(
         leaseMs: LEASE_MS,
         fromStart: false,
       });
-      if (outcome === "config" || outcome === "lost") return;
+      if (
+        outcome === "config" ||
+        outcome === "lost" ||
+        outcome === "contract" ||
+        outcome === "capped"
+      ) {
+        stopReason = "stop";
+        break;
+      }
     } catch (error) {
       console.error(
         `[vimeo-marks] ${event.eventId} live window: ${safe(error)}`
@@ -259,6 +316,9 @@ async function watchLive(
       await recordError(event.eventId, token, error);
       await sleep(5_000);
     }
+  }
+  if (stopReason === "timeout") {
+    await markWatchExhausted(event.eventId, token, videoId);
   }
 }
 
@@ -279,6 +339,10 @@ async function scanArchive(
     return;
   }
   if (reading.snapshot.status === "streaming") return;
+  if (!(await reservePaidSession(event.eventId, "archive"))) {
+    await markCapBlocked(event.eventId, token);
+    return;
+  }
   const outcome = await transcribeReading(event, token, reading, {
     seconds: MAX_BROADCAST_SECONDS,
     seekStart: true,
@@ -287,7 +351,7 @@ async function scanArchive(
     leaseMs: ARCHIVE_LEASE_MS,
     fromStart: true,
   });
-  if (outcome === "lost" || outcome === "empty") return;
+  if (outcome !== "ok" && outcome !== "contract") return;
   await db.vimeoLiveWatch.updateMany({
     where: { eventId: event.eventId, leaseToken: token },
     data: {
@@ -314,6 +378,62 @@ async function rememberReading(
   });
 }
 
+async function markWatchExhausted(
+  eventId: string,
+  token: string,
+  videoId: string | null
+): Promise<void> {
+  await db.vimeoLiveWatch.updateMany({
+    where: { eventId, leaseToken: token },
+    data: { liveExhaustedVideoId: vimeoVideoKey(videoId) },
+  });
+  console.log(
+    `[vimeo-marks] ${eventId} live watch finished its window for video=${vimeoVideoKey(videoId) || "unknown"}`
+  );
+}
+
+async function markCapBlocked(eventId: string, token: string): Promise<void> {
+  const until = nextUtcCapReset(new Date());
+  await db.vimeoLiveWatch.updateMany({
+    where: { eventId, leaseToken: token },
+    data: {
+      capBlockedUntil: until,
+      lastError: "Live transcription daily cap is full. Will try again after UTC midnight.",
+    },
+  });
+  console.log(
+    `[vimeo-marks] ${eventId} daily cap reached. Not starting another watcher until ${until.toISOString()}.`
+  );
+}
+
+/**
+ * One shared-cap claim for a whole live session, or one for the archive
+ * pass. Later 30-second windows in that session do not insert another row.
+ * The advisory lock is the same one the YouTube claim uses.
+ */
+async function reservePaidSession(
+  eventId: string,
+  kind: "live" | "archive"
+): Promise<boolean> {
+  const now = new Date();
+  return db.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      "SELECT pg_advisory_xact_lock($1::int, $2::int)",
+      LIVE_SCAN_LOCK_CLASS,
+      LIVE_SCAN_LOCK_KEY
+    );
+    const cap = liveTranscriptionDailyCap();
+    const used = await tx.liveScanPaidClaim.count({
+      where: { claimedAt: { gte: startOfUtcDay(now) } },
+    });
+    if (used >= cap) return false;
+    await tx.liveScanPaidClaim.create({
+      data: { liveRecordingId: `vimeo-${kind}:${eventId}`, claimedAt: now },
+    });
+    return true;
+  });
+}
+
 async function transcribeReading(
   event: VimeoLiveEventConfig,
   token: string,
@@ -326,13 +446,29 @@ async function transcribeReading(
     leaseMs: number;
     fromStart: boolean;
   }
-): Promise<"ok" | "config" | "lost" | "empty"> {
+): Promise<"ok" | "config" | "contract" | "capped" | "lost" | "empty"> {
   if (!reading.hls) return "empty";
   const videoId = reading.snapshot.videoId ?? "unknown";
   const referer = vimeoLiveReferrer();
   const keep = () => renew(event.eventId, token, options.leaseMs);
   if (!(await keep())) return "lost";
-  if (await flushPending(event, videoId, keep)) return "config";
+  const flushed = await flushPending(event, keep);
+  if (flushed === "terminal") {
+    await recordError(
+      event.eventId,
+      token,
+      new Error("Website rejected the Vimeo mark payload (HTTP 400 or 422). Not retrying.")
+    );
+    return "contract";
+  }
+  if (flushed === "stop") {
+    await recordError(
+      event.eventId,
+      token,
+      new Error("Website rejected the Vimeo mark with a configuration error.")
+    );
+    return "config";
+  }
 
   const edge = options.fromStart
     ? 0
@@ -364,6 +500,14 @@ async function transcribeReading(
   );
   for (const mark of marks) {
     const outcome = await ensurePosted(event, videoId, mark, keep);
+    if (outcome === "terminal") {
+      await recordError(
+        event.eventId,
+        token,
+        new Error("Website rejected the Vimeo mark payload (HTTP 400 or 422). Not retrying.")
+      );
+      return "contract";
+    }
     if (outcome === "stop") {
       await recordError(
         event.eventId,
@@ -378,11 +522,10 @@ async function transcribeReading(
 
 async function flushPending(
   event: VimeoLiveEventConfig,
-  videoId: string,
   keep: () => Promise<boolean>
-): Promise<boolean> {
+): Promise<"terminal" | "stop" | null> {
   const pending = await db.vimeoLiveMarkPost.findMany({
-    where: { eventId: event.eventId, videoId, status: "pending" },
+    where: { eventId: event.eventId, status: "pending" },
     orderBy: { offsetSeconds: "asc" },
     take: 20,
   });
@@ -390,9 +533,9 @@ async function flushPending(
     const payload = readPayload(row.payload);
     if (!payload) continue;
     const outcome = await sendPayload(row.id, payload, keep);
-    if (outcome === "stop") return true;
+    if (outcome === "terminal" || outcome === "stop") return outcome;
   }
-  return false;
+  return null;
 }
 
 async function ensurePosted(
@@ -400,32 +543,28 @@ async function ensurePosted(
   videoId: string,
   mark: { seconds: number; quote: string; cue: string },
   keep: () => Promise<boolean>
-): Promise<"ok" | "later" | "stop"> {
+): Promise<"ok" | "later" | "stop" | "terminal"> {
   const payload = buildVimeoLiveMarkPayload({
     showId: event.showId,
     eventId: event.eventId,
     videoId: videoId === "unknown" ? null : videoId,
     mark,
   });
-  const bucket = vimeoMarkBucket(mark.seconds);
+  const identity = vimeoMarkIdentity(event.eventId, mark.seconds);
   const existing = await db.vimeoLiveMarkPost.findUnique({
-    where: {
-      eventId_videoId_dedupeBucket: {
-        eventId: event.eventId,
-        videoId,
-        dedupeBucket: bucket,
-      },
-    },
+    where: { eventId_dedupeBucket: identity },
   });
-  if (existing?.status === "posted") return "ok";
+  if (existing?.status === "posted" || existing?.status === "contract_error") {
+    return "ok";
+  }
   if (existing) return sendPayload(existing.id, payload, keep);
 
   try {
     const created = await db.vimeoLiveMarkPost.create({
       data: {
-        eventId: event.eventId,
+        eventId: identity.eventId,
         videoId,
-        dedupeBucket: bucket,
+        dedupeBucket: identity.dedupeBucket,
         offsetSeconds: mark.seconds,
         cueText: payload.cue_text,
         payload: asJson(payload),
@@ -443,7 +582,7 @@ async function sendPayload(
   id: string,
   payload: VimeoLiveMarkPayload,
   keep: () => Promise<boolean>
-): Promise<"ok" | "later" | "stop"> {
+): Promise<"ok" | "later" | "stop" | "terminal"> {
   let result = await postLiveMarksJson(payload);
   if (!result.ok && result.kind === "overlap") {
     if (!(await keep())) return "later";
@@ -460,10 +599,18 @@ async function sendPayload(
     );
     return "ok";
   }
+  const disposition = vimeoFailureDisposition(result.kind);
   console.log(
-    `[vimeo-marks] post ${result.kind} event=${payload.vimeo_event_id} offset=${payload.offset_seconds}`
+    `[vimeo-marks] post ${result.kind} disposition=${disposition} event=${payload.vimeo_event_id} offset=${payload.offset_seconds}`
   );
-  if (result.kind === "config") return "stop";
+  if (disposition === "terminal") {
+    await db.vimeoLiveMarkPost.update({
+      where: { id },
+      data: { status: "contract_error" },
+    });
+    return "terminal";
+  }
+  if (disposition === "stop") return "stop";
   return "later";
 }
 
