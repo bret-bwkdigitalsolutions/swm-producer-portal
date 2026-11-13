@@ -54,6 +54,17 @@ export async function postLiveMarks(input: {
 export async function postLiveMarksPayload(
   payload: LiveMarksPayload
 ): Promise<PostLiveMarksResult> {
+  return postLiveMarksJson(payload);
+}
+
+/**
+ * POST a JSON body to the live-marks route with the same Basic app-password
+ * header as {@link postLiveMarks}. YouTube calls pass the unchanged payload.
+ * Vimeo calls pass the vimeo fields and do not include `live_youtube_id`.
+ */
+export async function postLiveMarksJson(
+  payload: object
+): Promise<PostLiveMarksResult> {
   const wpApiUrl = process.env.WP_API_URL?.trim();
   if (!wpApiUrl) {
     return {
