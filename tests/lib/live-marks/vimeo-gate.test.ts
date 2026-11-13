@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const readVimeoLiveEvent = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/db", () => ({ db: {} }));
-vi.mock("@/lib/jobs/job-queue", () => ({ enqueueJob: vi.fn() }));
+vi.mock("@/lib/jobs/job-queue", () => ({
+  enqueueJob: vi.fn(),
+  enqueueSideJob: vi.fn(),
+}));
 vi.mock("@/lib/live-marks/vimeo-client", () => ({ readVimeoLiveEvent }));
 vi.mock("@/lib/live-marks/vimeo-audio", () => ({
   captureHlsAudio: vi.fn(),

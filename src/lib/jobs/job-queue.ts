@@ -23,6 +23,11 @@ function maxConcurrent(): number {
 let active = 0;
 const waiting: Array<() => void> = [];
 
+/** Vimeo mark watching. Kept off the distribution cap so a long live pass cannot fill it. */
+let sideActive = 0;
+const sideWaiting: Array<() => void> = [];
+const SIDE_SLOTS = 1;
+
 function pump(): void {
   while (active < maxConcurrent() && waiting.length > 0) {
     const start = waiting.shift()!;
@@ -52,4 +57,34 @@ export function enqueueJob(label: string, task: () => Promise<unknown>): void {
     `[job-queue] queued "${label}" (active=${active}, waiting=${waiting.length}, max=${maxConcurrent()})`
   );
   pump();
+}
+
+function pumpSide(): void {
+  while (sideActive < SIDE_SLOTS && sideWaiting.length > 0) {
+    const start = sideWaiting.shift()!;
+    sideActive++;
+    start();
+  }
+}
+
+/**
+ * Run `task` in the single side slot. It does not take a distribution slot
+ * and a full distribution queue does not hold it.
+ */
+export function enqueueSideJob(label: string, task: () => Promise<unknown>): void {
+  sideWaiting.push(() => {
+    Promise.resolve()
+      .then(task)
+      .catch((err) => {
+        console.error(`[job-queue] side "${label}" failed:`, err);
+      })
+      .finally(() => {
+        sideActive--;
+        pumpSide();
+      });
+  });
+  console.log(
+    `[job-queue] side "${label}" (active=${sideActive}, waiting=${sideWaiting.length}, max=${SIDE_SLOTS})`
+  );
+  pumpSide();
 }

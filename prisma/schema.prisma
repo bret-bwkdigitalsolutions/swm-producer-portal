@@ -556,6 +556,9 @@ model VimeoLiveWatch {
   streamStartedAt  DateTime?
   leaseToken       String?
   leaseUntil       DateTime?
+  // Video id whose 4-hour live watch already finished. The same streaming
+  // video does not start another watch. A new video id clears it.
+  liveExhaustedVideoId String?
   archiveScannedAt DateTime?
   lastError        String?   @db.Text
   createdAt        DateTime  @default(now())
@@ -564,8 +567,11 @@ model VimeoLiveWatch {
   @@map("vimeo_live_watches")
 }
 
-// One spoken cue per 30-second bucket. status stays pending until the website
-// accepts the POST, so a restart does not send it twice and does not drop it.
+// One spoken cue per event and 30-second bucket. The video id is recorded
+// when known, but it is not part of the key: the live pass and the archive
+// pass must not both post the same moment. status is pending until the
+// website accepts the POST, posted after that, or contract_error after a
+// 400/422, which is not retried.
 model VimeoLiveMarkPost {
   id            String   @id @default(cuid())
   eventId       String
@@ -578,7 +584,7 @@ model VimeoLiveMarkPost {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@unique([eventId, videoId, dedupeBucket])
+  @@unique([eventId, dedupeBucket])
   @@index([eventId, status])
   @@map("vimeo_live_mark_posts")
 }

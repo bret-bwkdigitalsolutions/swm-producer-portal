@@ -221,6 +221,60 @@ export function vimeoMarkBucket(offsetSeconds: number): number {
 }
 
 /**
+ * Identity of one cue. The live pass may not know the video id yet and the
+ * archive pass will. The bucket ignores the video id so those two passes
+ * cannot both post the same moment.
+ */
+export function vimeoMarkIdentity(
+  eventId: string,
+  offsetSeconds: number
+): { eventId: string; dedupeBucket: number } {
+  return { eventId, dedupeBucket: vimeoMarkBucket(offsetSeconds) };
+}
+
+/** Blank when the live pass has not learned a video id yet. */
+export function vimeoVideoKey(videoId: string | null | undefined): string {
+  return videoId?.trim() ?? "";
+}
+
+/**
+ * A watcher that already ran its full window for this video does not start
+ * another one while that same video is still the current broadcast.
+ */
+export function vimeoLiveWatchRestartAllowed(input: {
+  videoId: string | null;
+  exhaustedVideoId: string | null;
+}): boolean {
+  if (input.exhaustedVideoId == null) return true;
+  return input.exhaustedVideoId !== vimeoVideoKey(input.videoId);
+}
+
+/** One Deepgram window fits the shared daily cap when fewer than `cap` are used. */
+export function vimeoPaidWindowAllowed(usedToday: number, cap: number): boolean {
+  return usedToday < cap;
+}
+
+export type VimeoPostFailureKind =
+  | "website_not_ready"
+  | "overlap"
+  | "config"
+  | "contract"
+  | "retryable";
+
+/**
+ * A 400 or 422 is terminal, the same class as the YouTube `contract_error`
+ * plan. Other failures stay retryable. A 401 or 403 stops the loop but is
+ * not a rejected payload.
+ */
+export function vimeoFailureDisposition(
+  kind: VimeoPostFailureKind
+): "retry" | "terminal" | "stop" {
+  if (kind === "contract") return "terminal";
+  if (kind === "config") return "stop";
+  return "retry";
+}
+
+/**
  * ffprobe `format.start_time` on this live HLS is the seconds from ingest
  * start to the live edge. Utterance times in a capture that begins at that
  * edge are added to it.

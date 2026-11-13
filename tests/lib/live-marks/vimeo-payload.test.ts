@@ -9,8 +9,12 @@ import {
   parseVimeoLiveEvents,
   redactSecrets,
   utterancesAtStreamEdge,
+  vimeoFailureDisposition,
   vimeoLiveReferrer,
+  vimeoLiveWatchRestartAllowed,
   vimeoMarkBucket,
+  vimeoMarkIdentity,
+  vimeoPaidWindowAllowed,
 } from "@/lib/live-marks/vimeo-events";
 import { buildLiveMarksPayload } from "@/lib/live-marks/payload";
 
@@ -227,5 +231,53 @@ describe("Vimeo event config", () => {
     expect(redactSecrets("Vimeo API 401 bearer abc.def for https://api.vimeo.com/x?sig=1")).toBe(
       "Vimeo API 401 bearer [redacted] for [url]"
     );
+  });
+});
+
+describe("Vimeo mark follow-ups", () => {
+  it("treats a 400 or 422 as terminal and other failures as retryable", () => {
+    expect(vimeoFailureDisposition("contract")).toBe("terminal");
+    expect(vimeoFailureDisposition("retryable")).toBe("retry");
+    expect(vimeoFailureDisposition("website_not_ready")).toBe("retry");
+    expect(vimeoFailureDisposition("overlap")).toBe("retry");
+    expect(vimeoFailureDisposition("config")).toBe("stop");
+  });
+
+  it("dedupes a cue on the event and time bucket, ignoring the video id", () => {
+    const livePass = vimeoMarkIdentity("6344608", 2594);
+    const archivePass = vimeoMarkIdentity("6344608", 2600);
+    expect(livePass).toEqual(archivePass);
+    expect(livePass).toEqual({ eventId: "6344608", dedupeBucket: 86 });
+    expect(livePass).not.toHaveProperty("videoId");
+    expect(vimeoMarkIdentity("6344608", 90)).not.toEqual(
+      vimeoMarkIdentity("6344608", 130)
+    );
+  });
+
+  it("counts a live window against the daily cap", () => {
+    expect(vimeoPaidWindowAllowed(9, 10)).toBe(true);
+    expect(vimeoPaidWindowAllowed(10, 10)).toBe(false);
+    expect(vimeoPaidWindowAllowed(11, 10)).toBe(false);
+  });
+
+  it("does not restart a live watch that already finished for this video", () => {
+    expect(
+      vimeoLiveWatchRestartAllowed({ videoId: "1245272985", exhaustedVideoId: null })
+    ).toBe(true);
+    expect(
+      vimeoLiveWatchRestartAllowed({
+        videoId: "1245272985",
+        exhaustedVideoId: "1245272985",
+      })
+    ).toBe(false);
+    expect(
+      vimeoLiveWatchRestartAllowed({ videoId: null, exhaustedVideoId: "" })
+    ).toBe(false);
+    expect(
+      vimeoLiveWatchRestartAllowed({
+        videoId: "999",
+        exhaustedVideoId: "1245272985",
+      })
+    ).toBe(true);
   });
 });
