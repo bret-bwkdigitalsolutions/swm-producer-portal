@@ -14,7 +14,10 @@ import {
   vimeoLiveWatchRestartAllowed,
   vimeoMarkBucket,
   vimeoMarkIdentity,
-  vimeoPaidWindowAllowed,
+  nextUtcCapReset,
+  vimeoCapRestartAllowed,
+  vimeoSharedCapUsage,
+  youtubeScanFitsSharedCap,
 } from "@/lib/live-marks/vimeo-events";
 import { buildLiveMarksPayload } from "@/lib/live-marks/payload";
 
@@ -254,10 +257,38 @@ describe("Vimeo mark follow-ups", () => {
     );
   });
 
-  it("counts a live window against the daily cap", () => {
-    expect(vimeoPaidWindowAllowed(9, 10)).toBe(true);
-    expect(vimeoPaidWindowAllowed(10, 10)).toBe(false);
-    expect(vimeoPaidWindowAllowed(11, 10)).toBe(false);
+  it("charges one shared claim for a 60+ minute live session so YouTube scans still fit", () => {
+    const hourOfWindows = (60 * 60) / 30;
+    expect(hourOfWindows).toBeGreaterThanOrEqual(120);
+    const usage = vimeoSharedCapUsage({
+      liveWindows: hourOfWindows,
+      archivePasses: 1,
+    });
+    expect(usage).toEqual({ liveClaims: 1, archiveClaims: 1, total: 2 });
+    expect(
+      youtubeScanFitsSharedCap({
+        cap: 10,
+        youtubeClaims: 0,
+        vimeoClaims: usage.total,
+      })
+    ).toBe(true);
+    expect(
+      youtubeScanFitsSharedCap({
+        cap: 10,
+        youtubeClaims: 7,
+        vimeoClaims: usage.total,
+      })
+    ).toBe(true);
+    expect(hourOfWindows + 1 < 10).toBe(false);
+  });
+
+  it("stops restarting a capped watcher until the daily cap resets", () => {
+    const during = new Date("2026-11-13T18:00:00.000Z");
+    const reset = nextUtcCapReset(during);
+    expect(reset.toISOString()).toBe("2026-11-14T00:00:00.000Z");
+    expect(vimeoCapRestartAllowed(reset, during)).toBe(false);
+    expect(vimeoCapRestartAllowed(reset, reset)).toBe(true);
+    expect(vimeoCapRestartAllowed(null, during)).toBe(true);
   });
 
   it("does not restart a live watch that already finished for this video", () => {

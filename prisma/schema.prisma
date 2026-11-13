@@ -559,6 +559,9 @@ model VimeoLiveWatch {
   // Video id whose 4-hour live watch already finished. The same streaming
   // video does not start another watch. A new video id clears it.
   liveExhaustedVideoId String?
+  // Set when the shared daily cap refuses a session. The cron does not
+  // start another watcher until this instant (the next UTC midnight).
+  capBlockedUntil      DateTime?
   archiveScannedAt DateTime?
   lastError        String?   @db.Text
   createdAt        DateTime  @default(now())

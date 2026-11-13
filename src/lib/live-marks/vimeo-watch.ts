@@ -28,7 +28,7 @@ import {
   vimeoFailureDisposition,
   vimeoLiveReferrer,
   vimeoMarkIdentity,
-  vimeoPaidWindowAllowed,
+  nextUtcCapReset,
   vimeoVideoKey,
   type VimeoLiveEventConfig,
   type VimeoLiveMarkPayload,
@@ -192,6 +192,16 @@ async function claim(
                   { NOT: { liveExhaustedVideoId: vimeoVideoKey(videoId) } },
                 ],
               },
+              {
+                OR: [{ capBlockedUntil: null }, { capBlockedUntil: { lte: now } }],
+              },
+            ]
+          : []),
+        ...(mode === "archive"
+          ? [
+              {
+                OR: [{ capBlockedUntil: null }, { capBlockedUntil: { lte: now } }],
+              },
             ]
           : []),
       ],
@@ -253,6 +263,10 @@ async function watchLive(
   event: VimeoLiveEventConfig,
   token: string
 ): Promise<void> {
+  if (!(await reservePaidSession(event.eventId, "live"))) {
+    await markCapBlocked(event.eventId, token);
+    return;
+  }
   const started = Date.now();
   let videoId: string | null = null;
   let stopReason: "timeout" | "stop" = "timeout";
@@ -325,6 +339,10 @@ async function scanArchive(
     return;
   }
   if (reading.snapshot.status === "streaming") return;
+  if (!(await reservePaidSession(event.eventId, "archive"))) {
+    await markCapBlocked(event.eventId, token);
+    return;
+  }
   const outcome = await transcribeReading(event, token, reading, {
     seconds: MAX_BROADCAST_SECONDS,
     seekStart: true,
@@ -374,12 +392,29 @@ async function markWatchExhausted(
   );
 }
 
+async function markCapBlocked(eventId: string, token: string): Promise<void> {
+  const until = nextUtcCapReset(new Date());
+  await db.vimeoLiveWatch.updateMany({
+    where: { eventId, leaseToken: token },
+    data: {
+      capBlockedUntil: until,
+      lastError: "Live transcription daily cap is full. Will try again after UTC midnight.",
+    },
+  });
+  console.log(
+    `[vimeo-marks] ${eventId} daily cap reached. Not starting another watcher until ${until.toISOString()}.`
+  );
+}
+
 /**
- * One paid Deepgram window, counted with the YouTube scans against
- * LIVE_TRANSCRIPTION_DAILY_CAP. The advisory lock is the same one the
- * YouTube claim uses, so the two paths cannot both slip past the cap.
+ * One shared-cap claim for a whole live session, or one for the archive
+ * pass. Later 30-second windows in that session do not insert another row.
+ * The advisory lock is the same one the YouTube claim uses.
  */
-async function reservePaidWindow(eventId: string): Promise<boolean> {
+async function reservePaidSession(
+  eventId: string,
+  kind: "live" | "archive"
+): Promise<boolean> {
   const now = new Date();
   return db.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(
@@ -391,9 +426,9 @@ async function reservePaidWindow(eventId: string): Promise<boolean> {
     const used = await tx.liveScanPaidClaim.count({
       where: { claimedAt: { gte: startOfUtcDay(now) } },
     });
-    if (!vimeoPaidWindowAllowed(used, cap)) return false;
+    if (used >= cap) return false;
     await tx.liveScanPaidClaim.create({
-      data: { liveRecordingId: `vimeo:${eventId}`, claimedAt: now },
+      data: { liveRecordingId: `vimeo-${kind}:${eventId}`, claimedAt: now },
     });
     return true;
   });
@@ -433,12 +468,6 @@ async function transcribeReading(
       new Error("Website rejected the Vimeo mark with a configuration error.")
     );
     return "config";
-  }
-  if (!(await reservePaidWindow(event.eventId))) {
-    console.log(
-      `[vimeo-marks] ${event.eventId} daily cap reached. Not starting another window.`
-    );
-    return "capped";
   }
 
   const edge = options.fromStart

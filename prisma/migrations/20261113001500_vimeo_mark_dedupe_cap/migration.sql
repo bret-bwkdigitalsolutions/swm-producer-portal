@@ -24,3 +24,5 @@ DROP INDEX IF EXISTS "vimeo_live_mark_posts_eventId_videoId_dedupeBucket_key";
 
 CREATE UNIQUE INDEX "vimeo_live_mark_posts_eventId_dedupeBucket_key"
   ON "vimeo_live_mark_posts"("eventId", "dedupeBucket");
+
+ALTER TABLE "vimeo_live_watches" ADD COLUMN "capBlockedUntil" TIMESTAMP(3);

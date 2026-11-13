@@ -249,9 +249,41 @@ export function vimeoLiveWatchRestartAllowed(input: {
   return input.exhaustedVideoId !== vimeoVideoKey(input.videoId);
 }
 
-/** One Deepgram window fits the shared daily cap when fewer than `cap` are used. */
-export function vimeoPaidWindowAllowed(usedToday: number, cap: number): boolean {
-  return usedToday < cap;
+/** UTC midnight after `now`. The shared daily cap resets then. */
+export function nextUtcCapReset(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+}
+
+/** False while a cap block is still in the future. */
+export function vimeoCapRestartAllowed(
+  capBlockedUntil: Date | null,
+  now: Date
+): boolean {
+  if (capBlockedUntil == null) return true;
+  return capBlockedUntil.getTime() <= now.getTime();
+}
+
+/**
+ * Shared-cap rows for Vimeo work. A live session is one claim no matter how
+ * many 30-second windows it transcribes. The archive pass is one more claim.
+ * YouTube scans keep the remaining slots.
+ */
+export function vimeoSharedCapUsage(input: {
+  liveWindows: number;
+  archivePasses: number;
+}): { liveClaims: number; archiveClaims: number; total: number } {
+  const liveClaims = input.liveWindows > 0 ? 1 : 0;
+  const archiveClaims = input.archivePasses > 0 ? 1 : 0;
+  return { liveClaims, archiveClaims, total: liveClaims + archiveClaims };
+}
+
+/** True when another YouTube paid scan still fits under the shared cap. */
+export function youtubeScanFitsSharedCap(input: {
+  cap: number;
+  youtubeClaims: number;
+  vimeoClaims: number;
+}): boolean {
+  return input.youtubeClaims + input.vimeoClaims < input.cap;
 }
 
 export type VimeoPostFailureKind =
