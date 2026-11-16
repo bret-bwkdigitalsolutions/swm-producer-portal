@@ -17,3 +17,19 @@ export function isOgDistribution(metadata: unknown): boolean {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
   return (metadata as { premiumSection?: unknown }).premiumSection === OG_PREMIUM_SECTION;
 }
+
+/**
+ * Fields that stay on the server. ogVimeoMediaUrl contains the Vimeo privacy
+ * hash, so the job detail page must not receive it.
+ */
+const JOB_DETAIL_METADATA_OMIT = ["ogVimeoMediaUrl"] as const;
+
+export function metadataForJobDetail(
+  metadata: Record<string, unknown>
+): Record<string, unknown> {
+  const copy = { ...metadata };
+  for (const key of JOB_DETAIL_METADATA_OMIT) {
+    delete copy[key];
+  }
+  return copy;
+}

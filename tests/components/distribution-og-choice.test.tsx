@@ -48,6 +48,11 @@ describe("DistributionForm OG choice", () => {
 
     expect(screen.getByText(/published only to the members page/i)).toBeInTheDocument();
     expect(screen.queryByText("Target Platforms")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Schedule/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Publish now/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Publish to The OG" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: "Public episode" }));
+    expect(screen.getByRole("button", { name: /^Schedule/ })).toBeInTheDocument();
   });
 });

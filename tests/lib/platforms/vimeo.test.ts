@@ -165,6 +165,46 @@ describe("uploadOgVideoToVimeo", () => {
       })
     ).rejects.toThrow(/not hidden from Vimeo/);
   });
+
+  it("scrubs a raw tus network error", async () => {
+    process.env.VIMEO_OG_ACCESS_TOKEN = TOKEN;
+    const dir = await mkdtemp(join(tmpdir(), "og-vimeo-"));
+    const filePath = join(dir, "video.mp4");
+    await writeFile(filePath, Buffer.from("video-bytes"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith("/me/videos") && init?.method === "POST") {
+          return json({
+            uri: "/videos/555",
+            upload: {
+              upload_link: `https://files.example/tus?access_token=${TOKEN}`,
+            },
+          });
+        }
+        throw new Error(
+          `connect failed Bearer ${TOKEN} https://files.example/tus?access_token=${TOKEN}`
+        );
+      })
+    );
+
+    await expect(
+      uploadOgVideoToVimeo({
+        title: "The OG #27",
+        description: "Members only",
+        videoFilePath: filePath,
+      })
+    ).rejects.toThrow(/\[url\]/);
+    await expect(
+      uploadOgVideoToVimeo({
+        title: "The OG #27",
+        description: "Members only",
+        videoFilePath: filePath,
+      })
+    ).rejects.not.toThrow(new RegExp(TOKEN));
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });
 
 function json(body: unknown): Response {

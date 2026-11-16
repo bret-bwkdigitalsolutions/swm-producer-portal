@@ -185,6 +185,11 @@ export function DistributionForm({
   const [isPremium, setIsPremium] = useState(false);
   const [publishAsOg, setPublishAsOg] = useState(false);
   const ogAvailable = shows.some((show) => show.id === showId && showOffersOg(show));
+  useEffect(() => {
+    if (publishAsOg && publishState.status === "future") {
+      setPublishState({ status: "publish" });
+    }
+  }, [publishAsOg, publishState.status]);
 
   // Track whether upload was done for AI path (video uploaded before form submit)
   const [aiUploadedJobId, setAiUploadedJobId] = useState<string | null>(null);
@@ -1680,9 +1685,23 @@ export function DistributionForm({
             </fieldset>
           )}
 
-          {/* Publish mode */}
+          {/* Publish mode. The OG has no scheduled release. */}
           {(descriptionMode === "manual" || aiReady) && (
-            <PublishToggle value={publishState} onChange={setPublishState} />
+            <PublishToggle
+              value={
+                publishAsOg && publishState.status === "future"
+                  ? { status: "publish" }
+                  : publishState
+              }
+              onChange={(next) => {
+                if (publishAsOg && next.status === "future") {
+                  setPublishState({ status: "publish" });
+                  return;
+                }
+                setPublishState(next);
+              }}
+              allowSchedule={!publishAsOg}
+            />
           )}
         </CardContent>
 

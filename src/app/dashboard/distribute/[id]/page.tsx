@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { redirect, notFound } from "next/navigation";
 import { getCachedShows } from "@/lib/wordpress/cache";
 import { JobDetailView } from "./job-detail-view";
-import { OG_WP_SHOW_ID, isOgDistribution, showOffersOg } from "@/lib/og-episode";
+import { OG_WP_SHOW_ID, isOgDistribution, metadataForJobDetail, showOffersOg } from "@/lib/og-episode";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -38,7 +38,7 @@ export default async function DistributionJobPage({ params }: Props) {
   const allShows = await getCachedShows().catch(() => []);
   const show = allShows.find((s) => s.id === job.wpShowId);
   const showName = show?.title.rendered ?? `Show #${job.wpShowId}`;
-  const metadata = job.metadata as Record<string, unknown>;
+  const metadata = metadataForJobDetail(job.metadata as Record<string, unknown>);
   const isOg = isOgDistribution(metadata);
   const showIsYdc =
     job.wpShowId === OG_WP_SHOW_ID ||

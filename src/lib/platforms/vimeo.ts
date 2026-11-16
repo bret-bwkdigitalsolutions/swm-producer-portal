@@ -251,17 +251,23 @@ async function tusUpload(
     })
   );
 
-  const response = await fetch(uploadLink, {
-    method: "PATCH",
-    headers: {
-      "Tus-Resumable": "1.0.0",
-      "Upload-Offset": "0",
-      "Content-Type": "application/offset+octet-stream",
-      "Content-Length": String(size),
-    },
-    body: body as unknown as BodyInit,
-    duplex: "half",
-  } as RequestInit);
+  let response: Response;
+  try {
+    response = await fetch(uploadLink, {
+      method: "PATCH",
+      headers: {
+        "Tus-Resumable": "1.0.0",
+        "Upload-Offset": "0",
+        "Content-Type": "application/offset+octet-stream",
+        "Content-Length": String(size),
+      },
+      body: body as unknown as BodyInit,
+      duplex: "half",
+    } as RequestInit);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "network error";
+    throw new Error(`Vimeo upload failed: ${scrubVimeoError(reason)}`);
+  }
 
   if (!response.ok && response.status !== 204) {
     throw new Error(await vimeoErrorMessage(response));

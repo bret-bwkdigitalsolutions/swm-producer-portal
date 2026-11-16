@@ -36,6 +36,8 @@ interface PublishToggleProps {
   value: PublishState;
   onChange: (value: PublishState) => void;
   className?: string;
+  /** The OG publishes now or as a draft. It has no scheduled release. */
+  allowSchedule?: boolean;
 }
 
 function formatDatetimeLocal(date: Date): string {
@@ -74,6 +76,7 @@ export function PublishToggle({
   value,
   onChange,
   className,
+  allowSchedule = true,
 }: PublishToggleProps) {
   const browserTimezone = useMemo(() => getBrowserTimezone(), []);
   const timezoneAbbr = useMemo(
@@ -102,12 +105,17 @@ export function PublishToggle({
     [onChange]
   );
 
+  const options = allowSchedule
+    ? OPTIONS
+    : OPTIONS.filter((option) => option.value !== "future");
+  const selected = !allowSchedule && value.status === "future" ? "publish" : value.status;
+
   return (
     <div className={cn("space-y-3", className)}>
-      <div className="grid grid-cols-3 gap-2">
-        {OPTIONS.map((opt) => {
+      <div className={cn("grid gap-2", options.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+        {options.map((opt) => {
           const Icon = opt.icon;
-          const isSelected = value.status === opt.value;
+          const isSelected = selected === opt.value;
           return (
             <button
               key={opt.value}
@@ -130,7 +138,7 @@ export function PublishToggle({
         })}
       </div>
 
-      {value.status === "future" && (
+      {allowSchedule && value.status === "future" && (
         <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
           <Label
             htmlFor="publish-date"
