@@ -85,6 +85,17 @@ vi.mock("@/lib/platforms/wordpress", () => ({
   publishToWordPress: (...args: unknown[]) => mockPublishToWordPress(...args),
 }));
 
+const mockUploadOgVideo = vi.fn();
+const mockPublishOgEpisode = vi.fn();
+
+vi.mock("@/lib/platforms/vimeo", () => ({
+  uploadOgVideoToVimeo: (...args: unknown[]) => mockUploadOgVideo(...args),
+}));
+
+vi.mock("@/lib/platforms/wordpress-og", () => ({
+  publishOgEpisode: (...args: unknown[]) => mockPublishOgEpisode(...args),
+}));
+
 vi.mock("@/lib/wordpress/client", () => ({
   findEpisodeByTitleOrSlug: (...args: unknown[]) =>
     mockFindEpisodeByTitleOrSlug(...args),
@@ -1413,5 +1424,132 @@ describe("processJob", () => {
     expect(signedDownloadCount()).toBe(1);
     expect(mockExtractAudio).not.toHaveBeenCalled();
     expect(leftoverVideoDirs()).toEqual([]);
+  });
+
+  it("still publishes a public episode with the YouTube embed and does not call Vimeo", async () => {
+    const job = makeJob({
+      metadata: { description: "A test episode", transcript: "already transcribed" },
+      platforms: [
+        { id: "plat-yt", platform: "youtube" },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockUploadToYouTube.mockResolvedValue({
+      videoId: "yt-abc",
+      videoUrl: "https://www.youtube.com/watch?v=yt-abc",
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 77,
+      postUrl: "https://example.com/episode/public",
+      supersedesLivePostId: null,
+      supersedeDropped: false,
+    });
+    installVideoFetch();
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "youtube")?.status).toBe(
+      "completed"
+    );
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(mockPublishToWordPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        youtubeUrl: "https://www.youtube.com/watch?v=yt-abc",
+      })
+    );
+    expect(mockUploadOgVideo).not.toHaveBeenCalled();
+    expect(mockPublishOgEpisode).not.toHaveBeenCalled();
+  });
+
+  it("still fails a website-only public episode when YouTube never ran", async () => {
+    const job = makeJob({
+      wpShowId: 21,
+      title: "A public YDC episode",
+      metadata: { description: "Not The OG", transcript: "already transcribed" },
+      platforms: [{ id: "plat-web", platform: "website" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("failed");
+    expect(result.platformResults.find((r) => r.platform === "website")).toEqual(
+      expect.objectContaining({
+        status: "failed",
+        error: "YouTube URL not available. WordPress post requires the YouTube embed.",
+      })
+    );
+    expect(mockUploadOgVideo).not.toHaveBeenCalled();
+    expect(mockPublishToWordPress).not.toHaveBeenCalled();
+  });
+
+  it("publishes The OG to Vimeo and premium content without YouTube", async () => {
+    const job = makeJob({
+      wpShowId: 21,
+      title: "The OG #27",
+      userId: "user-1",
+      metadata: {
+        description: "Members-only hour",
+        chapters: "00:00 - Open",
+        transcript: "already transcribed",
+        transcriptDisplay: "Already transcribed.",
+        premiumSection: "og",
+      },
+      platforms: [{ id: "plat-web", platform: "website" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockUploadOgVideo.mockImplementation(async (params: { onVideoCreated?: (id: string) => Promise<void> }) => {
+      await params.onVideoCreated?.("555");
+      return {
+        videoId: "555",
+        mediaUrl: "https://vimeo.com/555/abc123",
+        durationSeconds: 90,
+      };
+    });
+    mockPublishOgEpisode.mockResolvedValue({
+      postId: 880,
+      postUrl: "https://stolenwatermedia.com/shows/the-og/#swm-vimeo-555",
+      created: true,
+    });
+    installVideoFetch();
+
+    const result = await processJob("job-1");
+
+    expect(result.status).toBe("completed");
+    expect(result.platformResults).toEqual([
+      expect.objectContaining({ platform: "website", status: "completed" }),
+    ]);
+    expect(mockUploadToYouTube).not.toHaveBeenCalled();
+    expect(mockPublishToWordPress).not.toHaveBeenCalled();
+    expect(mockUploadOgVideo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "The OG #27",
+        description: "Members-only hour",
+        videoFilePath: expect.stringMatching(/video\.mp4$/),
+      })
+    );
+    expect(mockPublishOgEpisode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wpShowId: 21,
+        title: "The OG #27",
+        vimeoVideoId: "555",
+        mediaUrl: "https://vimeo.com/555/abc123",
+        status: "publish",
+        portalJobId: "job-1",
+      })
+    );
+    expect(mockPlatformUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "plat-web" },
+        data: expect.objectContaining({
+          status: "completed",
+          externalId: "880",
+          externalUrl: "https://stolenwatermedia.com/shows/the-og/#swm-vimeo-555",
+        }),
+      })
+    );
   });
 });

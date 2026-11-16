@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { redirect, notFound } from "next/navigation";
 import { getCachedShows } from "@/lib/wordpress/cache";
 import { JobDetailView } from "./job-detail-view";
+import { OG_WP_SHOW_ID, isOgDistribution, showOffersOg } from "@/lib/og-episode";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -37,6 +38,15 @@ export default async function DistributionJobPage({ params }: Props) {
   const allShows = await getCachedShows().catch(() => []);
   const show = allShows.find((s) => s.id === job.wpShowId);
   const showName = show?.title.rendered ?? `Show #${job.wpShowId}`;
+  const metadata = job.metadata as Record<string, unknown>;
+  const isOg = isOgDistribution(metadata);
+  const showIsYdc =
+    job.wpShowId === OG_WP_SHOW_ID ||
+    showOffersOg({ id: job.wpShowId, title: showName });
+  const canRetryAsOg =
+    !isOg &&
+    showIsYdc &&
+    job.platforms.some((platform) => platform.platform === "website" && platform.status === "failed");
 
   // Serialize for the client component
   const serializedJob = {
@@ -45,8 +55,10 @@ export default async function DistributionJobPage({ params }: Props) {
     showName,
     status: job.status,
     isPremium: job.isPremium,
+    isOg,
+    canRetryAsOg,
     errorMessage: job.errorMessage,
-    metadata: job.metadata as Record<string, unknown>,
+    metadata,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
     platforms: job.platforms.map((p) => ({

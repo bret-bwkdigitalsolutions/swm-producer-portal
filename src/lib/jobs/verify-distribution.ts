@@ -86,6 +86,8 @@ interface CheckCtx {
   expectedTitle: string;
   isLiveRecording: boolean;
   isPremium: boolean;
+  /** Members-only OG posts are swm_premium_content, not public episodes. */
+  premiumSection?: "og";
 }
 
 // --------------------------- Per-platform tier checks -----------------------
@@ -234,6 +236,7 @@ export async function websiteVerificationIssues(
       expectedTitle: ctx.expectedTitle,
       isLiveRecording: ctx.isLiveRecording,
       isPremium: ctx.isPremium,
+      premiumSection: ctx.premiumSection,
     });
   }
   return websiteVerificationIssuesFromWordPress(tier, postId, ctx);
@@ -251,14 +254,26 @@ export async function websiteVerificationIssuesFromWordPress(
   }
   const startedAt = Date.now();
   const wpAuth = "Basic " + Buffer.from(`${process.env.WP_APP_USER}:${process.env.WP_APP_PASSWORD}`).toString("base64");
+  const ogPost = ctx.premiumSection === "og";
   const res = await fetch(
-    `${wpApiUrl}/swm_episode/${postId}?_fields=id,title,featured_media,status,link`,
+    ogPost
+      ? `${wpApiUrl.replace(/\/wp\/v2\/?$/, "")}/swm-premium/v1/og-content/${postId}`
+      : `${wpApiUrl}/swm_episode/${postId}?_fields=id,title,featured_media,status,link`,
     { headers: { Authorization: wpAuth }, signal: verificationSignal(startedAt) }
   );
   if (!res.ok) {
     return [{ platform: "website", field: "api_check", expected: "accessible", actual: `API ${res.status}` }];
   }
-  const post = await res.json() as { id: number; title: { rendered: string }; featured_media: number; status: string; link: string };
+  const post = await res.json() as {
+    id: number;
+    title: { rendered: string };
+    featured_media: number;
+    status: string;
+    link: string;
+    section?: string;
+    parent_show_id?: number;
+    vimeo_video_id?: string;
+  };
   const issues: VerificationIssue[] = [];
   if (tier === 1) return issues;
 
@@ -266,7 +281,22 @@ export async function websiteVerificationIssuesFromWordPress(
     if (normalizeTitle(post.title.rendered) !== normalizeTitle(ctx.expectedTitle)) {
       issues.push({ platform: "website", field: "title", expected: ctx.expectedTitle, actual: post.title.rendered });
     }
-    if (!post.featured_media) {
+    if (ogPost) {
+      if (post.section !== "og") {
+        issues.push({ platform: "website", field: "section", expected: "og", actual: post.section ?? "none" });
+      }
+      if (post.parent_show_id !== ctx.wpShowId) {
+        issues.push({
+          platform: "website",
+          field: "parent_show_id",
+          expected: String(ctx.wpShowId),
+          actual: String(post.parent_show_id ?? "none"),
+        });
+      }
+      if (!post.vimeo_video_id) {
+        issues.push({ platform: "website", field: "vimeo_video_id", expected: "set", actual: "none" });
+      }
+    } else if (!post.featured_media) {
       issues.push({ platform: "website", field: "thumbnail", expected: "featured_media set", actual: "none" });
     }
   }
@@ -276,7 +306,7 @@ export async function websiteVerificationIssuesFromWordPress(
       issues.push({ platform: "website", field: "status", expected: "publish", actual: post.status });
     }
   }
-  if (tier === 4 && post.link) {
+  if (tier === 4 && post.link && !ogPost) {
     // Skip public URL check for future-dated posts — they 404 by design
     if (post.status !== "future") {
       const reach = await checkUrlReachable(post.link, verificationSignal(startedAt));
@@ -305,7 +335,19 @@ export async function runVerificationTier(
   const platforms = await db.distributionJobPlatform.findMany({
     where: { jobId, status: "completed" },
   });
-  const ctx: CheckCtx = { jobId, wpShowId, expectedTitle, isLiveRecording, isPremium };
+  const jobRow = await db.distributionJob.findUnique({
+    where: { id: jobId },
+    select: { metadata: true },
+  });
+  const jobMeta = (jobRow?.metadata ?? {}) as { premiumSection?: unknown };
+  const ctx: CheckCtx = {
+    jobId,
+    wpShowId,
+    expectedTitle,
+    isLiveRecording,
+    isPremium,
+    premiumSection: jobMeta.premiumSection === "og" ? "og" : undefined,
+  };
 
   const platformResults: PlatformTierResult[] = await Promise.all(
     platforms.map(async (p): Promise<PlatformTierResult> => {

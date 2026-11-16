@@ -8,6 +8,10 @@ import {
   updatePost,
   uploadMedia,
 } from "@/lib/wordpress/client";
+import {
+  publishOgEpisode,
+  type PublishOgEpisodeParams,
+} from "@/lib/platforms/wordpress-og";
 import { lookupLiveStreamCandidate } from "@/lib/wordpress/live-candidate";
 import { websiteVerificationIssuesFromWordPress } from "@/lib/jobs/verify-distribution";
 import type { WpCreatePostPayload } from "@/lib/wordpress/types";
@@ -36,6 +40,50 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function positiveInt(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return null;
   return value;
+}
+
+function ogPublishParams(value: unknown): PublishOgEpisodeParams | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const wpShowId = positiveInt(record.wpShowId);
+  const title = requiredString(record.title);
+  const description = typeof record.description === "string" ? record.description : null;
+  const vimeoVideoId = requiredString(record.vimeoVideoId);
+  const mediaUrl = requiredString(record.mediaUrl);
+  const portalUserId = requiredString(record.portalUserId);
+  const portalJobId = requiredString(record.portalJobId);
+  const status = record.status === "draft" ? "draft" : record.status === "publish" ? "publish" : null;
+  if (
+    wpShowId == null ||
+    !title ||
+    description == null ||
+    !vimeoVideoId ||
+    !mediaUrl ||
+    !portalUserId ||
+    !portalJobId ||
+    !status
+  ) {
+    return null;
+  }
+  return {
+    wpShowId,
+    title,
+    description,
+    chapters: typeof record.chapters === "string" ? record.chapters : undefined,
+    audioDurationSeconds:
+      typeof record.audioDurationSeconds === "number" ? record.audioDurationSeconds : undefined,
+    transcript: typeof record.transcript === "string" ? record.transcript : undefined,
+    transcriptVtt: typeof record.transcriptVtt === "string" ? record.transcriptVtt : undefined,
+    vimeoVideoId,
+    mediaUrl,
+    thumbnailUrl: typeof record.thumbnailUrl === "string" ? record.thumbnailUrl : undefined,
+    durationSeconds: typeof record.durationSeconds === "number" ? record.durationSeconds : undefined,
+    thumbnailGcsPath:
+      typeof record.thumbnailGcsPath === "string" ? record.thumbnailGcsPath : undefined,
+    portalUserId,
+    portalJobId,
+    status,
+  };
 }
 
 function requiredString(value: unknown): string | null {
@@ -153,7 +201,15 @@ export async function dispatchPortalWordPress(body: unknown): Promise<unknown> {
         expectedTitle,
         isLiveRecording: record.isLiveRecording === true,
         isPremium: record.isPremium === true,
+        premiumSection: record.premiumSection === "og" ? "og" : undefined,
       });
+    }
+    case "publishOg": {
+      const params = ogPublishParams(record.params);
+      if (!params) {
+        throw new PortalWordPressRequestError("publishOg requires an OG episode payload");
+      }
+      return publishOgEpisode(params);
     }
     default:
       throw new PortalWordPressRequestError(`Unknown operation: ${op}`);

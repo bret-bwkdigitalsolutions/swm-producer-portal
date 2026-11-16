@@ -55,6 +55,38 @@ describe("website verification", () => {
     );
   });
 
+  it("reads an OG post from the premium route and does not require a public episode", async () => {
+    process.env.WP_API_URL = "https://example.com/wp-json/wp/v2";
+    process.env.WP_APP_USER = "user";
+    process.env.WP_APP_PASSWORD = "pass";
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 55,
+        title: { rendered: "The OG #27" },
+        featured_media: 0,
+        status: "publish",
+        link: "https://example.com/shows/the-og/#swm-vimeo-555",
+        section: "og",
+        parent_show_id: 21,
+        vimeo_video_id: "555",
+      }),
+    });
+
+    await expect(
+      websiteVerificationIssues(2, "55", {
+        ...ctx,
+        expectedTitle: "The OG #27",
+        premiumSection: "og",
+      })
+    ).resolves.toEqual([]);
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "https://example.com/wp-json/swm-premium/v1/og-content/55"
+    );
+    expect(String(mockFetch.mock.calls[0][0])).not.toContain("swm_episode");
+  });
+
   it("asks the portal to verify when running as the video worker", async () => {
     process.env.VIDEO_WORKER = "1";
     process.env.NEXTAUTH_URL = "https://portal.example.com";

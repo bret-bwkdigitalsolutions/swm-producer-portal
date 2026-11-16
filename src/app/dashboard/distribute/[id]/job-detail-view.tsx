@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, useEffect, useCallback } from "react";
-import { updateAiSuggestion, retryPlatform, deleteJob } from "./actions";
+import { updateAiSuggestion, retryPlatform, retryWebsiteAsOg, deleteJob } from "./actions";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,6 +60,8 @@ interface SerializedJob {
   showName: string;
   status: string;
   isPremium: boolean;
+  isOg: boolean;
+  canRetryAsOg: boolean;
   errorMessage: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
@@ -119,11 +121,14 @@ const SUGGESTION_LABELS: Record<string, string> = {
 function PlatformStatusRow({
   platform,
   note,
+  canRetryAsOg,
 }: {
   platform: Platform;
   note?: string | null;
+  canRetryAsOg?: boolean;
 }) {
   const [retryState, retryAction, isRetrying] = useActionState(retryPlatform, {});
+  const [ogState, ogAction, isOgRetrying] = useActionState(retryWebsiteAsOg, {});
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3">
@@ -141,6 +146,11 @@ function PlatformStatusRow({
           {platform.error && (
             <p className="text-xs text-destructive">{platform.error}</p>
           )}
+          {ogState.message && (
+            <p className={`text-xs ${ogState.success ? "text-green-700" : "text-destructive"}`}>
+              {ogState.message}
+            </p>
+          )}
           {platform.completedAt && (
             <p className="text-xs text-muted-foreground">
               Completed{" "}
@@ -155,7 +165,7 @@ function PlatformStatusRow({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Badge className={STATUS_COLORS[platform.status] ?? ""}>
           {STATUS_LABELS[platform.status] ?? platform.status}
         </Badge>
@@ -178,7 +188,7 @@ function PlatformStatusRow({
               type="submit"
               variant="outline"
               size="sm"
-              disabled={isRetrying}
+              disabled={isRetrying || isOgRetrying}
             >
               {isRetrying ? (
                 <Loader2Icon className="size-3.5 animate-spin" />
@@ -186,6 +196,19 @@ function PlatformStatusRow({
                 <RefreshCwIcon className="size-3.5" />
               )}
               Retry
+            </Button>
+          </form>
+        )}
+        {canRetryAsOg && platform.platform === "website" && platform.status === "failed" && (
+          <form action={ogAction}>
+            <input type="hidden" name="platform_job_id" value={platform.id} />
+            <Button type="submit" size="sm" disabled={isRetrying || isOgRetrying}>
+              {isOgRetrying ? (
+                <Loader2Icon className="size-3.5 animate-spin" />
+              ) : (
+                <RefreshCwIcon className="size-3.5" />
+              )}
+              Retry as The OG
             </Button>
           </form>
         )}
@@ -405,6 +428,12 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
         </Card>
       )}
 
+      {job.isOg && (
+        <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
+          <strong>The OG.</strong> This episode is members-only. The video goes to Vimeo and the members page. It is not posted to YouTube or the public podcast.
+        </div>
+      )}
+
       {/* Premium YouTube Studio reminder */}
       {job.isPremium && livePlatforms.some(p => p.platform === "youtube" && p.status === "completed") && (
         <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
@@ -503,6 +532,7 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
             <PlatformStatusRow
               key={platform.id}
               platform={platform}
+              canRetryAsOg={job.canRetryAsOg}
               note={
                 platform.platform === "website" && supersedeDropped
                   ? "WordPress did not keep the live-stream replacement."
