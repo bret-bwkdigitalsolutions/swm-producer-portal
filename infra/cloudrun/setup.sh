@@ -331,7 +331,9 @@ REQUIRED_SECRETS=(
   "${SECRET_PREFIX}-wp-app-password:WP_APP_PASSWORD"
   "${SECRET_PREFIX}-job-processing-secret:JOB_PROCESSING_SECRET"
 )
-OPTIONAL_SECRET="${SECRET_PREFIX}-youtube-cookies:YOUTUBE_COOKIES"
+OPTIONAL_SECRETS=(
+  "${SECRET_PREFIX}-youtube-cookies:YOUTUBE_COOKIES"
+)
 
 ensure_secret() {
   local name="$1"
@@ -364,7 +366,9 @@ secret_has_version() {
 for pair in "${REQUIRED_SECRETS[@]}"; do
   ensure_secret "${pair%%:*}"
 done
-ensure_secret "${OPTIONAL_SECRET%%:*}"
+for pair in "${OPTIONAL_SECRETS[@]}"; do
+  ensure_secret "${pair%%:*}"
+done
 
 FUSE="${NEW_BUCKET}=${REGIONAL_MOUNT}"
 VOLUME_ARGS=(
@@ -402,11 +406,13 @@ else
   for pair in "${REQUIRED_SECRETS[@]}"; do
     SECRET_FLAGS+=("${pair#*:}=${pair%%:*}:latest")
   done
-  if secret_has_version "${OPTIONAL_SECRET%%:*}"; then
-    SECRET_FLAGS+=("${OPTIONAL_SECRET#*:}=${OPTIONAL_SECRET%%:*}:latest")
-  else
-    echo "Optional secret ${OPTIONAL_SECRET%%:*} has no version. YOUTUBE_COOKIES will be unset on the job."
-  fi
+  for pair in "${OPTIONAL_SECRETS[@]}"; do
+    if secret_has_version "${pair%%:*}"; then
+      SECRET_FLAGS+=("${pair#*:}=${pair%%:*}:latest")
+    else
+      echo "Optional secret ${pair%%:*} has no version. ${pair#*:} will be unset on the job."
+    fi
+  done
   SECRET_ARG="$(IFS=','; printf '%s' "${SECRET_FLAGS[*]}")"
 
   echo "Deploying Cloud Run job ${JOB_NAME} from ${IMAGE}"

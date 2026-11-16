@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 vi.mock("@/app/dashboard/distribute/[id]/actions", () => ({
   updateAiSuggestion: vi.fn(),
   retryPlatform: vi.fn(),
+  retryWebsiteAsOg: vi.fn(),
   deleteJob: vi.fn(),
 }));
 
@@ -15,6 +16,8 @@ const job = {
   showName: "Your Dark Companion",
   status: "completed",
   isPremium: false,
+  isOg: false,
+  canRetryAsOg: false,
   errorMessage: null,
   metadata: { description: "Archived cut.", supersedesLivePostId: 55 },
   createdAt: "2026-05-20T19:00:00-05:00",

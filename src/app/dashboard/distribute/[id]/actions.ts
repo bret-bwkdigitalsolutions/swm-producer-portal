@@ -8,6 +8,9 @@ import { deleteFile } from "@/lib/gcs";
 import { processJob } from "@/lib/jobs/processor";
 import { dispatchVideoProcessing } from "@/lib/jobs/cloud-run-dispatch";
 import { getProcessingRuntime } from "@/lib/jobs/processing-runtime";
+import { OG_PREMIUM_SECTION, OG_WP_SHOW_ID, showOffersOg } from "@/lib/og-episode";
+import { parseOgVimeoUrl } from "@/lib/vimeo-url";
+import { getShow } from "@/lib/wordpress/client";
 
 interface FormState {
   success?: boolean;
@@ -192,6 +195,145 @@ export async function retryPlatform(
   revalidatePath(`/dashboard/distribute/${platformJob.job.id}`);
 
   return { success: true, message: `Retrying ${platformJob.platform}...` };
+}
+
+/**
+ * Mark a failed website publish as The OG and run it again.
+ * Used for jobs created before the members-only path existed, including
+ * OG #27 (job cmwiub4z6000c02p7rfl6bixt).
+ */
+export async function retryWebsiteAsOg(
+  _prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
+  const platformJobId = formData.get("platform_job_id") as string | null;
+  if (!platformJobId) {
+    return { success: false, message: "Missing platform job ID." };
+  }
+
+  const platformJob = await db.distributionJobPlatform.findUnique({
+    where: { id: platformJobId },
+    include: {
+      job: {
+        select: { userId: true, id: true, wpShowId: true, metadata: true, status: true },
+      },
+    },
+  });
+
+  if (!platformJob) {
+    return { success: false, message: "Platform job not found." };
+  }
+  if (
+    platformJob.job.userId !== session.user.id &&
+    session.user.role !== "admin"
+  ) {
+    return { success: false, message: "You do not have access to this job." };
+  }
+  if (platformJob.platform !== "website" || platformJob.status !== "failed") {
+    return { success: false, message: "Only a failed website publish can be retried as The OG." };
+  }
+  if (!(await showCanPublishOg(platformJob.job.wpShowId))) {
+    return { success: false, message: "The OG is only available on Your Dark Companion." };
+  }
+
+  const parsedOgVimeo = parseOgVimeoUrl(String(formData.get("og_vimeo_url") ?? ""));
+  if (!parsedOgVimeo) {
+    return {
+      success: false,
+      message:
+        "Paste the Vimeo URL Ashlea uploaded (vimeo.com/123456789 or vimeo.com/123456789/hash).",
+    };
+  }
+
+  const metadata: Record<string, unknown> = {
+    ...((platformJob.job.metadata as Record<string, unknown>) ?? {}),
+    premiumSection: OG_PREMIUM_SECTION,
+    isPremium: false,
+    ogVimeoUrl: parsedOgVimeo.mediaUrl,
+    ogVimeoVideoId: parsedOgVimeo.videoId,
+  };
+  delete metadata.ogVimeoMediaUrl;
+
+  await db.$transaction(async (tx) => {
+    await tx.distributionJob.update({
+      where: { id: platformJob.job.id },
+      data: {
+        isPremium: false,
+        metadata: JSON.parse(JSON.stringify(metadata)),
+      },
+    });
+    await tx.distributionJobPlatform.deleteMany({
+      where: {
+        jobId: platformJob.job.id,
+        platform: { not: "website" },
+        status: { not: "completed" },
+      },
+    });
+    await tx.distributionJobPlatform.update({
+      where: { id: platformJobId },
+      data: { status: "queued", error: null, completedAt: null },
+    });
+  });
+
+  const parentClaim = await db.distributionJob.updateMany({
+    where: { id: platformJob.job.id, status: { not: "processing" } },
+    data: { status: "pending", errorMessage: null },
+  });
+
+  if (parentClaim.count > 0) {
+    const started = await startDistributionProcessing(platformJob.job.id);
+    if (!started.ok) {
+      return { success: false, message: started.message };
+    }
+  }
+
+  revalidatePath(`/dashboard/distribute/${platformJob.job.id}`);
+  return { success: true, message: "Retrying as The OG..." };
+}
+
+async function showCanPublishOg(wpShowId: number): Promise<boolean> {
+  if (wpShowId === OG_WP_SHOW_ID) return true;
+  try {
+    const show = await getShow(wpShowId);
+    return showOffersOg({ id: show.id, title: show.title.rendered });
+  } catch (error) {
+    console.error("[distribute] Could not confirm the show for The OG:", error);
+    return false;
+  }
+}
+
+async function startDistributionProcessing(
+  jobId: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (getProcessingRuntime() === "cloudrun") {
+    await db.distributionJob.update({
+      where: { id: jobId },
+      data: { status: "processing" },
+    });
+    try {
+      await dispatchVideoProcessing(jobId, "process");
+      return { ok: true };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not start Cloud Run processing.";
+      console.error(`[retry] Cloud Run dispatch failed for job ${jobId}:`, error);
+      await db.distributionJob.update({
+        where: { id: jobId },
+        data: { status: "failed", errorMessage: message.slice(0, 4000) },
+      });
+      return { ok: false, message: "Could not start video processing. Try again." };
+    }
+  }
+
+  processJob(jobId).catch((error) => {
+    console.error(`[retry] Processing failed for job ${jobId}:`, error);
+  });
+  return { ok: true };
 }
 
 /**
