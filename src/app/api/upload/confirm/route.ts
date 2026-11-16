@@ -68,7 +68,11 @@ export async function POST(request: NextRequest) {
     const jobMetadata = job.metadata as Record<string, unknown>;
     // URL-sourced jobs (YouTube or Vimeo) have no uploaded file at confirm
     // time — the audio is downloaded later in /api/distribute/analyze.
-    if (!jobMetadata.existingYoutubeUrl && !jobMetadata.existingVimeoUrl) {
+    if (
+      !jobMetadata.existingYoutubeUrl &&
+      !jobMetadata.existingVimeoUrl &&
+      !(jobMetadata.premiumSection === "og" && typeof jobMetadata.ogVimeoUrl === "string" && jobMetadata.ogVimeoUrl.trim())
+    ) {
       return NextResponse.json(
         { error: "No file has been uploaded for this job." },
         { status: 400 }

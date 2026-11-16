@@ -333,7 +333,6 @@ REQUIRED_SECRETS=(
 )
 OPTIONAL_SECRETS=(
   "${SECRET_PREFIX}-youtube-cookies:YOUTUBE_COOKIES"
-  "${SECRET_PREFIX}-vimeo-og-access-token:VIMEO_OG_ACCESS_TOKEN"
 )
 
 ensure_secret() {

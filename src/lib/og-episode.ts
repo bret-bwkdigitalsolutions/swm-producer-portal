@@ -22,7 +22,7 @@ export function isOgDistribution(metadata: unknown): boolean {
  * Fields that stay on the server. ogVimeoMediaUrl contains the Vimeo privacy
  * hash, so the job detail page must not receive it.
  */
-const JOB_DETAIL_METADATA_OMIT = ["ogVimeoMediaUrl"] as const;
+const JOB_DETAIL_METADATA_OMIT = ["ogVimeoMediaUrl", "ogVimeoUrl"] as const;
 
 export function metadataForJobDetail(
   metadata: Record<string, unknown>

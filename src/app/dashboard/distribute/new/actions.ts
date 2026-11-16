@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { toISOWithTimezone } from "@/lib/timezone";
 import { decodeHtmlEntities, getLatestEpisodeNumbers } from "@/lib/wordpress/client";
 import { extractYoutubeVideoId, youtubeWatchUrl } from "@/lib/youtube-url";
-import { isValidVimeoUrl } from "@/lib/vimeo-url";
+import { isValidVimeoUrl, parseOgVimeoUrl } from "@/lib/vimeo-url";
 import { OG_PREMIUM_SECTION, OG_WP_SHOW_ID, showOffersOg } from "@/lib/og-episode";
 import { getShow } from "@/lib/wordpress/client";
 import {
@@ -66,6 +66,8 @@ export async function submitDistribution(
   const episodeNumber = formData.get("episode_number") as string | null;
   const explicit = formData.get("explicit") === "true";
   const requestedOg = formData.get("premium_section") === OG_PREMIUM_SECTION;
+  const ogVimeoRaw = (formData.get("og_vimeo_url") as string | null)?.trim() ?? "";
+  const parsedOgVimeo = requestedOg ? parseOgVimeoUrl(ogVimeoRaw) : null;
   const isPremium = !requestedOg && formData.get("is_premium") === "true";
 
   // Collect selected platforms. The OG is website-only even if another
@@ -98,14 +100,13 @@ export async function submitDistribution(
   }
 
   if (requestedOg) {
-    if (!videoFileName) {
-      errors.video_file = [
-        "The OG needs the video file so it can be uploaded to Vimeo.",
+    if (!parsedOgVimeo) {
+      errors.og_vimeo_url = [
+        "Paste a Vimeo URL (vimeo.com/123456789, vimeo.com/123456789/hash, or player.vimeo.com/video/123456789).",
       ];
-    } else if (existingYoutubeUrl || existingVimeoUrl) {
-      errors.video_file = [
-        "The OG is uploaded from the video file, not from an existing YouTube or Vimeo URL.",
-      ];
+    }
+    if (existingYoutubeUrl) {
+      errors.video_file = ["The OG uses a Vimeo URL, not a YouTube video."];
     }
   } else if (!videoFileName && !existingYoutubeUrl && !existingVimeoUrl) {
     errors.video_file = ["Please select a video file or provide a YouTube or Vimeo URL."];
@@ -163,9 +164,15 @@ export async function submitDistribution(
     episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
     explicit,
     isPremium,
-    ...(requestedOg ? { premiumSection: OG_PREMIUM_SECTION } : {}),
-    ...(existingYoutubeUrl ? { existingYoutubeUrl } : {}),
-    ...(existingVimeoUrl ? { existingVimeoUrl } : {}),
+    ...(requestedOg && parsedOgVimeo
+      ? {
+          premiumSection: OG_PREMIUM_SECTION,
+          ogVimeoUrl: parsedOgVimeo.mediaUrl,
+          ogVimeoVideoId: parsedOgVimeo.videoId,
+        }
+      : {}),
+    ...(existingYoutubeUrl && !requestedOg ? { existingYoutubeUrl } : {}),
+    ...(existingVimeoUrl && !requestedOg ? { existingVimeoUrl } : {}),
     ...(liveYoutubeVideoId
       ? {
           liveYoutubeVideoId,
@@ -264,6 +271,8 @@ export async function updateDistribution(
     isPremium?: boolean;
     /** "og" publishes The OG. Any other value clears a previously stored flag. */
     premiumSection?: string | null;
+    /** Vimeo URL Ashlea already uploaded. Required when premiumSection is og. */
+    ogVimeoUrl?: string | null;
     /** Current live-stream URL from the form. Omit to leave a stored id alone. */
     liveStreamUrl?: string;
   }
@@ -304,6 +313,24 @@ export async function updateDistribution(
   }
 
   const requestedOg = data.premiumSection === OG_PREMIUM_SECTION;
+  const parsedOgVimeo = requestedOg
+    ? parseOgVimeoUrl(
+        (data.ogVimeoUrl ??
+          (typeof existingMetadata.ogVimeoUrl === "string" ? existingMetadata.ogVimeoUrl : "")
+        ).trim()
+      )
+    : null;
+  if (requestedOg && !parsedOgVimeo) {
+    return {
+      success: false,
+      message: "Paste a Vimeo URL for The OG.",
+      errors: {
+        og_vimeo_url: [
+          "Paste a Vimeo URL (vimeo.com/123456789, vimeo.com/123456789/hash, or player.vimeo.com/video/123456789).",
+        ],
+      },
+    };
+  }
   if (requestedOg && !(await showCanPublishOg(job.wpShowId))) {
     return {
       success: false,
@@ -344,8 +371,18 @@ export async function updateDistribution(
           : { liveYoutubeVideoId: null, liveStreamUrl: null }
         : {}),
     };
-    if (requestedOg) nextMetadata.premiumSection = OG_PREMIUM_SECTION;
-    else delete nextMetadata.premiumSection;
+    if (requestedOg && parsedOgVimeo) {
+      nextMetadata.premiumSection = OG_PREMIUM_SECTION;
+      nextMetadata.ogVimeoUrl = parsedOgVimeo.mediaUrl;
+      nextMetadata.ogVimeoVideoId = parsedOgVimeo.videoId;
+      delete nextMetadata.ogVimeoMediaUrl;
+      delete nextMetadata.existingVimeoUrl;
+    } else {
+      delete nextMetadata.premiumSection;
+      delete nextMetadata.ogVimeoUrl;
+      delete nextMetadata.ogVimeoVideoId;
+      delete nextMetadata.ogVimeoMediaUrl;
+    }
 
     await tx.distributionJob.update({
       where: { id: jobId },

@@ -34,12 +34,16 @@ describe("DistributionForm OG choice", () => {
     expect(screen.queryByText("The OG (members only)")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("combobox"));
-    await user.click(screen.getByRole("option", { name: "Your Dark Companion" }));
+    await user.click(await screen.findByRole("option", { name: "Your Dark Companion" }));
 
     expect(screen.getByText("The OG (members only)")).toBeInTheDocument();
     expect(screen.getByText("Public episode")).toBeInTheDocument();
 
     await user.click(screen.getByRole("radio", { name: /The OG \(members only\)/ }));
+    await user.type(
+      screen.getByRole("textbox", { name: /^Vimeo URL/ }),
+      "https://vimeo.com/555/abc123"
+    );
 
     const file = new File(["video"], "The_OG__27.mp4", { type: "video/mp4" });
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;

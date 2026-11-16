@@ -4,6 +4,8 @@ import { useActionState, useState, useEffect, useCallback } from "react";
 import { updateAiSuggestion, retryPlatform, retryWebsiteAsOg, deleteJob } from "./actions";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -130,8 +132,12 @@ function PlatformStatusRow({
   const [retryState, retryAction, isRetrying] = useActionState(retryPlatform, {});
   const [ogState, ogAction, isOgRetrying] = useActionState(retryWebsiteAsOg, {});
 
+  const showOgRetry =
+    canRetryAsOg && platform.platform === "website" && platform.status === "failed";
+
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3">
+    <div className="rounded-lg border px-4 py-3">
+    <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-3">
         <span className="text-muted-foreground">
           {PLATFORM_ICONS[platform.platform]}
@@ -199,20 +205,35 @@ function PlatformStatusRow({
             </Button>
           </form>
         )}
-        {canRetryAsOg && platform.platform === "website" && platform.status === "failed" && (
-          <form action={ogAction}>
-            <input type="hidden" name="platform_job_id" value={platform.id} />
-            <Button type="submit" size="sm" disabled={isRetrying || isOgRetrying}>
-              {isOgRetrying ? (
-                <Loader2Icon className="size-3.5 animate-spin" />
-              ) : (
-                <RefreshCwIcon className="size-3.5" />
-              )}
-              Retry as The OG
-            </Button>
-          </form>
-        )}
       </div>
+    </div>
+    {showOgRetry && (
+      <form action={ogAction} className="mt-3 space-y-2 border-t pt-3">
+        <Label htmlFor={`og-vimeo-${platform.id}`} className="text-xs">
+          Vimeo URL for The OG
+        </Label>
+        <Input
+          id={`og-vimeo-${platform.id}`}
+          name="og_vimeo_url"
+          type="url"
+          required
+          placeholder="https://vimeo.com/123456789/abcdef"
+          disabled={isRetrying || isOgRetrying}
+        />
+        <input type="hidden" name="platform_job_id" value={platform.id} />
+        <p className="text-xs text-muted-foreground">
+          Paste the video already on Vimeo. This keeps the title, description, chapters, and transcript on this job. The portal does not change the video.
+        </p>
+        <Button type="submit" size="sm" disabled={isRetrying || isOgRetrying}>
+          {isOgRetrying ? (
+            <Loader2Icon className="size-3.5 animate-spin" />
+          ) : (
+            <RefreshCwIcon className="size-3.5" />
+          )}
+          Retry as The OG
+        </Button>
+      </form>
+    )}
     </div>
   );
 }
@@ -430,7 +451,7 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
 
       {job.isOg && (
         <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
-          <strong>The OG.</strong> This episode is members-only. The video goes to Vimeo and the members page. It is not posted to YouTube or the public podcast.
+          <strong>The OG.</strong> This episode is members-only. It uses a Vimeo URL you already uploaded and appears on the members page. It is not posted to YouTube or the public podcast.
         </div>
       )}
 

@@ -90,9 +90,7 @@ describe("submitDistribution", () => {
       platform_website: "on",
       premium_section: "og",
       is_premium: "true",
-      video_file_name: "The_OG__27.mp4",
-      video_file_size: "1000",
-      video_content_type: "video/mp4",
+      og_vimeo_url: "https://vimeo.com/555/abc123",
     });
     const result = await submitDistribution({}, fd);
     expect(result.success).toBe(true);
@@ -100,6 +98,9 @@ describe("submitDistribution", () => {
     expect(created.wpShowId).toBe(21);
     expect(created.isPremium).toBe(false);
     expect(created.metadata.premiumSection).toBe("og");
+    expect(created.metadata.ogVimeoUrl).toBe("https://vimeo.com/555/abc123");
+    expect(created.metadata.ogVimeoVideoId).toBe("555");
+    expect(created.metadata.existingVimeoUrl).toBeUndefined();
     expect(mockCreateMany.mock.calls[0][0].data).toEqual([
       expect.objectContaining({ platform: "website", status: "queued" }),
     ]);
@@ -413,11 +414,13 @@ describe("updateDistribution", () => {
       platforms: ["youtube", "website"],
       isPremium: true,
       premiumSection: "og",
+      ogVimeoUrl: "https://player.vimeo.com/video/555?h=abc123",
     });
     expect(result.success).toBe(true);
     const update = mockJobUpdate.mock.calls[0][0].data;
     expect(update.isPremium).toBe(false);
     expect(update.metadata.premiumSection).toBe("og");
+    expect(update.metadata.ogVimeoUrl).toBe("https://vimeo.com/555/abc123");
     expect(update.metadata.thumbnailGcsPath).toBe("thumb.jpg");
     expect(mockCreateMany.mock.calls[0][0].data).toEqual([
       expect.objectContaining({ platform: "website" }),

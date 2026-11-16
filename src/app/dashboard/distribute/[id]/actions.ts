@@ -9,6 +9,7 @@ import { processJob } from "@/lib/jobs/processor";
 import { dispatchVideoProcessing } from "@/lib/jobs/cloud-run-dispatch";
 import { getProcessingRuntime } from "@/lib/jobs/processing-runtime";
 import { OG_PREMIUM_SECTION, OG_WP_SHOW_ID, showOffersOg } from "@/lib/og-episode";
+import { parseOgVimeoUrl } from "@/lib/vimeo-url";
 import { getShow } from "@/lib/wordpress/client";
 
 interface FormState {
@@ -240,11 +241,23 @@ export async function retryWebsiteAsOg(
     return { success: false, message: "The OG is only available on Your Dark Companion." };
   }
 
+  const parsedOgVimeo = parseOgVimeoUrl(String(formData.get("og_vimeo_url") ?? ""));
+  if (!parsedOgVimeo) {
+    return {
+      success: false,
+      message:
+        "Paste the Vimeo URL Ashlea uploaded (vimeo.com/123456789 or vimeo.com/123456789/hash).",
+    };
+  }
+
   const metadata = {
     ...((platformJob.job.metadata as Record<string, unknown>) ?? {}),
     premiumSection: OG_PREMIUM_SECTION,
     isPremium: false,
+    ogVimeoUrl: parsedOgVimeo.mediaUrl,
+    ogVimeoVideoId: parsedOgVimeo.videoId,
   };
+  delete metadata.ogVimeoMediaUrl;
 
   await db.$transaction(async (tx) => {
     await tx.distributionJob.update({

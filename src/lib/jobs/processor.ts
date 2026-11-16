@@ -7,8 +7,8 @@ import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/yo
 import { setTransistorEpisodeWebsite, uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { publishOgEpisode } from "@/lib/platforms/wordpress-og";
-import { uploadOgVideoToVimeo, type OgVimeoUploadResult } from "@/lib/platforms/vimeo";
 import { isOgDistribution } from "@/lib/og-episode";
+import { parseOgVimeoUrl } from "@/lib/vimeo-url";
 import { liveStreamReplacementNote } from "@/lib/live-stream-note";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
 import { runVerificationTier, type TierResult } from "./verify-distribution";
@@ -229,8 +229,6 @@ async function processJobInner(
   const sourceUrl = existingVimeoUrl ?? existingYoutubeUrl;
   const isPremium = job.isPremium ?? false;
   const ogEpisode = isOgDistribution(metadata);
-  const storedOgVimeoId =
-    typeof metadata.ogVimeoVideoId === "string" ? metadata.ogVimeoVideoId.trim() : "";
 
   // For URL-sourced episodes: download audio to GCS. This gives us an mp3
   // directly — no need for the extractAudio step.
@@ -321,10 +319,6 @@ async function processJobInner(
     job.platforms.some(
       (p) => p.platform === "youtube" && p.status !== "completed"
     );
-  // A previous attempt may already have created the Vimeo video. Reuse that
-  // id instead of downloading and uploading the file again.
-  const needsOgVideo =
-    ogEpisode && storedOgVimeoId.length === 0 && !!effectiveGcsPath && !existingVimeoUrl;
   // Local copy of a producer-uploaded video. Owned here and removed in the
   // finally below (success, platform failure, and unexpected throw).
   let tempVideoPath: string | null = null;
@@ -345,13 +339,13 @@ async function processJobInner(
   // Normal uploads only. URL-sourced jobs have no producer video in GCS
   // (a Vimeo source downloads its own file further down).
   const needsUploadedVideo =
-    (youtubeNeedsWork && !!effectiveGcsPath && !sourceUrl) || needsOgVideo;
+    youtubeNeedsWork && !!effectiveGcsPath && !sourceUrl;
 
   // Reassigned after transcription. Declared out here so phases after the
   // temp-file finally (thumbnail fallback, Transistor, WordPress) can see it.
   let updatedMetadata: Record<string, unknown> = metadata;
   let transcript: string | null = null;
-  let ogUpload: OgVimeoUploadResult | null = null;
+  let ogUpload: { videoId: string; mediaUrl: string } | null = null;
   let ogUploadError: string | null = null;
   let youtubeUrl: string | null = existingYoutubeUrl ?? null;
   let youtubeVideoId: string | null = youtubeUrl
@@ -549,68 +543,31 @@ async function processJobInner(
     }
   }
 
-  // OG uploads while the local file is still on disk. The website step
-  // below only needs the Vimeo id, which is saved before the bytes finish
-  // so a retry does not create a second video.
+  // The OG video is already on Vimeo. Ashlea sets its privacy. The portal
+  // only checks the pasted URL and creates the members-only post.
   if (ogEpisode) {
-    const vimeoId =
-      (typeof updatedMetadata.ogVimeoVideoId === "string"
-        ? updatedMetadata.ogVimeoVideoId.trim()
-        : "") || storedOgVimeoId;
-    const uploadOg = () =>
-      uploadOgVideoToVimeo({
-        title: job.title,
-        description: (updatedMetadata.description as string) ?? "",
-        videoFilePath: tempVideoPath ?? undefined,
-        existingVideoId: vimeoId || undefined,
-        onVideoCreated: async (videoId) => {
-          updatedMetadata.ogVimeoVideoId = videoId;
-          await mergeJobMetadata(job.id, { ogVimeoVideoId: videoId });
-        },
-        onProgress: (uploaded, total) =>
-          beatUpload({ vimeoUploadBytes: uploaded, vimeoUploadTotal: total }),
-      });
     try {
-      if (!vimeoId && !tempVideoPath) {
-        throw new Error("Video file not available for the Vimeo upload.");
+      const raw =
+        typeof updatedMetadata.ogVimeoUrl === "string" ? updatedMetadata.ogVimeoUrl : "";
+      const parsed = parseOgVimeoUrl(raw);
+      if (!parsed) {
+        throw new Error(
+          "Paste a Vimeo URL for this OG episode (vimeo.com/123456789 or vimeo.com/123456789/hash)."
+        );
       }
-      try {
-        ogUpload = await uploadOg();
-      } catch (error) {
-        // The Vimeo video already exists, but its file never finished. The
-        // first pass skipped the download because the id was saved.
-        const message = error instanceof Error ? error.message : "";
-        if (
-          !vimeoId ||
-          !effectiveGcsPath ||
-          tempVideoPath ||
-          !/video file not available/i.test(message)
-        ) {
-          throw error;
-        }
-        if (located.fusePath) {
-          tempVideoPath = located.fusePath;
-        } else {
-          tempVideoDir = await mkdtemp(join(tmpdir(), "swm-yt-"));
-          tempVideoPath = join(tempVideoDir, "video.mp4");
-          await downloadGcsObjectToFile(effectiveGcsPath, tempVideoPath, {
-            ...(located.bucket ? { bucket: located.bucket } : {}),
-          });
-        }
-        ogUpload = await uploadOg();
-      }
-      updatedMetadata.ogVimeoVideoId = ogUpload.videoId;
-      updatedMetadata.ogVimeoMediaUrl = ogUpload.mediaUrl;
+      ogUpload = { videoId: parsed.videoId, mediaUrl: parsed.mediaUrl };
+      updatedMetadata.ogVimeoVideoId = parsed.videoId;
+      updatedMetadata.ogVimeoUrl = parsed.mediaUrl;
       await mergeJobMetadata(job.id, {
-        ogVimeoVideoId: ogUpload.videoId,
-        ogVimeoMediaUrl: ogUpload.mediaUrl,
+        ogVimeoVideoId: parsed.videoId,
+        ogVimeoUrl: parsed.mediaUrl,
       }).catch((error) => {
-        console.error("[processor] Could not record Vimeo video:", error);
+        console.error("[processor] Could not record the OG Vimeo URL:", error);
       });
     } catch (error) {
       ogUploadError =
-        error instanceof Error ? error.message : "Vimeo upload failed";
-      console.error(`[processor] Vimeo upload failed: ${ogUploadError}`);
+        error instanceof Error ? error.message : "The OG Vimeo URL could not be read.";
+      console.error(`[processor] OG Vimeo URL rejected: ${ogUploadError}`);
     }
   }
 
@@ -1081,8 +1038,6 @@ async function processJobInner(
           transcriptVtt: (updatedMetadata.transcriptVtt as string) || undefined,
           vimeoVideoId: ogUpload.videoId,
           mediaUrl: ogUpload.mediaUrl,
-          thumbnailUrl: ogUpload.thumbnailUrl,
-          durationSeconds: ogUpload.durationSeconds,
           thumbnailGcsPath:
             (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
           portalUserId: job.userId,

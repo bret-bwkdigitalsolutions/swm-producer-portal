@@ -85,12 +85,7 @@ vi.mock("@/lib/platforms/wordpress", () => ({
   publishToWordPress: (...args: unknown[]) => mockPublishToWordPress(...args),
 }));
 
-const mockUploadOgVideo = vi.fn();
 const mockPublishOgEpisode = vi.fn();
-
-vi.mock("@/lib/platforms/vimeo", () => ({
-  uploadOgVideoToVimeo: (...args: unknown[]) => mockUploadOgVideo(...args),
-}));
 
 vi.mock("@/lib/platforms/wordpress-og", () => ({
   publishOgEpisode: (...args: unknown[]) => mockPublishOgEpisode(...args),
@@ -1460,7 +1455,6 @@ describe("processJob", () => {
         youtubeUrl: "https://www.youtube.com/watch?v=yt-abc",
       })
     );
-    expect(mockUploadOgVideo).not.toHaveBeenCalled();
     expect(mockPublishOgEpisode).not.toHaveBeenCalled();
   });
 
@@ -1482,11 +1476,10 @@ describe("processJob", () => {
         error: "YouTube URL not available. WordPress post requires the YouTube embed.",
       })
     );
-    expect(mockUploadOgVideo).not.toHaveBeenCalled();
     expect(mockPublishToWordPress).not.toHaveBeenCalled();
   });
 
-  it("publishes The OG to Vimeo and premium content without YouTube", async () => {
+  it("publishes The OG from a pasted Vimeo URL without uploading", async () => {
     const job = makeJob({
       wpShowId: 21,
       title: "The OG #27",
@@ -1497,25 +1490,16 @@ describe("processJob", () => {
         transcript: "already transcribed",
         transcriptDisplay: "Already transcribed.",
         premiumSection: "og",
+        ogVimeoUrl: "https://vimeo.com/555/abc123",
       },
       platforms: [{ id: "plat-web", platform: "website" }],
     });
     mockFindUnique.mockResolvedValue(job);
-    mockUploadOgVideo.mockImplementation(async (params: { onVideoCreated?: (id: string) => Promise<void> }) => {
-      await params.onVideoCreated?.("555");
-      return {
-        videoId: "555",
-        mediaUrl: "https://vimeo.com/555/abc123",
-        durationSeconds: 90,
-      };
-    });
     mockPublishOgEpisode.mockResolvedValue({
       postId: 880,
       postUrl: "https://stolenwatermedia.com/shows/the-og/#swm-vimeo-555",
       created: true,
     });
-    installVideoFetch();
-
     const result = await processJob("job-1");
 
     expect(result.status).toBe("completed");
@@ -1524,13 +1508,6 @@ describe("processJob", () => {
     ]);
     expect(mockUploadToYouTube).not.toHaveBeenCalled();
     expect(mockPublishToWordPress).not.toHaveBeenCalled();
-    expect(mockUploadOgVideo).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "The OG #27",
-        description: "Members-only hour",
-        videoFilePath: expect.stringMatching(/video\.mp4$/),
-      })
-    );
     expect(mockPublishOgEpisode).toHaveBeenCalledWith(
       expect.objectContaining({
         wpShowId: 21,
