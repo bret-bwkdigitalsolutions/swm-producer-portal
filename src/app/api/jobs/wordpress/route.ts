@@ -20,8 +20,8 @@ import {
  *   Authorization: Bearer <JOB_PROCESSING_SECRET>
  *
  * Body: `{ "op": "getShow" | "liveCandidate" | "createPost" | "updatePost" |
- *   "findEpisode" | "uploadMedia" | "verifyEpisode" | "recentEpisodeTitles" |
- *   "latestEpisodeNumbers", ... }`
+ *   "findEpisode" | "uploadMedia" | "verifyEpisode" | "publishOg" |
+ *   "recentEpisodeTitles" | "latestEpisodeNumbers", ... }`
  */
 export async function POST(request: NextRequest) {
   const secret = process.env.JOB_PROCESSING_SECRET;

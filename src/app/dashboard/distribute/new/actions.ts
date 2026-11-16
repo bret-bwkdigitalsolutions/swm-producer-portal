@@ -6,7 +6,9 @@ import { redirect } from "next/navigation";
 import { toISOWithTimezone } from "@/lib/timezone";
 import { decodeHtmlEntities, getLatestEpisodeNumbers } from "@/lib/wordpress/client";
 import { extractYoutubeVideoId, youtubeWatchUrl } from "@/lib/youtube-url";
-import { isValidVimeoUrl } from "@/lib/vimeo-url";
+import { isValidVimeoUrl, parseOgVimeoUrl } from "@/lib/vimeo-url";
+import { OG_PREMIUM_SECTION, OG_WP_SHOW_ID, showOffersOg } from "@/lib/og-episode";
+import { getShow } from "@/lib/wordpress/client";
 import {
   lookupLiveStreamCandidate,
   toAirDate,
@@ -63,12 +65,16 @@ export async function submitDistribution(
   const seasonNumber = formData.get("season_number") as string | null;
   const episodeNumber = formData.get("episode_number") as string | null;
   const explicit = formData.get("explicit") === "true";
-  const isPremium = formData.get("is_premium") === "true";
+  const requestedOg = formData.get("premium_section") === OG_PREMIUM_SECTION;
+  const ogVimeoRaw = (formData.get("og_vimeo_url") as string | null)?.trim() ?? "";
+  const parsedOgVimeo = requestedOg ? parseOgVimeoUrl(ogVimeoRaw) : null;
+  const isPremium = !requestedOg && formData.get("is_premium") === "true";
 
-  // Collect selected platforms
-  const selectedPlatforms = VALID_PLATFORMS.filter(
-    (p) => formData.get(`platform_${p}`) === "on"
-  );
+  // Collect selected platforms. The OG is website-only even if another
+  // checkbox was still checked.
+  const selectedPlatforms = requestedOg
+    ? (["website"] as const)
+    : VALID_PLATFORMS.filter((p) => formData.get(`platform_${p}`) === "on");
 
   // Validation
   const errors: Record<string, string[]> = {};
@@ -93,7 +99,16 @@ export async function submitDistribution(
     errors.scheduled_at = ["Please select a date and time for scheduling."];
   }
 
-  if (!videoFileName && !existingYoutubeUrl && !existingVimeoUrl) {
+  if (requestedOg) {
+    if (!parsedOgVimeo) {
+      errors.og_vimeo_url = [
+        "Paste a Vimeo URL (vimeo.com/123456789, vimeo.com/123456789/hash, or player.vimeo.com/video/123456789).",
+      ];
+    }
+    if (existingYoutubeUrl) {
+      errors.video_file = ["The OG uses a Vimeo URL, not a YouTube video."];
+    }
+  } else if (!videoFileName && !existingYoutubeUrl && !existingVimeoUrl) {
     errors.video_file = ["Please select a video file or provide a YouTube or Vimeo URL."];
   }
 
@@ -149,8 +164,15 @@ export async function submitDistribution(
     episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
     explicit,
     isPremium,
-    ...(existingYoutubeUrl ? { existingYoutubeUrl } : {}),
-    ...(existingVimeoUrl ? { existingVimeoUrl } : {}),
+    ...(requestedOg && parsedOgVimeo
+      ? {
+          premiumSection: OG_PREMIUM_SECTION,
+          ogVimeoUrl: parsedOgVimeo.mediaUrl,
+          ogVimeoVideoId: parsedOgVimeo.videoId,
+        }
+      : {}),
+    ...(existingYoutubeUrl && !requestedOg ? { existingYoutubeUrl } : {}),
+    ...(existingVimeoUrl && !requestedOg ? { existingVimeoUrl } : {}),
     ...(liveYoutubeVideoId
       ? {
           liveYoutubeVideoId,
@@ -159,9 +181,16 @@ export async function submitDistribution(
       : {}),
   };
 
+  const wpShowId = parseInt(showId!, 10);
+  if (requestedOg && !(await showCanPublishOg(wpShowId))) {
+    return {
+      success: false,
+      message: "The OG is only available on Your Dark Companion.",
+    };
+  }
+
   // Verify user has access to this show
   if (session.user.role !== "admin") {
-    const wpShowId = parseInt(showId!, 10);
     const access = await db.userShowAccess.findUnique({
       where: {
         userId_wpShowId: {
@@ -184,7 +213,7 @@ export async function submitDistribution(
     const newJob = await tx.distributionJob.create({
       data: {
         userId: session.user.id,
-        wpShowId: parseInt(showId!, 10),
+        wpShowId,
         title: title!.trim(),
         metadata,
         status: "uploading",
@@ -205,7 +234,7 @@ export async function submitDistribution(
         userId: session.user.id,
         action: "distribute",
         contentType: "episode",
-        wpShowId: parseInt(showId!, 10),
+        wpShowId,
         details: `Distribution job created: "${title!.trim()}" to ${selectedPlatforms.join(", ")}`,
       },
     });
@@ -240,6 +269,10 @@ export async function updateDistribution(
     episodeNumber?: number;
     explicit?: boolean;
     isPremium?: boolean;
+    /** "og" publishes The OG. Any other value clears a previously stored flag. */
+    premiumSection?: string | null;
+    /** Vimeo URL Ashlea already uploaded. Required when premiumSection is og. */
+    ogVimeoUrl?: string | null;
     /** Current live-stream URL from the form. Omit to leave a stored id alone. */
     liveStreamUrl?: string;
   }
@@ -251,7 +284,7 @@ export async function updateDistribution(
 
   const job = await db.distributionJob.findUnique({
     where: { id: jobId },
-    select: { id: true, userId: true, metadata: true },
+    select: { id: true, userId: true, metadata: true, wpShowId: true },
   });
 
   if (!job) {
@@ -279,44 +312,84 @@ export async function updateDistribution(
     };
   }
 
+  const requestedOg = data.premiumSection === OG_PREMIUM_SECTION;
+  const parsedOgVimeo = requestedOg
+    ? parseOgVimeoUrl(
+        (data.ogVimeoUrl ??
+          (typeof existingMetadata.ogVimeoUrl === "string" ? existingMetadata.ogVimeoUrl : "")
+        ).trim()
+      )
+    : null;
+  if (requestedOg && !parsedOgVimeo) {
+    return {
+      success: false,
+      message: "Paste a Vimeo URL for The OG.",
+      errors: {
+        og_vimeo_url: [
+          "Paste a Vimeo URL (vimeo.com/123456789, vimeo.com/123456789/hash, or player.vimeo.com/video/123456789).",
+        ],
+      },
+    };
+  }
+  if (requestedOg && !(await showCanPublishOg(job.wpShowId))) {
+    return {
+      success: false,
+      message: "The OG is only available on Your Dark Companion.",
+    };
+  }
+
   await db.$transaction(async (tx) => {
     // Update job metadata with final description, chapters, tags, and optional fields
-    const isPremium = data.isPremium ?? false;
+    const isPremium = requestedOg ? false : (data.isPremium ?? false);
     const isDraft = data.isDraft ?? false;
+    const nextMetadata: Record<string, unknown> = {
+      ...existingMetadata,
+      description: data.description,
+      ...(data.chapters ? { chapters: data.chapters } : {}),
+      ...(data.tags ? { tags: data.tags } : {}),
+      isDraft,
+      scheduleMode: data.scheduleMode ?? "now",
+      scheduledAt:
+        data.scheduledAt && data.scheduleMode === "schedule"
+          ? toISOWithTimezone(data.scheduledAt, data.timezone)
+          : (data.scheduledAt ?? null),
+      youtubePrivacy: isDraft || isPremium ? "unlisted" : "public",
+      ...(data.seasonNumber !== undefined
+        ? { seasonNumber: data.seasonNumber }
+        : {}),
+      ...(data.episodeNumber !== undefined
+        ? { episodeNumber: data.episodeNumber }
+        : {}),
+      ...(data.explicit !== undefined ? { explicit: data.explicit } : {}),
+      isPremium,
+      ...(data.liveStreamUrl !== undefined
+        ? liveWatchUrl
+          ? {
+              liveYoutubeVideoId,
+              liveStreamUrl: liveWatchUrl,
+            }
+          : { liveYoutubeVideoId: null, liveStreamUrl: null }
+        : {}),
+    };
+    if (requestedOg && parsedOgVimeo) {
+      nextMetadata.premiumSection = OG_PREMIUM_SECTION;
+      nextMetadata.ogVimeoUrl = parsedOgVimeo.mediaUrl;
+      nextMetadata.ogVimeoVideoId = parsedOgVimeo.videoId;
+      delete nextMetadata.ogVimeoMediaUrl;
+      delete nextMetadata.existingVimeoUrl;
+    } else {
+      delete nextMetadata.premiumSection;
+      delete nextMetadata.ogVimeoUrl;
+      delete nextMetadata.ogVimeoVideoId;
+      delete nextMetadata.ogVimeoMediaUrl;
+    }
+
     await tx.distributionJob.update({
       where: { id: jobId },
       data: {
         ...(data.title !== undefined ? { title: data.title } : {}),
         isPremium,
-        metadata: {
-          ...existingMetadata,
-          description: data.description,
-          ...(data.chapters ? { chapters: data.chapters } : {}),
-          ...(data.tags ? { tags: data.tags } : {}),
-          isDraft,
-          scheduleMode: data.scheduleMode ?? "now",
-          scheduledAt:
-            data.scheduledAt && data.scheduleMode === "schedule"
-              ? toISOWithTimezone(data.scheduledAt, data.timezone)
-              : (data.scheduledAt ?? null),
-          youtubePrivacy: isDraft || isPremium ? "unlisted" : "public",
-          ...(data.seasonNumber !== undefined
-            ? { seasonNumber: data.seasonNumber }
-            : {}),
-          ...(data.episodeNumber !== undefined
-            ? { episodeNumber: data.episodeNumber }
-            : {}),
-          ...(data.explicit !== undefined ? { explicit: data.explicit } : {}),
-          isPremium,
-          ...(data.liveStreamUrl !== undefined
-            ? liveWatchUrl
-              ? {
-                  liveYoutubeVideoId,
-                  liveStreamUrl: liveWatchUrl,
-                }
-              : { liveYoutubeVideoId: null, liveStreamUrl: null }
-            : {}),
-        },
+        metadata: JSON.parse(JSON.stringify(nextMetadata)),
       },
     });
 
@@ -325,9 +398,9 @@ export async function updateDistribution(
       where: { jobId },
     });
 
-    const validPlatforms = VALID_PLATFORMS.filter((p) =>
-      data.platforms.includes(p)
-    );
+    const validPlatforms = requestedOg
+      ? (["website"] as const)
+      : VALID_PLATFORMS.filter((p) => data.platforms.includes(p));
     if (validPlatforms.length > 0) {
       await tx.distributionJobPlatform.createMany({
         data: validPlatforms.map((platform) => ({
@@ -471,4 +544,16 @@ export async function getNextEpisodeNumber(
     seasonNumber: currentSeason,
     seasonScheme,
   };
+}
+
+async function showCanPublishOg(wpShowId: number): Promise<boolean> {
+  if (!Number.isInteger(wpShowId) || wpShowId <= 0) return false;
+  if (wpShowId === OG_WP_SHOW_ID) return true;
+  try {
+    const show = await getShow(wpShowId);
+    return showOffersOg({ id: show.id, title: show.title.rendered });
+  } catch (error) {
+    console.error("[distribute] Could not confirm the show for The OG:", error);
+    return false;
+  }
 }

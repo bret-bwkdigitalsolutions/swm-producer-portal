@@ -48,7 +48,8 @@ import {
   LinkIcon,
 } from "lucide-react";
 import { isValidYoutubeUrl, extractYoutubeVideoId } from "@/lib/youtube-url";
-import { isValidVimeoUrl } from "@/lib/vimeo-url";
+import { isValidVimeoUrl, parseOgVimeoUrl } from "@/lib/vimeo-url";
+import { showOffersOg } from "@/lib/og-episode";
 
 interface Show {
   id: string;
@@ -179,8 +180,25 @@ export function DistributionForm({
   const [tags, setTags] = useState<string[]>([]);
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
 
-  // Premium content toggle — only visible for premium-enabled shows
+  // Premium content toggle — only visible for premium-enabled shows.
+  // The OG is a separate members-only path (Vimeo + the website), not this flag.
   const [isPremium, setIsPremium] = useState(false);
+  const [publishAsOg, setPublishAsOg] = useState(false);
+  const [ogVimeoUrlInput, setOgVimeoUrlInput] = useState("");
+  const ogAvailable = shows.some((show) => show.id === showId && showOffersOg(show));
+  const parsedOgVimeo = parseOgVimeoUrl(ogVimeoUrlInput);
+  useEffect(() => {
+    if (publishAsOg && publishState.status === "future") {
+      setPublishState({ status: "publish" });
+    }
+  }, [publishAsOg, publishState.status]);
+  useEffect(() => {
+    if (!publishAsOg || videoSource === "upload") return;
+    setVideoSource("upload");
+    setYoutubeUrlInput("");
+    setYoutubeThumbUrl(null);
+    setVimeoUrlInput("");
+  }, [publishAsOg, videoSource]);
 
   // Track whether upload was done for AI path (video uploaded before form submit)
   const [aiUploadedJobId, setAiUploadedJobId] = useState<string | null>(null);
@@ -350,7 +368,21 @@ export function DistributionForm({
       fd.set("show_id", showId);
       fd.set("title", `AI analysis in progress — ${showName}`);
       fd.set("description", "AI-generated description pending");
-      fd.set("platform_youtube", "on");
+      if (publishAsOg) {
+        if (!parseOgVimeoUrl(ogVimeoUrlInput)) {
+          throw new Error("Paste the Vimeo URL for The OG before generating suggestions.");
+        }
+        if (!videoFileName) {
+          throw new Error(
+            "Upload the video file to generate suggestions. With only a Vimeo URL, enter the title and description yourself."
+          );
+        }
+        fd.set("platform_website", "on");
+        fd.set("premium_section", "og");
+        fd.set("og_vimeo_url", ogVimeoUrlInput.trim());
+      } else {
+        fd.set("platform_youtube", "on");
+      }
       if (publishState.status === "draft") fd.set("status", "draft");
 
       if (videoSource === "upload") {
@@ -557,6 +589,8 @@ export function DistributionForm({
     descriptionFooters,
     tags,
     frequentTags,
+    publishAsOg,
+    ogVimeoUrlInput,
   ]);
 
   /**
@@ -565,7 +599,7 @@ export function DistributionForm({
   const uploadAndConfirmManual = useCallback(
     async (jobId: string) => {
       try {
-        if (videoSource === "upload") {
+        if (videoFileRef.current) {
           await Promise.all([
             uploadVideoToGCS(jobId),
             uploadThumbnailToGCS(jobId),
@@ -619,9 +653,11 @@ export function DistributionForm({
     try {
       // Collect selected platforms from the form checkboxes
       const fd = new FormData(formRef.current);
-      const selectedPlatforms = PLATFORMS
-        .map((p) => p.key)
-        .filter((key) => fd.get(`platform_${key}`) === "on");
+      const selectedPlatforms = publishAsOg
+        ? ["website"]
+        : PLATFORMS
+            .map((p) => p.key)
+            .filter((key) => fd.get(`platform_${key}`) === "on");
 
       if (selectedPlatforms.length === 0) {
         throw new Error("Please select at least one target platform.");
@@ -658,7 +694,9 @@ export function DistributionForm({
         seasonNumber: seasonNumber ? parseInt(seasonNumber, 10) : undefined,
         episodeNumber: episodeNumber ? parseInt(episodeNumber, 10) : undefined,
         explicit: explicitChecked,
-        isPremium,
+        isPremium: publishAsOg ? false : isPremium,
+        premiumSection: publishAsOg ? "og" : null,
+        ogVimeoUrl: publishAsOg ? ogVimeoUrlInput.trim() : null,
         liveStreamUrl: liveStreamUrlRaw,
       });
 
@@ -697,7 +735,7 @@ export function DistributionForm({
       setUploadError(message);
       setUploading(false);
     }
-  }, [aiUploadedJobId, description, chapters, publishState, router, uploadThumbnailToGCS, title, seasonNumber, episodeNumber, isPremium]);
+  }, [aiUploadedJobId, description, chapters, publishState, router, uploadThumbnailToGCS, title, seasonNumber, episodeNumber, isPremium, publishAsOg, ogVimeoUrlInput]);
 
   // Re-fire /api/upload/confirm with forceDuplicates=true after the user has
   // chosen to override the duplicate-detection block.
@@ -746,8 +784,9 @@ export function DistributionForm({
   ]);
 
   const isDisabled = isPending || uploading || analyzing;
-  const videoSourceReady =
-    videoSource === "upload"
+  const videoSourceReady = publishAsOg
+    ? parsedOgVimeo !== null
+    : videoSource === "upload"
       ? !!videoFileName
       : videoSource === "vimeo"
         ? isValidVimeoUrl(vimeoUrlInput)
@@ -970,6 +1009,8 @@ export function DistributionForm({
               setTags(frequentTags[newShowId] ?? []);
               setSuggestedTags([]);
               setIsPremium(false);
+              const nextShow = shows.find((show) => show.id === newShowId);
+              if (!nextShow || !showOffersOg(nextShow)) setPublishAsOg(false);
               // Auto-populate episode/season numbers from the show's
               // seasonScheme + currentSeason in admin metadata.
               if (newShowId) {
@@ -987,6 +1028,58 @@ export function DistributionForm({
               }
             }}
           />
+
+          {ogAvailable && (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Episode type</legend>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  className="mt-0.5"
+                  checked={!publishAsOg}
+                  onChange={() => setPublishAsOg(false)}
+                  disabled={isDisabled}
+                />
+                <span>Public episode</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  className="mt-0.5"
+                  checked={publishAsOg}
+                  onChange={() => setPublishAsOg(true)}
+                  disabled={isDisabled}
+                />
+                <span>
+                  The OG (members only)
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    Paste a Vimeo URL you already uploaded. The portal publishes it on The OG page and does not upload the file or change the video. A file is optional, and only for transcript and title suggestions.
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+          )}
+
+          {publishAsOg && (
+            <div className="space-y-2">
+              <Label htmlFor="og_vimeo_url">
+                Vimeo URL <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="og_vimeo_url"
+                name="og_vimeo_url"
+                type="url"
+                required
+                placeholder="https://vimeo.com/123456789/abcdef"
+                value={ogVimeoUrlInput}
+                onChange={(e) => setOgVimeoUrlInput(e.target.value)}
+                disabled={isDisabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                vimeo.com/123456789, vimeo.com/123456789/hash, or player.vimeo.com/video/123456789. Privacy and embed settings stay as they are on Vimeo.
+              </p>
+            </div>
+          )}
 
           {/* Video source toggle */}
           <div className="space-y-2">
@@ -1032,7 +1125,7 @@ export function DistributionForm({
                   setTags(frequentTags[showId] ?? []);
                   setSuggestedTags([]);
                 }}
-                disabled={isDisabled}
+                disabled={isDisabled || publishAsOg}
                 className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors ${
                   videoSource === "youtube"
                     ? "border-primary bg-primary/5 text-primary"
@@ -1059,7 +1152,7 @@ export function DistributionForm({
                   setTags(frequentTags[showId] ?? []);
                   setSuggestedTags([]);
                 }}
-                disabled={isDisabled}
+                disabled={isDisabled || publishAsOg}
                 className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors ${
                   videoSource === "vimeo"
                     ? "border-primary bg-primary/5 text-primary"
@@ -1318,6 +1411,7 @@ export function DistributionForm({
                 </button>
                 <button
                   type="button"
+                  disabled={isDisabled || (publishAsOg && !videoFileName)}
                   onClick={() => {
                     setDescriptionMode("ai");
                     startAiAnalysis();
@@ -1329,7 +1423,9 @@ export function DistributionForm({
                     Get AI recommendations
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    AI suggests title, description, chapters &amp; tags
+                    {publishAsOg && !videoFileName
+                      ? "Upload a video file to generate suggestions. A Vimeo URL alone uses the title and description you enter."
+                      : "AI suggests title, description, chapters & tags"}
                   </span>
                 </button>
               </div>
@@ -1418,7 +1514,7 @@ export function DistributionForm({
                 </Label>
               </div>
 
-              {premiumShows[showId] && (
+              {premiumShows[showId] && !publishAsOg && (
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -1513,7 +1609,7 @@ export function DistributionForm({
                 </Label>
               </div>
 
-              {premiumShows[showId] && (
+              {premiumShows[showId] && !publishAsOg && (
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -1588,8 +1684,18 @@ export function DistributionForm({
             </div>
           )}
 
+          {publishAsOg && (descriptionMode === "manual" || aiReady) && (
+            <>
+              <input type="hidden" name="platform_website" value="on" />
+              <input type="hidden" name="premium_section" value="og" />
+              <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                The OG is published only to the members page from the Vimeo URL above. YouTube and the podcast feed are not used. Save as draft to keep it off the page.
+              </p>
+            </>
+          )}
+
           {/* Target platforms — shown for manual path always, AI path after suggestions */}
-          {(descriptionMode === "manual" || aiReady) && (
+          {!publishAsOg && (descriptionMode === "manual" || aiReady) && (
             <fieldset className="space-y-3" disabled={isDisabled}>
               <legend className="text-sm font-medium">
                 Target Platforms <span className="text-destructive">*</span>
@@ -1621,9 +1727,23 @@ export function DistributionForm({
             </fieldset>
           )}
 
-          {/* Publish mode */}
+          {/* Publish mode. The OG has no scheduled release. */}
           {(descriptionMode === "manual" || aiReady) && (
-            <PublishToggle value={publishState} onChange={setPublishState} />
+            <PublishToggle
+              value={
+                publishAsOg && publishState.status === "future"
+                  ? { status: "publish" }
+                  : publishState
+              }
+              onChange={(next) => {
+                if (publishAsOg && next.status === "future") {
+                  setPublishState({ status: "publish" });
+                  return;
+                }
+                setPublishState(next);
+              }}
+              allowSchedule={!publishAsOg}
+            />
           )}
         </CardContent>
 
@@ -1641,11 +1761,15 @@ export function DistributionForm({
                 ? "Uploading..."
                 : isPending
                   ? "Submitting..."
-                  : publishState.status === "draft"
-                    ? "Save as Draft (Unlisted)"
-                    : publishState.status === "future"
-                      ? "Schedule Distribution"
-                      : "Distribute Now"}
+                  : publishAsOg
+                    ? publishState.status === "draft"
+                      ? "Save The OG as a draft"
+                      : "Publish to The OG"
+                    : publishState.status === "draft"
+                      ? "Save as Draft (Unlisted)"
+                      : publishState.status === "future"
+                        ? "Schedule Distribution"
+                        : "Distribute Now"}
             </Button>
           </CardFooter>
         )}

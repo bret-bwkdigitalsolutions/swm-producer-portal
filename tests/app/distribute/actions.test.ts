@@ -81,6 +81,31 @@ describe("submitDistribution", () => {
     mockCreate.mockResolvedValue({ id: "job-1" });
   });
 
+  it("marks The OG as website-only premium content and ignores YouTube", async () => {
+    const fd = makeFormData({
+      show_id: "21",
+      title: "The OG #27",
+      description: "Members only",
+      platform_youtube: "on",
+      platform_website: "on",
+      premium_section: "og",
+      is_premium: "true",
+      og_vimeo_url: "https://vimeo.com/555/abc123",
+    });
+    const result = await submitDistribution({}, fd);
+    expect(result.success).toBe(true);
+    const created = mockCreate.mock.calls[0][0].data;
+    expect(created.wpShowId).toBe(21);
+    expect(created.isPremium).toBe(false);
+    expect(created.metadata.premiumSection).toBe("og");
+    expect(created.metadata.ogVimeoUrl).toBe("https://vimeo.com/555/abc123");
+    expect(created.metadata.ogVimeoVideoId).toBe("555");
+    expect(created.metadata.existingVimeoUrl).toBeUndefined();
+    expect(mockCreateMany.mock.calls[0][0].data).toEqual([
+      expect.objectContaining({ platform: "website", status: "queued" }),
+    ]);
+  });
+
   it("accepts a video file upload (existing behavior)", async () => {
     const fd = makeFormData({
       ...BASE_FIELDS,
@@ -374,6 +399,32 @@ describe("updateDistribution", () => {
     expect(mockJobUpdate.mock.calls[0][0].data.metadata.liveStreamUrl).toBe(
       "https://www.youtube.com/watch?v=sLB7STNGACI"
     );
+  });
+
+  it("turns a reviewed job into The OG and drops other platforms", async () => {
+    mockJobFindUnique.mockResolvedValue({
+      id: "job-1",
+      userId: "user-1",
+      wpShowId: 21,
+      metadata: { description: "old desc", thumbnailGcsPath: "thumb.jpg", isPremium: true },
+    });
+    const result = await updateDistribution("job-1", {
+      title: "The OG #27",
+      description: "Members only",
+      platforms: ["youtube", "website"],
+      isPremium: true,
+      premiumSection: "og",
+      ogVimeoUrl: "https://player.vimeo.com/video/555?h=abc123",
+    });
+    expect(result.success).toBe(true);
+    const update = mockJobUpdate.mock.calls[0][0].data;
+    expect(update.isPremium).toBe(false);
+    expect(update.metadata.premiumSection).toBe("og");
+    expect(update.metadata.ogVimeoUrl).toBe("https://vimeo.com/555/abc123");
+    expect(update.metadata.thumbnailGcsPath).toBe("thumb.jpg");
+    expect(mockCreateMany.mock.calls[0][0].data).toEqual([
+      expect.objectContaining({ platform: "website" }),
+    ]);
   });
 
   it("preserves existing metadata fields not being updated", async () => {
