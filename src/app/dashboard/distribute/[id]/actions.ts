@@ -250,7 +250,7 @@ export async function retryWebsiteAsOg(
     };
   }
 
-  const metadata = {
+  const metadata: Record<string, unknown> = {
     ...((platformJob.job.metadata as Record<string, unknown>) ?? {}),
     premiumSection: OG_PREMIUM_SECTION,
     isPremium: false,
