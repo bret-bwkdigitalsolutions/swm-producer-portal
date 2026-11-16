@@ -6,6 +6,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  type ChangeEvent,
 } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -112,6 +113,7 @@ export function DistributionForm({
   );
   const formRef = useRef<HTMLFormElement>(null);
   const videoFileRef = useRef<File | null>(null);
+  const videoFileInputRef = useRef<HTMLInputElement | null>(null);
   const aiInFlightRef = useRef(false);
   const [showId, setShowId] = useState("");
   const [title, setTitle] = useState("");
@@ -193,11 +195,17 @@ export function DistributionForm({
     }
   }, [publishAsOg, publishState.status]);
   useEffect(() => {
-    if (!publishAsOg || videoSource === "upload") return;
-    setVideoSource("upload");
-    setYoutubeUrlInput("");
-    setYoutubeThumbUrl(null);
-    setVimeoUrlInput("");
+    if (!publishAsOg) return;
+    if (videoSource !== "upload") {
+      setVideoSource("upload");
+      setYoutubeUrlInput("");
+      setYoutubeThumbUrl(null);
+      setVimeoUrlInput("");
+    }
+    // Live-stream replacement and the premium podcast flag do not apply to The OG.
+    setLiveStreamUrl("");
+    setLivePreview(null);
+    setIsPremium(false);
   }, [publishAsOg, videoSource]);
 
   // Track whether upload was done for AI path (video uploaded before form submit)
@@ -827,6 +835,22 @@ export function DistributionForm({
     };
   }, [liveStreamUrl, showId]);
 
+  function handleVideoFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    videoFileRef.current = file;
+    setVideoFileName(file?.name ?? null);
+    setVideoFileSize(file?.size ?? 0);
+    setVideoContentType(file?.type ?? "");
+    setDescriptionMode(null);
+    setSuggestions([]);
+    setAiUploadedJobId(null);
+    thumbnailUploadedNameRef.current = null;
+    setTags(frequentTags[showId] ?? []);
+    setSuggestedTags([]);
+  }
+
+  const ogAiNeedsFile = publishAsOg && !videoFileName;
+
   return (
     <Card className="mx-auto w-full max-w-2xl">
       <CardHeader>
@@ -1050,37 +1074,62 @@ export function DistributionForm({
                   onChange={() => setPublishAsOg(true)}
                   disabled={isDisabled}
                 />
-                <span>
-                  The OG (members only)
-                  <span className="mt-0.5 block text-xs text-muted-foreground">
-                    Paste a Vimeo URL you already uploaded. The portal publishes it on The OG page and does not upload the file or change the video. A file is optional, and only for transcript and title suggestions.
-                  </span>
-                </span>
+                <span>The OG (members only)</span>
               </label>
             </fieldset>
           )}
 
-          {publishAsOg && (
-            <div className="space-y-2">
-              <Label htmlFor="og_vimeo_url">
-                Vimeo URL <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="og_vimeo_url"
-                name="og_vimeo_url"
-                type="url"
-                required
-                placeholder="https://vimeo.com/123456789/abcdef"
-                value={ogVimeoUrlInput}
-                onChange={(e) => setOgVimeoUrlInput(e.target.value)}
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                vimeo.com/123456789, vimeo.com/123456789/hash, or player.vimeo.com/video/123456789. Privacy and embed settings stay as they are on Vimeo.
-              </p>
-            </div>
-          )}
+          {publishAsOg ? (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="og_vimeo_url">
+                  Vimeo URL <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="og_vimeo_url"
+                  name="og_vimeo_url"
+                  type="url"
+                  required
+                  placeholder="https://vimeo.com/123456789/abcdef"
+                  value={ogVimeoUrlInput}
+                  onChange={(e) => setOgVimeoUrlInput(e.target.value)}
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Paste a Vimeo link you already uploaded. The portal publishes it on The OG page and does not change the video.
+                </p>
+              </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="video_file">
+                  Video file (optional, for transcript and AI suggestions)
+                </Label>
+                <label
+                  htmlFor="video_file"
+                  className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-8 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
+                >
+                  <UploadIcon className="size-8 text-muted-foreground" />
+                  {videoFileName ? (
+                    <span className="text-sm font-medium">{videoFileName}</span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">
+                      Add a file only if you want a transcript and title suggestions
+                    </span>
+                  )}
+                  <input
+                    ref={videoFileInputRef}
+                    id="video_file"
+                    type="file"
+                    accept="video/*"
+                    className="sr-only"
+                    disabled={isDisabled}
+                    onChange={handleVideoFileChange}
+                  />
+                </label>
+              </div>
+            </>
+          ) : (
+            <>
           {/* Video source toggle */}
           <div className="space-y-2">
             <Label>Video Source</Label>
@@ -1125,7 +1174,7 @@ export function DistributionForm({
                   setTags(frequentTags[showId] ?? []);
                   setSuggestedTags([]);
                 }}
-                disabled={isDisabled || publishAsOg}
+                disabled={isDisabled}
                 className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors ${
                   videoSource === "youtube"
                     ? "border-primary bg-primary/5 text-primary"
@@ -1152,7 +1201,7 @@ export function DistributionForm({
                   setTags(frequentTags[showId] ?? []);
                   setSuggestedTags([]);
                 }}
-                disabled={isDisabled || publishAsOg}
+                disabled={isDisabled}
                 className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors ${
                   videoSource === "vimeo"
                     ? "border-primary bg-primary/5 text-primary"
@@ -1184,24 +1233,13 @@ export function DistributionForm({
                   </span>
                 )}
                 <input
+                  ref={videoFileInputRef}
                   id="video_file"
                   type="file"
                   accept="video/*"
                   className="sr-only"
                   disabled={isDisabled}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    videoFileRef.current = file;
-                    setVideoFileName(file?.name ?? null);
-                    setVideoFileSize(file?.size ?? 0);
-                    setVideoContentType(file?.type ?? "");
-                    setDescriptionMode(null);
-                    setSuggestions([]);
-                    setAiUploadedJobId(null);
-                    thumbnailUploadedNameRef.current = null;
-                    setTags(frequentTags[showId] ?? []);
-                    setSuggestedTags([]);
-                  }}
+                  onChange={handleVideoFileChange}
                 />
               </label>
             </div>
@@ -1274,21 +1312,6 @@ export function DistributionForm({
           )}
 
           {/* Hidden fields for video metadata */}
-          {videoSource === "upload" && videoFileName && (
-            <>
-              <input type="hidden" name="video_file_name" value={videoFileName} />
-              <input
-                type="hidden"
-                name="video_file_size"
-                value={videoFileSize.toString()}
-              />
-              <input
-                type="hidden"
-                name="video_content_type"
-                value={videoContentType}
-              />
-            </>
-          )}
           {videoSource === "youtube" && isValidYoutubeUrl(youtubeUrlInput) && (
             <input type="hidden" name="existing_youtube_url" value={youtubeUrlInput} />
           )}
@@ -1336,6 +1359,25 @@ export function DistributionForm({
               </p>
             )}
           </div>
+
+            </>
+          )}
+
+          {videoSource === "upload" && videoFileName && (
+            <>
+              <input type="hidden" name="video_file_name" value={videoFileName} />
+              <input
+                type="hidden"
+                name="video_file_size"
+                value={videoFileSize.toString()}
+              />
+              <input
+                type="hidden"
+                name="video_content_type"
+                value={videoContentType}
+              />
+            </>
+          )}
 
           {/* Thumbnail upload + YouTube preview */}
           {videoSourceReady && (
@@ -1411,8 +1453,12 @@ export function DistributionForm({
                 </button>
                 <button
                   type="button"
-                  disabled={isDisabled || (publishAsOg && !videoFileName)}
+                  disabled={!ogAiNeedsFile && isDisabled}
                   onClick={() => {
+                    if (ogAiNeedsFile) {
+                      videoFileInputRef.current?.click();
+                      return;
+                    }
                     setDescriptionMode("ai");
                     startAiAnalysis();
                   }}
@@ -1423,8 +1469,8 @@ export function DistributionForm({
                     Get AI recommendations
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {publishAsOg && !videoFileName
-                      ? "Upload a video file to generate suggestions. A Vimeo URL alone uses the title and description you enter."
+                    {ogAiNeedsFile
+                      ? "Needs a video file for the transcript and suggestions. Click to choose one."
                       : "AI suggests title, description, chapters & tags"}
                   </span>
                 </button>
@@ -1440,7 +1486,11 @@ export function DistributionForm({
               </Label>
               <Textarea
                 id="description"
-                placeholder="Episode description for podcast platforms..."
+                placeholder={
+                  publishAsOg
+                    ? "Description for The OG page..."
+                    : "Episode description for podcast platforms..."
+                }
                 rows={5}
                 disabled={isDisabled}
                 value={description}
@@ -1501,18 +1551,20 @@ export function DistributionForm({
                 </div>
               )}
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="explicit"
-                  name="explicit"
-                  value="true"
-                  className="rounded border-gray-300"
-                />
-                <Label htmlFor="explicit" className="cursor-pointer text-sm">
-                  Contains explicit/mature content
-                </Label>
-              </div>
+              {!publishAsOg && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="explicit"
+                    name="explicit"
+                    value="true"
+                    className="rounded border-gray-300"
+                  />
+                  <Label htmlFor="explicit" className="cursor-pointer text-sm">
+                    Contains explicit/mature content
+                  </Label>
+                </div>
+              )}
 
               {premiumShows[showId] && !publishAsOg && (
                 <div className="flex items-center gap-2">
@@ -1596,18 +1648,20 @@ export function DistributionForm({
               )}
 
               {/* Content warning */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="explicit"
-                  name="explicit"
-                  value="true"
-                  className="rounded border-gray-300"
-                />
-                <Label htmlFor="explicit" className="cursor-pointer text-sm">
-                  Contains explicit/mature content
-                </Label>
-              </div>
+              {!publishAsOg && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="explicit"
+                    name="explicit"
+                    value="true"
+                    className="rounded border-gray-300"
+                  />
+                  <Label htmlFor="explicit" className="cursor-pointer text-sm">
+                    Contains explicit/mature content
+                  </Label>
+                </div>
+              )}
 
               {premiumShows[showId] && !publishAsOg && (
                 <div className="flex items-center gap-2">
@@ -1743,6 +1797,7 @@ export function DistributionForm({
                 setPublishState(next);
               }}
               allowSchedule={!publishAsOg}
+              showYoutubeOnDraft={!publishAsOg}
             />
           )}
         </CardContent>

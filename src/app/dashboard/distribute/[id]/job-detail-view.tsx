@@ -124,16 +124,21 @@ function PlatformStatusRow({
   platform,
   note,
   canRetryAsOg,
+  isOg = false,
 }: {
   platform: Platform;
   note?: string | null;
   canRetryAsOg?: boolean;
+  isOg?: boolean;
 }) {
   const [retryState, retryAction, isRetrying] = useActionState(retryPlatform, {});
   const [ogState, ogAction, isOgRetrying] = useActionState(retryWebsiteAsOg, {});
 
   const showOgRetry =
     canRetryAsOg && platform.platform === "website" && platform.status === "failed";
+  // YouTube, Transistor, and the coming-soon video platforms cannot be retried
+  // for The OG. The processor rejects them, so the button would do nothing.
+  const retryApplies = !isOg || platform.platform === "website";
 
   return (
     <div className="rounded-lg border px-4 py-3">
@@ -187,14 +192,14 @@ function PlatformStatusRow({
           </a>
         )}
 
-        {platform.status === "failed" && (
+        {platform.status === "failed" && retryApplies && !showOgRetry && (
           <form action={retryAction}>
             <input type="hidden" name="platform_job_id" value={platform.id} />
             <Button
               type="submit"
               variant="outline"
               size="sm"
-              disabled={isRetrying || isOgRetrying}
+              disabled={isRetrying}
             >
               {isRetrying ? (
                 <Loader2Icon className="size-3.5 animate-spin" />
@@ -205,33 +210,58 @@ function PlatformStatusRow({
             </Button>
           </form>
         )}
+        {platform.status === "failed" && retryApplies && showOgRetry && !isOgRetrying && !isRetrying && (
+          <form action={retryAction}>
+            <input type="hidden" name="platform_job_id" value={platform.id} />
+            <Button type="submit" variant="outline" size="sm">
+              <RefreshCwIcon className="size-3.5" />
+              Retry
+            </Button>
+          </form>
+        )}
+        {platform.status === "failed" && showOgRetry && isRetrying && (
+          <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2Icon className="size-3.5 animate-spin" />
+            Retrying
+          </p>
+        )}
       </div>
     </div>
-    {showOgRetry && (
-      <form action={ogAction} className="mt-3 space-y-2 border-t pt-3">
-        <Label htmlFor={`og-vimeo-${platform.id}`} className="text-xs">
-          Vimeo URL for The OG
-        </Label>
-        <Input
-          id={`og-vimeo-${platform.id}`}
-          name="og_vimeo_url"
-          type="url"
-          required
-          placeholder="https://vimeo.com/123456789/abcdef"
-          disabled={isRetrying || isOgRetrying}
-        />
-        <input type="hidden" name="platform_job_id" value={platform.id} />
-        <p className="text-xs text-muted-foreground">
-          Paste the video already on Vimeo. This keeps the title, description, chapters, and transcript on this job. The portal does not change the video.
-        </p>
-        <Button type="submit" size="sm" disabled={isRetrying || isOgRetrying}>
-          {isOgRetrying ? (
+    {showOgRetry && !isRetrying && (
+      <form
+        action={ogAction}
+        className="mt-3 space-y-2 border-t pt-3"
+        onSubmit={(event) => {
+          if (isOgRetrying) event.preventDefault();
+        }}
+      >
+        {isOgRetrying ? (
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2Icon className="size-3.5 animate-spin" />
-          ) : (
-            <RefreshCwIcon className="size-3.5" />
-          )}
-          Retry as The OG
-        </Button>
+            Retrying as The OG...
+          </p>
+        ) : (
+          <>
+            <Label htmlFor={`og-vimeo-${platform.id}`} className="text-xs">
+              Vimeo URL for The OG
+            </Label>
+            <Input
+              id={`og-vimeo-${platform.id}`}
+              name="og_vimeo_url"
+              type="url"
+              required
+              placeholder="https://vimeo.com/123456789/abcdef"
+            />
+            <input type="hidden" name="platform_job_id" value={platform.id} />
+            <p className="text-xs text-muted-foreground">
+              Paste the Vimeo link already uploaded. The portal keeps this job&apos;s title and description and does not change the video.
+            </p>
+            <Button type="submit" size="sm">
+              <RefreshCwIcon className="size-3.5" />
+              Retry as The OG
+            </Button>
+          </>
+        )}
       </form>
     )}
     </div>
@@ -554,6 +584,7 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
               key={platform.id}
               platform={platform}
               canRetryAsOg={job.canRetryAsOg}
+              isOg={job.isOg}
               note={
                 platform.platform === "website" && supersedeDropped
                   ? "WordPress did not keep the live-stream replacement."

@@ -108,6 +108,94 @@ describe("JobDetailView live-stream replacement", () => {
     expect(screen.queryByRole("link", { name: /youtube|javascript/i })).not.toBeInTheDocument();
   });
 
+  it("leaves The OG retry controls enabled", () => {
+    render(
+      <JobDetailView
+        job={{
+          ...job,
+          status: "failed",
+          canRetryAsOg: true,
+          platforms: [
+            {
+              id: "plat-web",
+              platform: "website",
+              status: "failed",
+              error: "YouTube URL not available.",
+              externalId: null,
+              externalUrl: null,
+              completedAt: null,
+            },
+            {
+              id: "plat-yt",
+              platform: "youtube",
+              status: "failed",
+              error: "Upload failed.",
+              externalId: null,
+              externalUrl: null,
+              completedAt: null,
+            },
+          ],
+        }}
+      />
+    );
+
+    const vimeo = screen.getByLabelText("Vimeo URL for The OG");
+    const retryAsOg = screen.getByRole("button", { name: "Retry as The OG" });
+    expect(vimeo).toBeEnabled();
+    expect(retryAsOg).toBeEnabled();
+    expect(vimeo).not.toHaveAttribute("disabled");
+    const retries = screen.getAllByRole("button", { name: "Retry" });
+    expect(retries).toHaveLength(2);
+    for (const button of retries) expect(button).toBeEnabled();
+    expect(retryAsOg.closest("form")?.querySelector("[disabled]")).toBeNull();
+  });
+
+  it("hides platform retries that cannot run on an OG episode", () => {
+    render(
+      <JobDetailView
+        job={{
+          ...job,
+          status: "failed",
+          isOg: true,
+          canRetryAsOg: false,
+          platforms: [
+            {
+              id: "plat-web",
+              platform: "website",
+              status: "failed",
+              error: "WordPress did not return the OG post id.",
+              externalId: null,
+              externalUrl: null,
+              completedAt: null,
+            },
+            {
+              id: "plat-yt",
+              platform: "youtube",
+              status: "failed",
+              error: "The OG is members-only. It is not uploaded to YouTube.",
+              externalId: null,
+              externalUrl: null,
+              completedAt: null,
+            },
+            {
+              id: "plat-tr",
+              platform: "transistor",
+              status: "failed",
+              error: "The OG is members-only. It is not added to the podcast feed.",
+              externalId: null,
+              externalUrl: null,
+              completedAt: null,
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.queryByLabelText("Vimeo URL for The OG")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry as The OG" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
+  });
+
   it("omits the note when no live post was superseded", () => {
     render(
       <JobDetailView

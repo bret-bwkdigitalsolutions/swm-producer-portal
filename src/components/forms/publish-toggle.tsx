@@ -38,6 +38,8 @@ interface PublishToggleProps {
   className?: string;
   /** The OG publishes now or as a draft. It has no scheduled release. */
   allowSchedule?: boolean;
+  /** Public episodes mention the unlisted YouTube upload. The OG does not use YouTube. */
+  showYoutubeOnDraft?: boolean;
 }
 
 function formatDatetimeLocal(date: Date): string {
@@ -77,6 +79,7 @@ export function PublishToggle({
   onChange,
   className,
   allowSchedule = true,
+  showYoutubeOnDraft = true,
 }: PublishToggleProps) {
   const browserTimezone = useMemo(() => getBrowserTimezone(), []);
   const timezoneAbbr = useMemo(
@@ -158,11 +161,17 @@ export function PublishToggle({
         </div>
       )}
 
-      {value.status === "draft" && (
+      {value.status === "draft" && showYoutubeOnDraft && (
         <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
           Draft content is saved to WordPress but not visible to your audience.
           YouTube uploads will be set to &quot;Unlisted&quot;. You can publish
           later from WordPress or the portal.
+        </p>
+      )}
+
+      {value.status === "draft" && !showYoutubeOnDraft && (
+        <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+          Saved as a draft on The OG page. It stays off the members page until you publish it.
         </p>
       )}
 
