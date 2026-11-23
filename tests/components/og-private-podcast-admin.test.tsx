@@ -40,7 +40,8 @@ describe("Vimeo credential form", () => {
     );
 
     await user.selectOptions(screen.getByLabelText("Platform"), "vimeo");
-    expect(screen.getByText(/public, private, edit, video_files/i)).toBeInTheDocument();
+    expect(screen.getByText(/public, private, and video_files/i)).toBeInTheDocument();
+    expect(screen.queryByText(/private, edit/i)).not.toBeInTheDocument();
     expect(screen.getByText(/does not change the video/i)).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: "OAuth" })).not.toBeInTheDocument();
 

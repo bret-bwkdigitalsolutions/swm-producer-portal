@@ -4,7 +4,11 @@ import { generateAiSuggestions } from "./ai-processor";
 import { derivedGcsAudioPath, extractAudio } from "./audio-extractor";
 import { transcribeAudio, formatTranscriptForAI, formatTranscriptForDisplay, formatTranscriptAsVtt } from "@/lib/transcription";
 import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/youtube";
-import { setTransistorEpisodeWebsite, uploadToTransistor } from "@/lib/platforms/transistor";
+import {
+  setTransistorEpisodeWebsite,
+  TransistorCreatedError,
+  uploadToTransistor,
+} from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { publishOgEpisode } from "@/lib/platforms/wordpress-og";
 import {
@@ -79,6 +83,21 @@ export interface ProcessingResult {
  * on the legacy bucket so an mp3 written before this change is still reused.
  * With a single bucket, this stays a one-argument exists check.
  */
+function transistorFailureUpdate(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  const created = error instanceof TransistorCreatedError ? error : null;
+  return {
+    message,
+    data: {
+      status: "failed" as const,
+      error: message,
+      ...(created
+        ? { externalId: created.episodeId, externalUrl: created.episodeUrl }
+        : {}),
+    },
+  };
+}
+
 async function extractedAudioExists(
   objectPath: string,
   metadata: Record<string, unknown>
@@ -858,7 +877,10 @@ async function processJobInner(
       if (!privateShowId) {
         throw new Error(OG_TRANSISTOR_SHOW_MISSING);
       }
-      if (!gcsAudioPath) {
+      const showUsesSeasons =
+        showMeta?.seasonScheme === "season" || showMeta?.seasonScheme === "case";
+      const resumeId = transistorPlatform.externalId?.trim() || undefined;
+      if (!resumeId && !gcsAudioPath) {
         const parsedOg = parseOgVimeoUrl(
           typeof updatedMetadata.ogVimeoUrl === "string" ? updatedMetadata.ogVimeoUrl : ""
         );
@@ -882,8 +904,6 @@ async function processJobInner(
           });
         }
       }
-      const showUsesSeasons =
-        showMeta?.seasonScheme === "season" || showMeta?.seasonScheme === "case";
       const result = await uploadToTransistor({
         wpShowId: job.wpShowId,
         title: job.title,
@@ -892,7 +912,7 @@ async function processJobInner(
           ? ((updatedMetadata.seasonNumber as number) ?? undefined)
           : undefined,
         episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
-        gcsAudioPath,
+        gcsAudioPath: gcsAudioPath ?? "",
         chapters: (updatedMetadata.chapters as string) ?? undefined,
         tags: (updatedMetadata.tags as string[]) ?? undefined,
         thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
@@ -905,6 +925,7 @@ async function processJobInner(
           updatedMetadata.scheduledAt
         ),
         transistorShowIdOverride: privateShowId,
+        existingEpisodeId: resumeId,
         onProgress: (uploaded, total) =>
           beatUpload({ transistorUploadBytes: uploaded, transistorUploadTotal: total }),
       });
@@ -920,17 +941,16 @@ async function processJobInner(
       platformResults.push({ platform: "transistor", status: "completed" });
       rememberTransistorEpisode(result.episodeId, job.wpShowId);
     } catch (error) {
-      const errMsg =
-        error instanceof Error ? error.message : "Transistor upload failed";
-      console.error(`[processor] OG Transistor failed: ${errMsg}`);
+      const failure = transistorFailureUpdate(error, "Transistor upload failed");
+      console.error(`[processor] OG Transistor failed: ${failure.message}`);
       await db.distributionJobPlatform.update({
         where: { id: transistorPlatform.id },
-        data: { status: "failed", error: errMsg },
+        data: failure.data,
       });
       platformResults.push({
         platform: "transistor",
         status: "failed",
-        error: errMsg,
+        error: failure.message,
       });
     }
   } else if (transistorPlatform && transistorPlatform.status === "completed") {
@@ -952,7 +972,8 @@ async function processJobInner(
     });
 
     try {
-      if (!gcsAudioPath) {
+      const resumeId = transistorPlatform.externalId?.trim() || undefined;
+      if (!resumeId && !gcsAudioPath) {
         throw new Error("Audio file not available for Transistor upload.");
       }
 
@@ -981,7 +1002,7 @@ async function processJobInner(
         description: (updatedMetadata.description as string) ?? "",
         seasonNumber: seasonForChild,
         episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
-        gcsAudioPath,
+        gcsAudioPath: gcsAudioPath ?? "",
         chapters: (updatedMetadata.chapters as string) ?? undefined,
         tags: (updatedMetadata.tags as string[]) ?? undefined,
         thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
@@ -990,10 +1011,12 @@ async function processJobInner(
         youtubeVideoUrl: youtubeUrl ?? undefined,
         explicit: (updatedMetadata.explicit as boolean) ?? undefined,
         isDraft: (updatedMetadata.isDraft as boolean) ?? false,
-        scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
-          ? (updatedMetadata.scheduledAt as string) ?? undefined
-          : undefined,
+        scheduledAt: transistorPublishSchedule(
+          updatedMetadata.scheduleMode,
+          updatedMetadata.scheduledAt
+        ),
         transistorShowIdOverride: isPremium ? transistorShowMeta?.transistorPrivateShowId ?? undefined : undefined,
+        existingEpisodeId: resumeId,
         onProgress: (uploaded, total) =>
           beatUpload({ transistorUploadBytes: uploaded, transistorUploadTotal: total }),
       });
@@ -1041,7 +1064,7 @@ async function processJobInner(
                 description: (updatedMetadata.description as string) ?? "",
                 seasonNumber: undefined,
                 episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
-                gcsAudioPath: gcsAudioPath!,
+                gcsAudioPath: gcsAudioPath ?? "",
                 chapters: (updatedMetadata.chapters as string) ?? undefined,
                 tags: (updatedMetadata.tags as string[]) ?? undefined,
                 thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
@@ -1050,9 +1073,14 @@ async function processJobInner(
                 youtubeVideoUrl: youtubeUrl ?? undefined,
                 explicit: (updatedMetadata.explicit as boolean) ?? undefined,
                 isDraft: (updatedMetadata.isDraft as boolean) ?? false,
-                scheduledAt: (updatedMetadata.scheduleMode as string) === "schedule"
-                  ? (updatedMetadata.scheduledAt as string) ?? undefined
-                  : undefined,
+                scheduledAt: transistorPublishSchedule(
+                  updatedMetadata.scheduleMode,
+                  updatedMetadata.scheduledAt
+                ),
+                existingEpisodeId:
+                  typeof updatedMetadata.networkTransistorEpisodeId === "string"
+                    ? updatedMetadata.networkTransistorEpisodeId
+                    : undefined,
                 onProgress: (uploaded, total) =>
                   beatUpload({
                     networkTransistorUploadBytes: uploaded,
@@ -1072,22 +1100,32 @@ async function processJobInner(
             }
           }
         } catch (networkErr) {
+          if (networkErr instanceof TransistorCreatedError) {
+            updatedMetadata.networkTransistorEpisodeId = networkErr.episodeId;
+            await mergeJobMetadata(job.id, {
+              networkTransistorEpisodeId: networkErr.episodeId,
+            }).catch((error) => {
+              console.error(
+                "[processor] Could not record network Transistor episode id:",
+                error
+              );
+            });
+          }
           // Non-fatal: log but don't fail the job
           console.error("[processor] Network Transistor cross-post failed:", networkErr);
         }
       }
     } catch (error) {
-      const errMsg =
-        error instanceof Error ? error.message : "Transistor upload failed";
-      console.error(`[processor] Transistor failed: ${errMsg}`);
+      const failure = transistorFailureUpdate(error, "Transistor upload failed");
+      console.error(`[processor] Transistor failed: ${failure.message}`);
       await db.distributionJobPlatform.update({
         where: { id: transistorPlatform.id },
-        data: { status: "failed", error: errMsg },
+        data: failure.data,
       });
       platformResults.push({
         platform: "transistor",
         status: "failed",
-        error: errMsg,
+        error: failure.message,
       });
     }
   }

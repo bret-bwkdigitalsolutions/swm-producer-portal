@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { showCanHostOg } from "@/lib/og-show";
 import { revalidatePath } from "next/cache";
 
 interface FormState {
@@ -69,6 +70,13 @@ export async function saveCredential(
     return {
       success: false,
       message: "Save the Vimeo personal access token as an API key.",
+    };
+  }
+
+  if (platform === "vimeo" && !(await showCanHostOg(wpShowId))) {
+    return {
+      success: false,
+      message: "The Vimeo token can only be saved for Your Dark Companion.",
     };
   }
 

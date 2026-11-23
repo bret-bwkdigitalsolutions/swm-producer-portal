@@ -106,7 +106,7 @@ export function CredentialForm({
           {selectedPlatform === "vimeo" && (
             <p className="text-xs text-muted-foreground">
               Paste the personal access token. Required scopes: public,
-              private, edit, video_files. The portal only reads video files.
+              private, and video_files. The portal only reads video files.
               It does not change the video. To rotate, paste a new token and
               save. The current token is not shown.
             </p>

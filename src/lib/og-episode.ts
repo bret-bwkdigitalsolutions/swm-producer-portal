@@ -16,7 +16,7 @@ export const OG_TRANSISTOR_SHOW_MISSING =
   "The OG has no private Transistor show configured. Create a private podcast in the Transistor dashboard, then save its numeric show ID or slug under Admin > Shows for Your Dark Companion.";
 
 export const OG_VIMEO_TOKEN_MISSING =
-  "No Vimeo access token is stored for Your Dark Companion. Add a personal access token (scopes public, private, edit, video_files) under Admin > Credentials for that show.";
+  "No Vimeo access token is stored for Your Dark Companion. Add a personal access token (scopes public, private, and video_files) under Admin > Credentials for that show.";
 
 /**
  * Transistor cannot create a show via the API. The id saved in admin is

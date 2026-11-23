@@ -1,8 +1,21 @@
+import "server-only";
+
+import { createWriteStream } from "node:fs";
+import { rm } from "node:fs/promises";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
+
 /**
  * Read-only Vimeo file lookup for The OG.
  * The portal downloads a file the owner can already access. It never
  * PATCHes the video, so privacy settings Ashlea set stay as they are.
  * Tokens and download URLs are not written to logs.
+ *
+ * Vimeo's API returns 302 links. Those redirects land on Vimeo's CDNs
+ * (vimeocdn.com, including fpdl and skyfire, and akamaized.net, including
+ * vod-progressive, vod-adaptive, download-video, and gcs-vimeo).
  */
 
 export interface VimeoFileCandidate {
@@ -15,6 +28,35 @@ export interface VimeoFileCandidate {
 }
 
 const API = "https://api.vimeo.com";
+
+/** Two gibibytes. OG episodes are long, but a larger file is rejected. */
+export const VIMEO_DOWNLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+
+const MAX_REDIRECTS = 5;
+
+/**
+ * Hosts Vimeo documents for file delivery. Subdomains are included.
+ * `vimeo.com` covers player.vimeo.com (the 302 the API returns).
+ * `vimeocdn.com` and `akamaized.net` are the CDNs those redirects use.
+ */
+const VIMEO_DOWNLOAD_HOST_SUFFIXES = ["vimeo.com", "vimeocdn.com", "akamaized.net"] as const;
+
+export function isAllowedVimeoDownloadUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  if (url.username || url.password) return false;
+  if (url.port && url.port !== "443") return false;
+  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
+  if (!host || host === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
+  return VIMEO_DOWNLOAD_HOST_SUFFIXES.some(
+    (suffix) => host === suffix || host.endsWith(`.${suffix}`)
+  );
+}
 
 export function vimeoVideoPath(videoId: string, hash: string | null): string {
   if (!/^\d{1,20}$/.test(videoId)) {
@@ -33,12 +75,14 @@ function readFileList(value: unknown, source: "download" | "files"): VimeoFileCa
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
     const link = typeof record.link === "string" ? record.link : "";
-    if (!link.startsWith("https://")) continue;
+    if (!isAllowedVimeoDownloadUrl(link)) continue;
+    const size = typeof record.size === "number" && record.size > 0 ? record.size : null;
+    if (size != null && size > VIMEO_DOWNLOAD_MAX_BYTES) continue;
     files.push({
       link,
       quality: typeof record.quality === "string" ? record.quality : null,
       type: typeof record.type === "string" ? record.type : null,
-      size: typeof record.size === "number" && record.size > 0 ? record.size : null,
+      size,
       height: typeof record.height === "number" && record.height > 0 ? record.height : null,
       source,
     });
@@ -60,6 +104,7 @@ function isProgressiveVideo(file: VimeoFileCandidate): boolean {
   const quality = (file.quality ?? "").toLowerCase();
   if (quality === "hls" || type.includes("mpegurl") || type.includes("dash")) return false;
   if (type.startsWith("video/")) return true;
+  if (type === "application/octet-stream") return true;
   if (type === "source" || quality === "source") return true;
   return quality === "hd" || quality === "sd" || quality === "mobile";
 }
@@ -84,6 +129,95 @@ export function pickVimeoAudioSource(
     const bHeight = b.height ?? Number.POSITIVE_INFINITY;
     return aHeight - bHeight;
   })[0];
+}
+
+function withoutUrls(message: string): string {
+  return message.replace(/https?:\/\/\S+/g, "[url]");
+}
+
+function acceptedVideoType(header: string | null): boolean {
+  const type = (header ?? "").split(";")[0].trim().toLowerCase();
+  return type.startsWith("video/") || type === "application/octet-stream";
+}
+
+/**
+ * Download one Vimeo file. Redirects are not followed automatically: every
+ * Location is checked against the CDN allowlist. The response must be a
+ * video (or octet-stream) and must stay within the size cap, both by
+ * Content-Length and by bytes written. On failure the partial file is removed.
+ */
+export async function downloadVimeoFile(
+  startUrl: string,
+  destPath: string,
+  options?: { timeoutMs?: number; maxBytes?: number }
+): Promise<void> {
+  const maxBytes = options?.maxBytes ?? VIMEO_DOWNLOAD_MAX_BYTES;
+  const timeoutMs = options?.timeoutMs ?? 30 * 60 * 1000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let current = startUrl;
+  try {
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      if (!isAllowedVimeoDownloadUrl(current)) {
+        throw new Error("Vimeo file URL is not on an allowed host.");
+      }
+      let response: Response;
+      try {
+        response = await fetch(current, {
+          redirect: "manual",
+          signal: controller.signal,
+        });
+      } catch {
+        throw new Error("Could not download the Vimeo video file.");
+      }
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        await response.body?.cancel().catch(() => undefined);
+        if (!location) throw new Error("Vimeo redirect had no Location.");
+        current = new URL(location, current).toString();
+        continue;
+      }
+      if (hop > MAX_REDIRECTS) break;
+      if (!response.ok || !response.body) {
+        throw new Error(`Vimeo file download failed (HTTP ${response.status}).`);
+      }
+      if (!acceptedVideoType(response.headers.get("content-type"))) {
+        await response.body.cancel().catch(() => undefined);
+        throw new Error("Vimeo file was not a video.");
+      }
+      const lengthHeader = response.headers.get("content-length");
+      if (lengthHeader) {
+        const length = Number(lengthHeader);
+        if (!Number.isFinite(length) || length < 0 || length > maxBytes) {
+          await response.body.cancel().catch(() => undefined);
+          throw new Error("Vimeo file is larger than 2 GiB.");
+        }
+      }
+      let written = 0;
+      const cap = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          written += chunk.length;
+          if (written > maxBytes) {
+            controller.abort();
+            callback(new Error("Vimeo file is larger than 2 GiB."));
+            return;
+          }
+          callback(null, chunk);
+        },
+      });
+      const webBody = response.body as unknown as NodeWebReadableStream<Uint8Array>;
+      await pipeline(Readable.fromWeb(webBody), cap, createWriteStream(destPath));
+      return;
+    }
+    throw new Error("Vimeo file download followed too many redirects.");
+  } catch (error) {
+    controller.abort();
+    await rm(destPath, { force: true }).catch(() => undefined);
+    const message = error instanceof Error ? error.message : "Could not download the Vimeo video file.";
+    throw new Error(withoutUrls(message));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function fetchVimeoFileCandidates(input: {

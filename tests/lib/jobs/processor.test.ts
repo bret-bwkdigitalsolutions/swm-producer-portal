@@ -79,10 +79,23 @@ vi.mock("@/lib/platforms/youtube", () => ({
   setThumbnail: vi.fn(),
 }));
 
-vi.mock("@/lib/platforms/transistor", () => ({
-  uploadToTransistor: (...args: unknown[]) => mockUploadToTransistor(...args),
-  setTransistorEpisodeWebsite: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("@/lib/platforms/transistor", () => {
+  class TransistorCreatedError extends Error {
+    episodeId: string;
+    episodeUrl: string;
+    constructor(episodeId: string, episodeUrl: string, message: string) {
+      super(message);
+      this.name = "TransistorCreatedError";
+      this.episodeId = episodeId;
+      this.episodeUrl = episodeUrl;
+    }
+  }
+  return {
+    uploadToTransistor: (...args: unknown[]) => mockUploadToTransistor(...args),
+    setTransistorEpisodeWebsite: vi.fn().mockResolvedValue(undefined),
+    TransistorCreatedError,
+  };
+});
 
 vi.mock("@/lib/platforms/wordpress", () => ({
   publishToWordPress: (...args: unknown[]) => mockPublishToWordPress(...args),
@@ -152,6 +165,7 @@ vi.mock("@/lib/jobs/ai-processor", () => ({
 // ---------------------------------------------------------------------------
 
 import { processJob } from "@/lib/jobs/processor";
+import { TransistorCreatedError } from "@/lib/platforms/transistor";
 import { toAirDate } from "@/lib/wordpress/live-candidate";
 import { downloadFullVideoToGcs } from "@/lib/jobs/video-downloader";
 
@@ -1674,6 +1688,105 @@ describe("processJob", () => {
       "completed"
     );
     expect(result.status).toBe("completed");
+  });
+
+  it("keeps a created Transistor episode and only republishes it on retry", async () => {
+    const job = makeJob({
+      wpShowId: 21,
+      title: "The OG #27",
+      gcsPath: null,
+      metadata: {
+        description: "Members-only hour",
+        transcript: "already transcribed",
+        premiumSection: "og",
+        ogVimeoUrl: "https://vimeo.com/555/abc123",
+      },
+      platforms: [{ id: "plat-tr", platform: "transistor", status: "queued" }],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockShowMetadataFindUnique.mockResolvedValue({
+      ogTransistorShowId: "og-private",
+      seasonScheme: "none",
+    });
+    mockUploadToTransistor.mockRejectedValueOnce(
+      new TransistorCreatedError(
+        "ep-kept",
+        "https://share.transistor.fm/s/ep-kept",
+        "publishing failed"
+      )
+    );
+
+    const failed = await processJob("job-1");
+    expect(failed.platformResults.find((r) => r.platform === "transistor")).toEqual(
+      expect.objectContaining({ status: "failed", error: "publishing failed" })
+    );
+    expect(mockPlatformUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "failed",
+          externalId: "ep-kept",
+          externalUrl: "https://share.transistor.fm/s/ep-kept",
+        }),
+      })
+    );
+
+    mockUploadToTransistor.mockResolvedValueOnce({
+      episodeId: "ep-kept",
+      episodeUrl: "https://share.transistor.fm/s/ep-kept",
+    });
+    mockFindUnique.mockResolvedValue({
+      ...job,
+      platforms: [
+        {
+          id: "plat-tr",
+          platform: "transistor",
+          status: "queued",
+          externalId: "ep-kept",
+          externalUrl: "https://share.transistor.fm/s/ep-kept",
+        },
+      ],
+    });
+    const retried = await processJob("job-1");
+    expect(retried.platformResults.find((r) => r.platform === "transistor")?.status).toBe(
+      "completed"
+    );
+    expect(mockEnsureOgAudio).toHaveBeenCalledTimes(1);
+    expect(mockUploadToTransistor).toHaveBeenLastCalledWith(
+      expect.objectContaining({ existingEpisodeId: "ep-kept" })
+    );
+  });
+
+  it("publishes a past public schedule now", async () => {
+    const job = makeJob({
+      metadata: {
+        description: "A public episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+        scheduleMode: "schedule",
+        scheduledAt: "2020-01-01T00:00:00.000Z",
+      },
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "ytabc123456",
+          externalUrl: "https://www.youtube.com/watch?v=ytabc123456",
+        },
+        { id: "plat-tr", platform: "transistor" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-now",
+      episodeUrl: "https://share.transistor.fm/s/ep-now",
+    });
+
+    await processJob("job-1");
+
+    expect(mockUploadToTransistor).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduledAt: undefined })
+    );
   });
 
   it("keeps a public YDC episode off the OG private show", async () => {

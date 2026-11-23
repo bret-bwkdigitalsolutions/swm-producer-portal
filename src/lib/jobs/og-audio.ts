@@ -1,16 +1,13 @@
 import "server-only";
 
-import { createWriteStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import { getVimeoAccessToken } from "@/lib/analytics/credentials";
 import { gcsObjectExists } from "@/lib/gcs";
 import { OG_VIMEO_TOKEN_MISSING } from "@/lib/og-episode";
 import {
+  downloadVimeoFile,
   fetchVimeoFileCandidates,
   pickVimeoAudioSource,
 } from "@/lib/vimeo/video-files";
@@ -44,37 +41,15 @@ async function storedAudioExists(
   return gcsObjectExists(objectPath);
 }
 
-function withoutUrls(message: string): string {
-  return message.replace(/https?:\/\/\S+/g, "[url]");
-}
-
-async function downloadVimeoFile(url: string, destPath: string): Promise<void> {
-  try {
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        redirect: "follow",
-        signal: AbortSignal.timeout(mediaToolTimeoutMs()),
-      });
-    } catch {
-      throw new Error("Could not download the Vimeo video file.");
-    }
-    if (!response.ok || !response.body) {
-      throw new Error(`Vimeo file download failed (HTTP ${response.status}).`);
-    }
-    const webBody = response.body as unknown as NodeWebReadableStream<Uint8Array>;
-    await pipeline(Readable.fromWeb(webBody), createWriteStream(destPath));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not download the Vimeo video file.";
-    throw new Error(withoutUrls(message));
-  }
-}
-
 /**
  * Audio for the private OG podcast.
  * An uploaded file uses the existing ffmpeg extract. A Vimeo-only episode
  * downloads a progressive file (never changes privacy) and extracts the same way.
  * A previous extract on this job is reused.
+ *
+ * This runs inside processJob. Other shows' ffmpeg runs there too, and when
+ * the processing runtime is Cloud Run the whole job — this download and the
+ * extract — is that worker. It is not a separate download on the web process.
  */
 export async function ensureOgTransistorAudio(input: {
   jobId: string;
@@ -132,7 +107,9 @@ export async function ensureOgTransistorAudio(input: {
   const tempDir = await mkdtemp(join(tmpdir(), "swm-og-vimeo-"));
   const localVideoPath = join(tempDir, "video.mp4");
   try {
-    await downloadVimeoFile(file.link, localVideoPath);
+    await downloadVimeoFile(file.link, localVideoPath, {
+      timeoutMs: mediaToolTimeoutMs(),
+    });
     const now = new Date();
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const gcsVideoPath = `uploads/${now.getFullYear()}/${month}/${now.getTime()}-og-vimeo-${input.vimeoVideoId}.mp4`;

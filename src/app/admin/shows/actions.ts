@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseOgTransistorShowId } from "@/lib/og-episode";
+import { showCanHostOg } from "@/lib/og-show";
 import { revalidateTag } from "next/cache";
 import { revalidatePath } from "next/cache";
 
@@ -330,6 +331,13 @@ export async function updateOgTransistorShow(
   );
   if (!parsed.ok) {
     return { success: false, message: parsed.message };
+  }
+
+  if (!(await showCanHostOg(wpShowId))) {
+    return {
+      success: false,
+      message: "The OG private show can only be set on Your Dark Companion.",
+    };
   }
 
   try {

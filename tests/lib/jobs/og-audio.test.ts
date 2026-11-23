@@ -32,7 +32,10 @@ function jsonResponse(body: unknown): Response {
 }
 
 function fileResponse(): Response {
-  return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+  return new Response(new Uint8Array([1, 2, 3, 4]), {
+    status: 200,
+    headers: { "content-type": "video/mp4" },
+  });
 }
 
 describe("ensureOgTransistorAudio", () => {
@@ -96,7 +99,7 @@ describe("ensureOgTransistorAudio", () => {
         return jsonResponse({
           download: [
             {
-              link: "https://files.example/og.mp4",
+              link: "https://player.vimeo.com/progressive_redirect/playback/555/file.mp4",
               quality: "sd",
               type: "video/mp4",
               size: 1200,
@@ -105,7 +108,7 @@ describe("ensureOgTransistorAudio", () => {
           ],
         });
       }
-      expect(url).toBe("https://files.example/og.mp4");
+      expect(url).toBe("https://player.vimeo.com/progressive_redirect/playback/555/file.mp4");
       const headers = new Headers(init?.headers);
       expect(headers.get("authorization")).toBeNull();
       return fileResponse();
@@ -139,7 +142,7 @@ describe("ensureOgTransistorAudio", () => {
     expect(mockToken).toHaveBeenCalledWith(21);
     const logged = JSON.stringify(logs);
     expect(logged).not.toContain(TOKEN);
-    expect(logged).not.toContain("https://files.example/og.mp4");
+    expect(logged).not.toContain("player.vimeo.com");
     expect(logged).not.toContain("abc123");
   });
 

@@ -107,7 +107,7 @@ export default async function ShowCredentialsPage({
         <p className="text-sm text-muted-foreground">
           The OG private podcast reads the Vimeo personal access token from
           this show. Your Dark Companion does not use the network default.
-          Scopes: public, private, edit, video_files. Saving a new token
+          Scopes: public, private, and video_files. Saving a new token
           replaces the old one. The token is never shown again.
         </p>
       )}
