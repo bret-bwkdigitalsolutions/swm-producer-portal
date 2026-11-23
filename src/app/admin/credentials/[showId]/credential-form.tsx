@@ -7,12 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { saveCredential } from "../actions";
 
-const ALL_PLATFORMS = [
+const BASE_PLATFORMS = [
   { value: "youtube", label: "YouTube" },
   { value: "spotify", label: "Spotify" },
   { value: "apple", label: "Apple Podcasts" },
   { value: "transistor", label: "Transistor" },
 ];
+
+const VIMEO_PLATFORM = { value: "vimeo", label: "Vimeo" };
 
 interface ExistingCredential {
   id: string;
@@ -26,13 +28,18 @@ interface ExistingCredential {
 
 interface CredentialFormProps {
   wpShowId: number;
+  includeVimeo?: boolean;
   existingCredentials: ExistingCredential[];
 }
 
 export function CredentialForm({
   wpShowId,
+  includeVimeo = false,
   existingCredentials,
 }: CredentialFormProps) {
+  const platforms = includeVimeo
+    ? [...BASE_PLATFORMS, VIMEO_PLATFORM]
+    : BASE_PLATFORMS;
   const [state, formAction, isPending] = useActionState(saveCredential, {
     success: undefined,
     message: undefined,
@@ -51,6 +58,10 @@ export function CredentialForm({
   function handlePlatformChange(platform: string) {
     setSelectedPlatform(platform);
     const ex = existingCredentials.find((c) => c.platform === platform);
+    if (platform === "vimeo") {
+      setCredentialType("api_key");
+      return;
+    }
     if (ex) {
       setCredentialType(ex.credentialType as "oauth" | "api_key");
     } else {
@@ -81,7 +92,7 @@ export function CredentialForm({
               className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <option value="">Select a platform...</option>
-              {ALL_PLATFORMS.map((p) => (
+              {platforms.map((p) => (
                 <option key={p.value} value={p.value}>
                   {p.label}
                   {existingCredentials.find((c) => c.platform === p.value)
@@ -92,44 +103,65 @@ export function CredentialForm({
             </select>
           </div>
 
-          {/* Credential type */}
-          <div className="space-y-2">
-            <Label>Credential Type</Label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="credentialType"
-                  value="api_key"
-                  checked={credentialType === "api_key"}
-                  onChange={() => setCredentialType("api_key")}
-                  className="accent-primary"
-                />
-                API Key
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="credentialType"
-                  value="oauth"
-                  checked={credentialType === "oauth"}
-                  onChange={() => setCredentialType("oauth")}
-                  className="accent-primary"
-                />
-                OAuth
-              </label>
-            </div>
-          </div>
+          {selectedPlatform === "vimeo" && (
+            <p className="text-xs text-muted-foreground">
+              Paste the personal access token. Required scopes: public,
+              private, and video_files. The portal only reads video files.
+              It does not change the video. To rotate, paste a new token and
+              save. The current token is not shown.
+            </p>
+          )}
 
-          {/* API Key field */}
-          {credentialType === "api_key" && (
+          {selectedPlatform === "vimeo" ? (
+            <input type="hidden" name="credentialType" value="api_key" />
+          ) : (
             <div className="space-y-2">
-              <Label htmlFor="apiKey">API Key</Label>
+              <Label>Credential Type</Label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="credentialType"
+                    value="api_key"
+                    checked={credentialType === "api_key"}
+                    onChange={() => setCredentialType("api_key")}
+                    className="accent-primary"
+                  />
+                  API Key
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="credentialType"
+                    value="oauth"
+                    checked={credentialType === "oauth"}
+                    onChange={() => setCredentialType("oauth")}
+                    className="accent-primary"
+                  />
+                  OAuth
+                </label>
+              </div>
+            </div>
+          )}
+
+          {(selectedPlatform === "vimeo" || credentialType === "api_key") && (
+            <div className="space-y-2">
+              <Label htmlFor="apiKey">
+                {selectedPlatform === "vimeo" ? "Personal access token" : "API Key"}
+              </Label>
               <Input
                 id="apiKey"
                 name="apiKey"
                 type="password"
-                placeholder={existing ? "Leave blank to keep current" : "Enter API key"}
+                placeholder={
+                  selectedPlatform === "vimeo"
+                    ? existing
+                      ? "Paste a new token to replace the current one"
+                      : "Paste the Vimeo personal access token"
+                    : existing
+                      ? "Leave blank to keep current"
+                      : "Enter API key"
+                }
                 autoComplete="off"
               />
             </div>

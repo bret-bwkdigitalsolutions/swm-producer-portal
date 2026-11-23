@@ -2,6 +2,8 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { parseOgTransistorShowId } from "@/lib/og-episode";
+import { showCanHostOg } from "@/lib/og-show";
 import { revalidateTag } from "next/cache";
 import { revalidatePath } from "next/cache";
 
@@ -307,6 +309,48 @@ export async function updateShowPremium(
   } catch (error) {
     console.error("Failed to update premium settings:", error);
     return { success: false, message: "Failed to save premium settings." };
+  }
+}
+
+export async function updateOgTransistorShow(
+  _prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, message: "Unauthorized." };
+  }
+
+  const wpShowId = parseInt(formData.get("wpShowId") as string, 10);
+  if (isNaN(wpShowId) || wpShowId <= 0) {
+    return { success: false, message: "Invalid show." };
+  }
+
+  const parsed = parseOgTransistorShowId(
+    (formData.get("ogTransistorShowId") as string) ?? ""
+  );
+  if (!parsed.ok) {
+    return { success: false, message: parsed.message };
+  }
+
+  if (!(await showCanHostOg(wpShowId))) {
+    return {
+      success: false,
+      message: "The OG private show can only be set on Your Dark Companion.",
+    };
+  }
+
+  try {
+    await db.showMetadata.upsert({
+      where: { wpShowId },
+      create: { wpShowId, hosts: "", ogTransistorShowId: parsed.id },
+      update: { ogTransistorShowId: parsed.id },
+    });
+    revalidatePath("/admin/shows");
+    return { success: true, message: "OG private show saved." };
+  } catch (error) {
+    console.error("Failed to update OG private show:", error);
+    return { success: false, message: "Failed to save the OG private show." };
   }
 }
 

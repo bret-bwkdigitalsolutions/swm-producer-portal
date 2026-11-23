@@ -11,6 +11,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
   apple: "Apple Podcasts",
   transistor: "Transistor",
+  vimeo: "Vimeo",
 };
 
 const PLATFORM_ICONS: Record<string, string> = {
@@ -18,6 +19,7 @@ const PLATFORM_ICONS: Record<string, string> = {
   spotify: "SP",
   apple: "AP",
   transistor: "TR",
+  vimeo: "VM",
 };
 
 function StatusDot({ status }: { status: string }) {

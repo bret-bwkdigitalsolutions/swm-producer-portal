@@ -193,7 +193,9 @@ describe("JobDetailView live-stream replacement", () => {
 
     expect(screen.queryByLabelText("Vimeo URL for The OG")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry as The OG" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
+    expect(screen.getByText("Private podcast")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(2);
+    expect(screen.getByText(/not posted to YouTube or the public podcast/i)).toBeInTheDocument();
   });
 
   it("omits the note when no live post was superseded", () => {

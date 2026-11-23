@@ -11,6 +11,8 @@ import { ShowLanguageEditor } from "./show-language-editor";
 import { ShowSeasonSchemeEditor } from "./show-season-scheme-editor";
 import { ShowStyleGuide } from "./show-style-guide";
 import { ShowPremiumEditor } from "./show-premium-editor";
+import { OgPrivateShowEditor } from "./og-private-show-editor";
+import { showOffersOg } from "@/lib/og-episode";
 import Link from "next/link";
 import { ArrowRightLeftIcon } from "lucide-react";
 
@@ -157,6 +159,12 @@ export default async function AdminShowsPage() {
                     premiumEnabled={showMeta?.premiumEnabled ?? false}
                     transistorPrivateShowId={showMeta?.transistorPrivateShowId ?? null}
                   />
+                  {showOffersOg({ id: show.id, title: show.title.rendered }) && (
+                    <OgPrivateShowEditor
+                      wpShowId={show.id}
+                      ogTransistorShowId={showMeta?.ogTransistorShowId ?? null}
+                    />
+                  )}
                   <ShowStyleGuide
                     wpShowId={show.id}
                     currentStyleGuide={showMeta?.styleGuide ?? null}

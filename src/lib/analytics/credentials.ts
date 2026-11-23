@@ -111,6 +111,21 @@ export async function getTransistorApiKey(
 }
 
 /**
+ * Personal access token for reading OG videos on Vimeo.
+ * Stored on the show's platform_credentials row (platform "vimeo"), the same
+ * table as the Transistor API key. Your Dark Companion does not fall back to
+ * the network default, so the token has to be saved on that show.
+ * The token is never logged.
+ */
+export async function getVimeoAccessToken(
+  wpShowId: number
+): Promise<string | null> {
+  const cred = await resolveCredential(wpShowId, "vimeo");
+  const token = cred?.apiKey?.trim() || cred?.accessToken?.trim() || "";
+  return token || null;
+}
+
+/**
  * Extract a Transistor show ID from its ShowPlatformLink URL.
  */
 export function parseTransistorShowId(urlOrId: string): string {

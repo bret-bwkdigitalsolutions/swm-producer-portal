@@ -200,7 +200,9 @@ async function transistorTier(
       issues.push({ platform: "transistor", field: "media_url", expected: "set", actual: "null" });
     }
   }
-  if (tier === 4 && ep.attributes.share_url && !ctx.isPremium) {
+  // The OG private podcast has no public page. Skip the public URL check
+  // the same way premium episodes do.
+  if (tier === 4 && ep.attributes.share_url && !ctx.isPremium && ctx.premiumSection !== "og") {
     const reach = await checkUrlReachable(ep.attributes.share_url);
     if (!reach.ok) {
       issues.push({ platform: "transistor", field: "public_url", expected: "200", actual: `${reach.status ?? "unreachable"}` });

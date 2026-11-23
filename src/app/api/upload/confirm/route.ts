@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { processJob } from "@/lib/jobs/processor";
 import { enqueueJob } from "@/lib/jobs/job-queue";
 import { checkForDuplicates } from "@/lib/jobs/duplicate-check";
+import { isOgDistribution } from "@/lib/og-episode";
 import { dispatchVideoProcessing } from "@/lib/jobs/cloud-run-dispatch";
 import { getProcessingRuntime } from "@/lib/jobs/processing-runtime";
 
@@ -101,10 +102,27 @@ export async function POST(request: NextRequest) {
   // accidental re-distribution of the same content.
   if (!forceDuplicates && job.platforms.length > 0) {
     try {
+      let duplicatePlatforms = job.platforms.map((p) => p.platform);
+      let transistorShowId: string | undefined;
+      if (isOgDistribution(job.metadata)) {
+        const showMeta = await db.showMetadata.findUnique({
+          where: { wpShowId: job.wpShowId },
+          select: { ogTransistorShowId: true },
+        });
+        const privateId = showMeta?.ogTransistorShowId?.trim();
+        if (privateId) {
+          transistorShowId = privateId;
+        } else {
+          // Don't search the public YDC show when the private OG show
+          // has not been configured yet.
+          duplicatePlatforms = duplicatePlatforms.filter((platform) => platform !== "transistor");
+        }
+      }
       const dupResult = await checkForDuplicates(
         job.wpShowId,
         job.title,
-        job.platforms.map((p) => p.platform),
+        duplicatePlatforms,
+        transistorShowId ? { transistorShowId } : undefined,
       );
       if (Object.keys(dupResult.matches).length > 0) {
         return NextResponse.json(

@@ -103,6 +103,7 @@ describe("submitDistribution", () => {
     expect(created.metadata.existingVimeoUrl).toBeUndefined();
     expect(mockCreateMany.mock.calls[0][0].data).toEqual([
       expect.objectContaining({ platform: "website", status: "queued" }),
+      expect.objectContaining({ platform: "transistor", status: "queued" }),
     ]);
   });
 
@@ -424,6 +425,7 @@ describe("updateDistribution", () => {
     expect(update.metadata.thumbnailGcsPath).toBe("thumb.jpg");
     expect(mockCreateMany.mock.calls[0][0].data).toEqual([
       expect.objectContaining({ platform: "website" }),
+      expect.objectContaining({ platform: "transistor" }),
     ]);
   });
 

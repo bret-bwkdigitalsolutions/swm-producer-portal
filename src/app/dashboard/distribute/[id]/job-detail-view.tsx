@@ -136,9 +136,10 @@ function PlatformStatusRow({
 
   const showOgRetry =
     canRetryAsOg && platform.platform === "website" && platform.status === "failed";
-  // YouTube, Transistor, and the coming-soon video platforms cannot be retried
-  // for The OG. The processor rejects them, so the button would do nothing.
-  const retryApplies = !isOg || platform.platform === "website";
+  // YouTube is not part of The OG. The website and the private podcast can
+  // be retried. Coming-soon video platforms still cannot.
+  const retryApplies =
+    !isOg || platform.platform === "website" || platform.platform === "transistor";
 
   return (
     <div className="rounded-lg border px-4 py-3">
@@ -481,7 +482,7 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
 
       {job.isOg && (
         <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
-          <strong>The OG.</strong> This episode is members-only. It uses a Vimeo URL you already uploaded and appears on the members page. It is not posted to YouTube or the public podcast.
+          <strong>The OG.</strong> This episode is members-only. It uses a Vimeo URL you already uploaded, appears on the members page, and is added to the private podcast. It is not posted to YouTube or the public podcast.
         </div>
       )}
 
@@ -591,7 +592,9 @@ export function JobDetailView({ job }: { job: SerializedJob }) {
                   : platform.platform === "website" &&
                       supersedesLivePostId != null
                     ? liveStreamReplacementNote(supersedesLivePostId)
-                    : null
+                    : job.isOg && platform.platform === "transistor"
+                      ? "Private podcast"
+                      : null
               }
             />
           ))}

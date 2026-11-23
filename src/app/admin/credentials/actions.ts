@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { showCanHostOg } from "@/lib/og-show";
 import { revalidatePath } from "next/cache";
 
 interface FormState {
@@ -14,7 +15,20 @@ const VALID_PLATFORMS = [
   "spotify",
   "apple",
   "transistor",
+  "vimeo",
 ] as const;
+
+function credentialFailureMessage(
+  error: unknown,
+  secrets: Array<string | null | undefined>
+): string {
+  let message = error instanceof Error ? error.message : "unknown error";
+  for (const secret of secrets) {
+    if (!secret || secret.length < 6) continue;
+    message = message.split(secret).join("[redacted]");
+  }
+  return message;
+}
 
 const VALID_CREDENTIAL_TYPES = ["oauth", "api_key"] as const;
 
@@ -50,6 +64,20 @@ export async function saveCredential(
     )
   ) {
     return { success: false, message: "Invalid credential type." };
+  }
+
+  if (platform === "vimeo" && credentialType !== "api_key") {
+    return {
+      success: false,
+      message: "Save the Vimeo personal access token as an API key.",
+    };
+  }
+
+  if (platform === "vimeo" && !(await showCanHostOg(wpShowId))) {
+    return {
+      success: false,
+      message: "The Vimeo token can only be saved for Your Dark Companion.",
+    };
   }
 
   if (credentialType === "api_key" && !apiKey) {
@@ -103,9 +131,18 @@ export async function saveCredential(
 
     revalidatePath("/admin/credentials");
     revalidatePath(`/admin/credentials/${wpShowId}`);
-    return { success: true, message: `${platform} credential saved.` };
+    return {
+      success: true,
+      message:
+        platform === "vimeo"
+          ? "Vimeo token saved. It is not shown again."
+          : `${platform} credential saved.`,
+    };
   } catch (error) {
-    console.error("Failed to save credential:", error);
+    console.error(
+      "Failed to save credential:",
+      credentialFailureMessage(error, [apiKey, accessToken, refreshToken])
+    );
     return { success: false, message: "Failed to save credential." };
   }
 }

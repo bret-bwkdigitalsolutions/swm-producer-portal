@@ -70,8 +70,69 @@ export interface TransistorUploadParams {
   isDraft?: boolean;
   scheduledAt?: string; // ISO 8601 date — if set, episode is scheduled for future publish
   transistorShowIdOverride?: string;
+  /**
+   * Episode already created on a previous attempt whose publish did not
+   * finish. Retry PATCHes publish and does not create another episode.
+   */
+  existingEpisodeId?: string;
   /** Called as the audio PUT progresses. The processor uses this to heartbeat. */
   onProgress?: (uploadedBytes: number, totalBytes: number) => void | Promise<void>;
+}
+
+/** Create succeeded and publish did not. The episode id must be kept for retry. */
+export class TransistorCreatedError extends Error {
+  readonly episodeId: string;
+  readonly episodeUrl: string;
+
+  constructor(episodeId: string, episodeUrl: string, message: string) {
+    super(message);
+    this.name = "TransistorCreatedError";
+    this.episodeId = episodeId;
+    this.episodeUrl = episodeUrl;
+  }
+}
+
+async function publishCreatedEpisode(params: {
+  apiKey: string;
+  episodeId: string;
+  episodeUrl: string;
+  isDraft?: boolean;
+  scheduledAt?: string;
+}): Promise<void> {
+  const { apiKey, episodeId, episodeUrl, isDraft, scheduledAt } = params;
+  if (isDraft) {
+    console.log(`[transistor] Episode ${episodeId} left as draft (isDraft=true)`);
+    return;
+  }
+
+  const scheduling = Boolean(scheduledAt);
+  console.log(
+    scheduling
+      ? `[transistor] Scheduling episode ${episodeId} for ${scheduledAt}`
+      : `[transistor] Publishing episode ${episodeId}...`
+  );
+  const publishRes = await fetch(`${BASE_URL}/episodes/${episodeId}/publish`, {
+    method: "PATCH",
+    headers: {
+      "x-api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      episode: scheduling
+        ? { status: "scheduled", published_at: scheduledAt }
+        : { status: "published" },
+    }),
+  });
+
+  if (!publishRes.ok) {
+    const body = await publishRes.text().catch(() => "");
+    const action = scheduling ? "scheduling" : "publishing";
+    throw new TransistorCreatedError(
+      episodeId,
+      episodeUrl,
+      `Transistor episode ${episodeId} was created and audio uploaded, but ${action} failed (${publishRes.status}). It remains a draft — publish it in Transistor or retry. ${body.slice(0, 300)}`
+    );
+  }
 }
 
 export interface TransistorUploadResult {
@@ -99,16 +160,37 @@ export async function uploadToTransistor(
     );
   }
 
-  const showLink = await resolvePlatformId(wpShowId, "transistor_show");
-  if (!showLink) {
-    throw new Error(
-      `No Transistor show linked for WP show ${wpShowId}. Please configure it in Admin > Shows.`
-    );
+  const resumeId = params.existingEpisodeId?.trim();
+  if (resumeId) {
+    const episodeUrl = `https://share.transistor.fm/s/${resumeId}`;
+    console.log(`[transistor] Resuming publish for existing episode ${resumeId}`);
+    await publishCreatedEpisode({
+      apiKey,
+      episodeId: resumeId,
+      episodeUrl,
+      isDraft,
+      scheduledAt,
+    });
+    return { episodeId: resumeId, episodeUrl };
   }
-  let transistorShowId = await resolveTransistorShowId(apiKey, showLink);
 
-  if (params.transistorShowIdOverride) {
-    transistorShowId = params.transistorShowIdOverride;
+  // A private-show override does not use the public show link. A numeric
+  // override is the show id. Anything else (a slug) is resolved to the
+  // numeric id before the episode is created.
+  let transistorShowId: string;
+  if (params.transistorShowIdOverride?.trim()) {
+    transistorShowId = await resolveTransistorShowId(
+      apiKey,
+      params.transistorShowIdOverride.trim()
+    );
+  } else {
+    const showLink = await resolvePlatformId(wpShowId, "transistor_show");
+    if (!showLink) {
+      throw new Error(
+        `No Transistor show linked for WP show ${wpShowId}. Please configure it in Admin > Shows.`
+      );
+    }
+    transistorShowId = await resolveTransistorShowId(apiKey, showLink);
   }
 
   // 1. Get an authorized upload URL from Transistor
@@ -227,58 +309,20 @@ export async function uploadToTransistor(
     throw new Error("Transistor did not return an episode ID.");
   }
 
-  // 4. Publish or schedule the episode (Transistor creates as draft by default)
-  if (isDraft) {
-    console.log(`[transistor] Episode ${episodeId} left as draft (isDraft=true)`);
-  } else if (scheduledAt) {
-    console.log(`[transistor] Scheduling episode ${episodeId} for ${scheduledAt}`);
-    const publishRes = await fetch(`${BASE_URL}/episodes/${episodeId}/publish`, {
-      method: "PATCH",
-      headers: {
-        "x-api-key": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        episode: { status: "scheduled", published_at: scheduledAt },
-      }),
-    });
-
-    if (!publishRes.ok) {
-      const body = await publishRes.text().catch(() => "");
-      // Surface as a failure — silently leaving the episode as a draft made
-      // the portal show "completed" while nothing was scheduled.
-      throw new Error(
-        `Transistor episode ${episodeId} was created and audio uploaded, but scheduling failed (${publishRes.status}). It remains a draft — publish it in Transistor or retry. ${body.slice(0, 300)}`
-      );
-    }
-  } else {
-    console.log(`[transistor] Publishing episode ${episodeId}...`);
-    const publishRes = await fetch(`${BASE_URL}/episodes/${episodeId}/publish`, {
-      method: "PATCH",
-      headers: {
-        "x-api-key": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        episode: { status: "published" },
-      }),
-    });
-
-    if (!publishRes.ok) {
-      const body = await publishRes.text().catch(() => "");
-      // Surface as a failure — silently leaving the episode as a draft made
-      // the portal show "completed" while nothing went live.
-      throw new Error(
-        `Transistor episode ${episodeId} was created and audio uploaded, but publishing failed (${publishRes.status}). It remains a draft — publish it in Transistor or retry. ${body.slice(0, 300)}`
-      );
-    }
-  }
-
-  const statusLabel = isDraft ? "drafted" : scheduledAt ? "scheduled" : "published";
+  // 4. Publish or schedule. A failure here keeps the created episode id so a
+  // retry can PATCH publish instead of creating a second episode.
   const shareUrl =
     createData.data?.attributes?.share_url ??
     `https://share.transistor.fm/s/${episodeId}`;
+  await publishCreatedEpisode({
+    apiKey,
+    episodeId: String(episodeId),
+    episodeUrl: shareUrl,
+    isDraft,
+    scheduledAt,
+  });
 
+  const statusLabel = isDraft ? "drafted" : scheduledAt ? "scheduled" : "published";
   console.log(`[transistor] Episode ${statusLabel}: ${shareUrl}`);
 
   return { episodeId: String(episodeId), episodeUrl: shareUrl };

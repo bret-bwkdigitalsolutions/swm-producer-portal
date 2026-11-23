@@ -64,7 +64,10 @@ describe("DistributionForm OG choice", () => {
     await user.upload(input, file);
     await user.click(screen.getByRole("button", { name: /fill in the details myself/i }));
 
-    expect(screen.getByText(/published only to the members page/i)).toBeInTheDocument();
+    expect(screen.getByText(/private podcast/i)).toBeInTheDocument();
+    expect(document.querySelector('input[name="platform_transistor"]')).toHaveValue("on");
+    expect(document.querySelector('input[name="platform_website"]')).toHaveValue("on");
+    expect(document.querySelector('input[name="platform_youtube"]')).not.toBeInTheDocument();
     expect(screen.queryByText("Target Platforms")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Schedule/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Publish now/ })).toBeInTheDocument();

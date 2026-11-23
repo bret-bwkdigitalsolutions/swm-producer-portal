@@ -18,6 +18,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   spotify: "Spotify",
   apple: "Apple Podcasts",
   transistor: "Transistor",
+  vimeo: "Vimeo",
 };
 
 function StatusDot({ status }: { status: string }) {

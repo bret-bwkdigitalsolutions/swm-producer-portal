@@ -119,7 +119,7 @@ model ShowStakeholder {
 model PlatformCredential {
   id             String   @id @default(cuid())
   wpShowId       Int
-  platform       String   // "youtube" | "spotify" | "apple" | "transistor"
+  platform       String   // "youtube" | "spotify" | "apple" | "transistor" | "vimeo"
   credentialType String   // "oauth" | "api_key"
   accessToken    String?  @db.Text
   refreshToken   String?  @db.Text
@@ -234,6 +234,11 @@ model ShowMetadata {
   currentSeason     Int?
   premiumEnabled    Boolean @default(false)
   transistorPrivateShowId String?
+  // Numeric id or slug of the private Transistor podcast for The OG.
+  // Transistor's API cannot create a show, so this is set once in Admin > Shows
+  // after the private podcast is created in the Transistor dashboard.
+  // Separate from transistorPrivateShowId, which is the premium-flag feed.
+  ogTransistorShowId String?
 
   @@map("show_metadata")
 }

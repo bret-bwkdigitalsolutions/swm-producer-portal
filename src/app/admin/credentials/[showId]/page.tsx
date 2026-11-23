@@ -7,8 +7,9 @@ import { notFound } from "next/navigation";
 import { CredentialCard, EmptyPlatformCard } from "@/components/admin/credential-card";
 import { ConnectYouTubeButton } from "@/components/admin/connect-youtube-button";
 import { CredentialForm } from "./credential-form";
+import { OG_WP_SHOW_ID } from "@/lib/og-episode";
 
-const ALL_PLATFORMS = [
+const BASE_PLATFORMS = [
   "youtube",
   "spotify",
   "apple",
@@ -57,6 +58,10 @@ export default async function ShowCredentialsPage({
   const pageTitle = isNetworkDefaults
     ? "Network Default Credentials"
     : show!.title.rendered;
+  const includeVimeo = wpShowId === OG_WP_SHOW_ID;
+  const platforms = includeVimeo
+    ? ([...BASE_PLATFORMS, "vimeo"] as const)
+    : BASE_PLATFORMS;
 
   const connectedPlatforms = new Map(
     credentials.map((c) => [c.platform, c])
@@ -98,6 +103,15 @@ export default async function ShowCredentialsPage({
         </p>
       )}
 
+      {includeVimeo && (
+        <p className="text-sm text-muted-foreground">
+          The OG private podcast reads the Vimeo personal access token from
+          this show. Your Dark Companion does not use the network default.
+          Scopes: public, private, and video_files. Saving a new token
+          replaces the old one. The token is never shown again.
+        </p>
+      )}
+
       {/* Success/error messages from OAuth callback */}
       {successMsg && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
@@ -122,7 +136,7 @@ export default async function ShowCredentialsPage({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {ALL_PLATFORMS.map((platform) => {
+        {platforms.map((platform) => {
           const cred = connectedPlatforms.get(platform);
           const networkCred = networkPlatformMap.get(platform);
 
@@ -178,6 +192,7 @@ export default async function ShowCredentialsPage({
         </h3>
         <CredentialForm
           wpShowId={wpShowId}
+          includeVimeo={includeVimeo}
           existingCredentials={credentials.map((c) => ({
             id: c.id,
             platform: c.platform,

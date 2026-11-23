@@ -50,7 +50,7 @@ import {
 } from "lucide-react";
 import { isValidYoutubeUrl, extractYoutubeVideoId } from "@/lib/youtube-url";
 import { isValidVimeoUrl, parseOgVimeoUrl } from "@/lib/vimeo-url";
-import { showOffersOg } from "@/lib/og-episode";
+import { OG_DISTRIBUTION_PLATFORMS, showOffersOg } from "@/lib/og-episode";
 
 interface Show {
   id: string;
@@ -183,7 +183,8 @@ export function DistributionForm({
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
 
   // Premium content toggle — only visible for premium-enabled shows.
-  // The OG is a separate members-only path (Vimeo + the website), not this flag.
+  // The OG is a separate members-only path (Vimeo + the website + a private
+  // podcast), not this flag.
   const [isPremium, setIsPremium] = useState(false);
   const [publishAsOg, setPublishAsOg] = useState(false);
   const [ogVimeoUrlInput, setOgVimeoUrlInput] = useState("");
@@ -662,7 +663,7 @@ export function DistributionForm({
       // Collect selected platforms from the form checkboxes
       const fd = new FormData(formRef.current);
       const selectedPlatforms = publishAsOg
-        ? ["website"]
+        ? [...OG_DISTRIBUTION_PLATFORMS]
         : PLATFORMS
             .map((p) => p.key)
             .filter((key) => fd.get(`platform_${key}`) === "on");
@@ -1740,10 +1741,12 @@ export function DistributionForm({
 
           {publishAsOg && (descriptionMode === "manual" || aiReady) && (
             <>
-              <input type="hidden" name="platform_website" value="on" />
+              {OG_DISTRIBUTION_PLATFORMS.map((platform) => (
+                <input key={platform} type="hidden" name={`platform_${platform}`} value="on" />
+              ))}
               <input type="hidden" name="premium_section" value="og" />
               <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                The OG is published only to the members page from the Vimeo URL above. YouTube and the podcast feed are not used. Save as draft to keep it off the page.
+                The OG goes to the members page and to its private podcast on Transistor. The private podcast is included automatically. YouTube and the public podcast are not used. Save as draft to keep it off both.
               </p>
             </>
           )}

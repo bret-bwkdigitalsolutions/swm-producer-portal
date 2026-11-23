@@ -116,12 +116,19 @@ async function checkYouTube(wpShowId: number, title: string): Promise<DuplicateM
   return matches;
 }
 
-async function checkTransistor(wpShowId: number, title: string): Promise<DuplicateMatch[]> {
+async function checkTransistor(
+  wpShowId: number,
+  title: string,
+  showIdOverride?: string
+): Promise<DuplicateMatch[]> {
   const apiKey = await getTransistorApiKey(wpShowId);
   if (!apiKey) return [];
-  const showLink = await resolvePlatformId(wpShowId, "transistor_show");
-  if (!showLink) return [];
-  const showId = parseTransistorShowId(showLink);
+  let showId = showIdOverride?.trim() || "";
+  if (!showId) {
+    const showLink = await resolvePlatformId(wpShowId, "transistor_show");
+    if (!showLink) return [];
+    showId = parseTransistorShowId(showLink);
+  }
 
   const target = normalizeTitle(title);
   const matches: DuplicateMatch[] = [];
@@ -181,6 +188,7 @@ export async function checkForDuplicates(
   wpShowId: number,
   title: string,
   platforms: string[],
+  options?: { transistorShowId?: string }
 ): Promise<DuplicateCheckResult> {
   const result: DuplicateCheckResult = { matches: {}, errors: [] };
   const want = new Set(platforms);
@@ -190,7 +198,7 @@ export async function checkForDuplicates(
       (m) => { if (m.length) result.matches.youtube = m; },
       (e) => result.errors.push({ platform: "youtube", error: String(e) })
     ) : Promise.resolve(),
-    want.has("transistor") ? checkTransistor(wpShowId, title).then(
+    want.has("transistor") ? checkTransistor(wpShowId, title, options?.transistorShowId).then(
       (m) => { if (m.length) result.matches.transistor = m; },
       (e) => result.errors.push({ platform: "transistor", error: String(e) })
     ) : Promise.resolve(),
