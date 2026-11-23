@@ -7,7 +7,12 @@ import { toISOWithTimezone } from "@/lib/timezone";
 import { decodeHtmlEntities, getLatestEpisodeNumbers } from "@/lib/wordpress/client";
 import { extractYoutubeVideoId, youtubeWatchUrl } from "@/lib/youtube-url";
 import { isValidVimeoUrl, parseOgVimeoUrl } from "@/lib/vimeo-url";
-import { OG_PREMIUM_SECTION, OG_WP_SHOW_ID, showOffersOg } from "@/lib/og-episode";
+import {
+  OG_DISTRIBUTION_PLATFORMS,
+  OG_PREMIUM_SECTION,
+  OG_WP_SHOW_ID,
+  showOffersOg,
+} from "@/lib/og-episode";
 import { getShow } from "@/lib/wordpress/client";
 import {
   lookupLiveStreamCandidate,
@@ -70,10 +75,10 @@ export async function submitDistribution(
   const parsedOgVimeo = requestedOg ? parseOgVimeoUrl(ogVimeoRaw) : null;
   const isPremium = !requestedOg && formData.get("is_premium") === "true";
 
-  // Collect selected platforms. The OG is website-only even if another
-  // checkbox was still checked.
+  // The OG always includes the website and the private podcast. YouTube
+  // and any public-show checkbox are ignored.
   const selectedPlatforms = requestedOg
-    ? (["website"] as const)
+    ? [...OG_DISTRIBUTION_PLATFORMS]
     : VALID_PLATFORMS.filter((p) => formData.get(`platform_${p}`) === "on");
 
   // Validation
@@ -399,7 +404,7 @@ export async function updateDistribution(
     });
 
     const validPlatforms = requestedOg
-      ? (["website"] as const)
+      ? [...OG_DISTRIBUTION_PLATFORMS]
       : VALID_PLATFORMS.filter((p) => data.platforms.includes(p));
     if (validPlatforms.length > 0) {
       await tx.distributionJobPlatform.createMany({

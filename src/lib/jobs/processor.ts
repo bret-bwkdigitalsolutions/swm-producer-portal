@@ -7,7 +7,12 @@ import { uploadToYouTube, addToPlaylist, setThumbnail } from "@/lib/platforms/yo
 import { setTransistorEpisodeWebsite, uploadToTransistor } from "@/lib/platforms/transistor";
 import { publishToWordPress } from "@/lib/platforms/wordpress";
 import { publishOgEpisode } from "@/lib/platforms/wordpress-og";
-import { isOgDistribution } from "@/lib/og-episode";
+import {
+  isOgDistribution,
+  OG_TRANSISTOR_SHOW_MISSING,
+  transistorPublishSchedule,
+} from "@/lib/og-episode";
+import { ensureOgTransistorAudio } from "./og-audio";
 import { parseOgVimeoUrl } from "@/lib/vimeo-url";
 import { liveStreamReplacementNote } from "@/lib/live-stream-note";
 import { sendDistributionErrorNotification, sendVerificationFailureNotification } from "@/lib/notifications";
@@ -824,21 +829,110 @@ async function processJobInner(
   };
 
   // --- Phase 2: Transistor (independent of YouTube) ---
+  // The OG always includes the private podcast, even when an older job row
+  // was created before that platform was selected automatically.
+  if (ogEpisode && !job.platforms.some((p) => p.platform === "transistor")) {
+    const created = await db.distributionJobPlatform.create({
+      data: { jobId: job.id, platform: "transistor", status: "queued" },
+    });
+    job.platforms.push(created);
+  }
   const transistorPlatform = job.platforms.find(
     (p) => p.platform === "transistor"
   );
 
-  if (ogEpisode && transistorPlatform && transistorPlatform.status !== "completed") {
-    const errMsg = "The OG is members-only. It is not added to the podcast feed.";
+  if (
+    ogEpisode &&
+    transistorPlatform &&
+    transistorPlatform.status !== "completed" &&
+    !platformResults.some(
+      (r) => r.platform === "transistor" && r.status === "failed"
+    )
+  ) {
     await db.distributionJobPlatform.update({
       where: { id: transistorPlatform.id },
-      data: { status: "failed", error: errMsg },
+      data: { status: "uploading" },
     });
-    platformResults.push({
-      platform: "transistor",
-      status: "failed",
-      error: errMsg,
-    });
+    try {
+      const privateShowId = showMeta?.ogTransistorShowId?.trim() || "";
+      if (!privateShowId) {
+        throw new Error(OG_TRANSISTOR_SHOW_MISSING);
+      }
+      if (!gcsAudioPath) {
+        const parsedOg = parseOgVimeoUrl(
+          typeof updatedMetadata.ogVimeoUrl === "string" ? updatedMetadata.ogVimeoUrl : ""
+        );
+        const audio = await ensureOgTransistorAudio({
+          jobId: job.id,
+          wpShowId: job.wpShowId,
+          gcsVideoPath: effectiveGcsPath,
+          videoBucket: bucketHint(updatedMetadata),
+          metadata: updatedMetadata,
+          vimeoVideoId: parsedOg?.videoId ?? ogUpload?.videoId ?? null,
+          vimeoHash: parsedOg?.hash ?? null,
+        });
+        gcsAudioPath = audio.gcsAudioPath;
+        if (audio.source !== "stored") {
+          const recordedAudioBucket = recordedDerivedBucket();
+          await mergeJobMetadata(job.id, {
+            gcsAudioPath,
+            ...(recordedAudioBucket ? { gcsAudioBucket: recordedAudioBucket } : {}),
+          }).catch((error) => {
+            console.error("[processor] Could not record OG audio path:", error);
+          });
+        }
+      }
+      const showUsesSeasons =
+        showMeta?.seasonScheme === "season" || showMeta?.seasonScheme === "case";
+      const result = await uploadToTransistor({
+        wpShowId: job.wpShowId,
+        title: job.title,
+        description: (updatedMetadata.description as string) ?? "",
+        seasonNumber: showUsesSeasons
+          ? ((updatedMetadata.seasonNumber as number) ?? undefined)
+          : undefined,
+        episodeNumber: (updatedMetadata.episodeNumber as number) ?? undefined,
+        gcsAudioPath,
+        chapters: (updatedMetadata.chapters as string) ?? undefined,
+        tags: (updatedMetadata.tags as string[]) ?? undefined,
+        thumbnailGcsPath: (updatedMetadata.thumbnailGcsPath as string) ?? undefined,
+        author: showHosts,
+        transcript: transcript ?? (updatedMetadata.transcript as string) ?? undefined,
+        explicit: (updatedMetadata.explicit as boolean) ?? undefined,
+        isDraft: (updatedMetadata.isDraft as boolean) ?? false,
+        scheduledAt: transistorPublishSchedule(
+          updatedMetadata.scheduleMode,
+          updatedMetadata.scheduledAt
+        ),
+        transistorShowIdOverride: privateShowId,
+        onProgress: (uploaded, total) =>
+          beatUpload({ transistorUploadBytes: uploaded, transistorUploadTotal: total }),
+      });
+      await db.distributionJobPlatform.update({
+        where: { id: transistorPlatform.id },
+        data: {
+          status: "completed",
+          externalId: result.episodeId,
+          externalUrl: result.episodeUrl,
+          completedAt: new Date(),
+        },
+      });
+      platformResults.push({ platform: "transistor", status: "completed" });
+      rememberTransistorEpisode(result.episodeId, job.wpShowId);
+    } catch (error) {
+      const errMsg =
+        error instanceof Error ? error.message : "Transistor upload failed";
+      console.error(`[processor] OG Transistor failed: ${errMsg}`);
+      await db.distributionJobPlatform.update({
+        where: { id: transistorPlatform.id },
+        data: { status: "failed", error: errMsg },
+      });
+      platformResults.push({
+        platform: "transistor",
+        status: "failed",
+        error: errMsg,
+      });
+    }
   } else if (transistorPlatform && transistorPlatform.status === "completed") {
     platformResults.push({ platform: "transistor", status: "completed" });
     rememberTransistorEpisode(transistorPlatform.externalId, job.wpShowId);

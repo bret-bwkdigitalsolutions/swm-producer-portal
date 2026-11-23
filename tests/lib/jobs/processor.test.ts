@@ -11,6 +11,8 @@ import { join } from "node:path";
 const mockFindUnique = vi.fn();
 const mockJobUpdate = vi.fn();
 const mockPlatformUpdate = vi.fn();
+const mockPlatformCreate = vi.fn();
+const mockEnsureOgAudio = vi.fn();
 const mockUserFindUnique = vi.fn();
 const mockShowMetadataFindUnique = vi.fn();
 const mockPlatformCredentialFindUnique = vi.fn();
@@ -27,6 +29,7 @@ vi.mock("@/lib/db", () => {
     },
     distributionJobPlatform: {
       update: (...args: unknown[]) => mockPlatformUpdate(...args),
+      create: (...args: unknown[]) => mockPlatformCreate(...args),
     },
     user: {
       findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
@@ -131,6 +134,10 @@ vi.mock("@/lib/jobs/video-downloader", () => ({
   downloadFullVideoToGcs: vi.fn(),
 }));
 
+vi.mock("@/lib/jobs/og-audio", () => ({
+  ensureOgTransistorAudio: (...args: unknown[]) => mockEnsureOgAudio(...args),
+}));
+
 vi.mock("@/lib/jobs/worker-heartbeat", () => ({
   startWorkerHeartbeat: () => () => {},
 }));
@@ -204,6 +211,19 @@ describe("processJob", () => {
     vi.clearAllMocks();
 
     mockPlatformUpdate.mockResolvedValue({});
+    mockPlatformCreate.mockImplementation(async (args: { data?: Record<string, unknown> }) => ({
+      id: "plat-tr-og",
+      status: "queued",
+      externalId: null,
+      externalUrl: null,
+      error: null,
+      completedAt: null,
+      ...(args?.data ?? {}),
+    }));
+    mockEnsureOgAudio.mockResolvedValue({
+      gcsAudioPath: "uploads/2026/03/og-vimeo.mp3",
+      source: "vimeo",
+    });
     mockJobUpdate.mockResolvedValue({});
     mockUserFindUnique.mockResolvedValue({ name: "Test User" });
     mockResolvePlatformId.mockResolvedValue(null);
@@ -1479,11 +1499,12 @@ describe("processJob", () => {
     expect(mockPublishToWordPress).not.toHaveBeenCalled();
   });
 
-  it("publishes The OG from a pasted Vimeo URL without uploading", async () => {
+  it("publishes The OG to the private podcast and the members page", async () => {
     const job = makeJob({
       wpShowId: 21,
       title: "The OG #27",
       userId: "user-1",
+      gcsPath: null,
       metadata: {
         description: "Members-only hour",
         chapters: "00:00 - Open",
@@ -1491,10 +1512,22 @@ describe("processJob", () => {
         transcriptDisplay: "Already transcribed.",
         premiumSection: "og",
         ogVimeoUrl: "https://vimeo.com/555/abc123",
+        scheduleMode: "schedule",
+        scheduledAt: "2020-01-01T00:00:00.000Z",
       },
       platforms: [{ id: "plat-web", platform: "website" }],
     });
     mockFindUnique.mockResolvedValue(job);
+    mockShowMetadataFindUnique.mockResolvedValue({
+      hosts: "Ashlea",
+      seasonScheme: "none",
+      ogTransistorShowId: "og-private",
+      transistorPrivateShowId: "premium-feed",
+    });
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-og",
+      episodeUrl: "https://share.transistor.fm/s/ep-og",
+    });
     mockPublishOgEpisode.mockResolvedValue({
       postId: 880,
       postUrl: "https://stolenwatermedia.com/shows/the-og/#swm-vimeo-555",
@@ -1504,8 +1537,33 @@ describe("processJob", () => {
 
     expect(result.status).toBe("completed");
     expect(result.platformResults).toEqual([
+      expect.objectContaining({ platform: "transistor", status: "completed" }),
       expect.objectContaining({ platform: "website", status: "completed" }),
     ]);
+    expect(mockPlatformCreate).toHaveBeenCalledWith({
+      data: { jobId: "job-1", platform: "transistor", status: "queued" },
+    });
+    expect(mockEnsureOgAudio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wpShowId: 21,
+        gcsVideoPath: null,
+        vimeoVideoId: "555",
+        vimeoHash: "abc123",
+      })
+    );
+    expect(mockUploadToTransistor).toHaveBeenCalledTimes(1);
+    expect(mockUploadToTransistor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wpShowId: 21,
+        title: "The OG #27",
+        description: "Members-only hour",
+        gcsAudioPath: "uploads/2026/03/og-vimeo.mp3",
+        transistorShowIdOverride: "og-private",
+        scheduledAt: undefined,
+        isDraft: false,
+      })
+    );
+    expect(mockUploadToTransistor.mock.calls[0][0].youtubeVideoUrl).toBeUndefined();
     expect(mockUploadToYouTube).not.toHaveBeenCalled();
     expect(mockPublishToWordPress).not.toHaveBeenCalled();
     expect(mockPublishOgEpisode).toHaveBeenCalledWith(
@@ -1518,15 +1576,199 @@ describe("processJob", () => {
         portalJobId: "job-1",
       })
     );
-    expect(mockPlatformUpdate).toHaveBeenCalledWith(
+  });
+
+  it("schedules a future OG episode and extracts audio from an uploaded file", async () => {
+    const job = makeJob({
+      wpShowId: 21,
+      title: "The OG #28",
+      metadata: {
+        description: "Members-only hour",
+        transcript: "already transcribed",
+        premiumSection: "og",
+        ogVimeoUrl: "https://vimeo.com/555/abc123",
+        scheduleMode: "schedule",
+        scheduledAt: "2099-06-01T15:00:00.000Z",
+      },
+      platforms: [
+        { id: "plat-tr", platform: "transistor", status: "queued" },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockShowMetadataFindUnique.mockResolvedValue({
+      hosts: "Ashlea",
+      seasonScheme: "none",
+      ogTransistorShowId: "og-private",
+    });
+    mockEnsureOgAudio.mockResolvedValue({
+      gcsAudioPath: "uploads/2026/03/video.mp3",
+      source: "upload",
+    });
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-og",
+      episodeUrl: "https://share.transistor.fm/s/ep-og",
+    });
+    mockPublishOgEpisode.mockResolvedValue({
+      postId: 881,
+      postUrl: "https://stolenwatermedia.com/shows/the-og/#swm-vimeo-555",
+      created: true,
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "transistor")?.status).toBe(
+      "completed"
+    );
+    expect(mockPlatformCreate).not.toHaveBeenCalled();
+    expect(mockEnsureOgAudio).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "plat-web" },
-        data: expect.objectContaining({
-          status: "completed",
-          externalId: "880",
-          externalUrl: "https://stolenwatermedia.com/shows/the-og/#swm-vimeo-555",
-        }),
+        gcsVideoPath: "uploads/2026/03/video.mp4",
+        vimeoVideoId: "555",
       })
+    );
+    expect(mockUploadToTransistor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduledAt: "2099-06-01T15:00:00.000Z",
+        transistorShowIdOverride: "og-private",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+      })
+    );
+  });
+
+  it("fails the OG podcast when the private show id is not configured and still publishes the page", async () => {
+    const job = makeJob({
+      wpShowId: 21,
+      title: "The OG #27",
+      gcsPath: null,
+      metadata: {
+        description: "Members-only hour",
+        transcript: "already transcribed",
+        premiumSection: "og",
+        ogVimeoUrl: "https://vimeo.com/555/abc123",
+      },
+      platforms: [
+        { id: "plat-tr", platform: "transistor", status: "queued" },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockShowMetadataFindUnique.mockResolvedValue(null);
+    mockPublishOgEpisode.mockResolvedValue({
+      postId: 880,
+      postUrl: "https://stolenwatermedia.com/shows/the-og/#swm-vimeo-555",
+      created: true,
+    });
+
+    const result = await processJob("job-1");
+
+    expect(mockEnsureOgAudio).not.toHaveBeenCalled();
+    expect(mockUploadToTransistor).not.toHaveBeenCalled();
+    expect(result.platformResults.find((r) => r.platform === "transistor")).toEqual(
+      expect.objectContaining({
+        status: "failed",
+        error: expect.stringContaining("no private Transistor show"),
+      })
+    );
+    expect(result.platformResults.find((r) => r.platform === "website")?.status).toBe(
+      "completed"
+    );
+    expect(result.status).toBe("completed");
+  });
+
+  it("keeps a public YDC episode off the OG private show", async () => {
+    const job = makeJob({
+      wpShowId: 21,
+      isPremium: false,
+      metadata: {
+        description: "A public episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+      },
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "ytabc123456",
+          externalUrl: "https://www.youtube.com/watch?v=ytabc123456",
+        },
+        { id: "plat-tr", platform: "transistor" },
+        { id: "plat-web", platform: "website" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockShowMetadataFindUnique.mockResolvedValue({
+      hosts: "Ashlea",
+      seasonScheme: "none",
+      ogTransistorShowId: "og-private",
+      transistorPrivateShowId: "premium-feed",
+    });
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-public",
+      episodeUrl: "https://share.transistor.fm/s/ep-public",
+    });
+    mockPublishToWordPress.mockResolvedValue({
+      postId: 77,
+      postUrl: "https://example.com/episode/public",
+      supersedesLivePostId: null,
+      supersedeDropped: false,
+    });
+
+    const result = await processJob("job-1");
+
+    expect(result.platformResults.find((r) => r.platform === "transistor")?.status).toBe(
+      "completed"
+    );
+    expect(mockEnsureOgAudio).not.toHaveBeenCalled();
+    expect(mockUploadToTransistor).toHaveBeenCalledTimes(1);
+    expect(mockUploadToTransistor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wpShowId: 21,
+        transistorShowIdOverride: undefined,
+        youtubeVideoUrl: "https://www.youtube.com/watch?v=ytabc123456",
+      })
+    );
+    expect(mockPublishOgEpisode).not.toHaveBeenCalled();
+  });
+
+  it("still sends premium episodes to the premium private show, not The OG", async () => {
+    const job = makeJob({
+      wpShowId: 21,
+      isPremium: true,
+      metadata: {
+        description: "Premium episode",
+        transcript: "already transcribed",
+        gcsAudioPath: "uploads/2026/03/video.mp3",
+      },
+      platforms: [
+        {
+          id: "plat-yt",
+          platform: "youtube",
+          status: "completed",
+          externalId: "ytabc123456",
+          externalUrl: "https://www.youtube.com/watch?v=ytabc123456",
+        },
+        { id: "plat-tr", platform: "transistor" },
+      ],
+    });
+    mockFindUnique.mockResolvedValue(job);
+    mockShowMetadataFindUnique.mockResolvedValue({
+      hosts: "Ashlea",
+      seasonScheme: "none",
+      ogTransistorShowId: "og-private",
+      transistorPrivateShowId: "premium-feed",
+    });
+    mockUploadToTransistor.mockResolvedValue({
+      episodeId: "ep-prem",
+      episodeUrl: "https://share.transistor.fm/s/ep-prem",
+    });
+
+    await processJob("job-1");
+
+    expect(mockEnsureOgAudio).not.toHaveBeenCalled();
+    expect(mockUploadToTransistor).toHaveBeenCalledWith(
+      expect.objectContaining({ transistorShowIdOverride: "premium-feed" })
     );
   });
 });

@@ -99,16 +99,20 @@ export async function uploadToTransistor(
     );
   }
 
-  const showLink = await resolvePlatformId(wpShowId, "transistor_show");
-  if (!showLink) {
-    throw new Error(
-      `No Transistor show linked for WP show ${wpShowId}. Please configure it in Admin > Shows.`
-    );
-  }
-  let transistorShowId = await resolveTransistorShowId(apiKey, showLink);
-
+  // A private-show override is the show id itself. Skip the public show
+  // lookup so The OG (and a premium feed) does not depend on the public
+  // Transistor show link. Public episodes still resolve that link.
+  let transistorShowId: string;
   if (params.transistorShowIdOverride) {
     transistorShowId = params.transistorShowIdOverride;
+  } else {
+    const showLink = await resolvePlatformId(wpShowId, "transistor_show");
+    if (!showLink) {
+      throw new Error(
+        `No Transistor show linked for WP show ${wpShowId}. Please configure it in Admin > Shows.`
+      );
+    }
+    transistorShowId = await resolveTransistorShowId(apiKey, showLink);
   }
 
   // 1. Get an authorized upload URL from Transistor

@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { resolveCredential, resolvePlatformId } from "@/lib/analytics/credentials";
+import {
+  getVimeoAccessToken,
+  resolveCredential,
+  resolvePlatformId,
+} from "@/lib/analytics/credentials";
 
 // Mock the db module
 vi.mock("@/lib/db", () => ({
@@ -92,6 +96,23 @@ describe("resolvePlatformId", () => {
     const result = await resolvePlatformId(5, "transistor_show");
 
     expect(result).toBe("https://share.transistor.fm/s/network");
+  });
+
+  it("reads the Vimeo token stored on Your Dark Companion and does not use the network default", async () => {
+    mockCredentialFind.mockResolvedValueOnce(null as never);
+    await expect(getVimeoAccessToken(21)).resolves.toBeNull();
+    expect(mockCredentialFind).toHaveBeenCalledTimes(1);
+    expect(mockCredentialFind).toHaveBeenCalledWith({
+      where: { wpShowId_platform: { wpShowId: 21, platform: "vimeo" } },
+    });
+
+    mockCredentialFind.mockResolvedValueOnce({
+      id: "v",
+      apiKey: "vimeo-token-value",
+      accessToken: null,
+      platform: "vimeo",
+    } as never);
+    await expect(getVimeoAccessToken(21)).resolves.toBe("vimeo-token-value");
   });
 
   it("returns null when no platform link exists", async () => {
